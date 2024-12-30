@@ -41,7 +41,7 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print(text)
+                print("Meld " + char + ": " + text)
         return indexes
 
 np.random.seed(1)
@@ -74,11 +74,12 @@ class FilePathDataset(torch.utils.data.Dataset):
                  validation=False,
                  OOD_data="Data/OOD_texts.txt",
                  min_length=50,
+                 frame_count=None,
                  ):
 
         spect_params = SPECT_PARAMS
         mel_params = MEL_PARAMS
-
+        self.cache = {}
         _data_list = [l.strip().split('|') for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = TextCleaner()
@@ -99,6 +100,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.ptexts = [t.split('|')[idx] for t in tl]
         
         self.root_path = root_path
+        self.frame_count = frame_count
 
     def __len__(self):
         return len(self.data_list)
@@ -106,10 +108,7 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):        
         data = self.data_list[idx]
         path = data[0]
-        
-        wave, text_tensor, speaker_id = self._load_tensor(data)
-        
-        mel_tensor = preprocess(wave).squeeze()
+        wave, text_tensor, speaker_id, mel_tensor = self._cache_tensor(data)
         
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
@@ -144,8 +143,13 @@ class FilePathDataset(torch.utils.data.Dataset):
         if sr != 24000:
             wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
             print(wave_path, sr)
-            
-        wave = np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
+
+        pad_start = 5000
+        pad_end = 5000
+        if self.frame_count is not None:
+            pad_start = (self.frame_count*300 - wave.shape[0]) // 2
+            pad_end = self.frame_count*300 - wave.shape[0] - pad_start
+        wave = np.concatenate([np.zeros([pad_start]), wave, np.zeros([pad_end])], axis=0)
         
         text = self.text_cleaner(text)
         
@@ -156,9 +160,19 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         return wave, text, speaker_id
 
-    def _load_data(self, data):
+    def _cache_tensor(self, data):
+        path = data[0]
+        #if path in self.cache:
+        #(wave, text_tensor, speaker_id, mel_tensor) = self.cache[path]
+        #else:
         wave, text_tensor, speaker_id = self._load_tensor(data)
         mel_tensor = preprocess(wave).squeeze()
+        #self.cache[path] = (wave, text_tensor, speaker_id,
+        #                    mel_tensor)
+        return (wave, text_tensor, speaker_id, mel_tensor)
+
+    def _load_data(self, data):
+        wave, text_tensor, speaker_id, mel_tensor = self._cache_tensor(data)
 
         mel_length = mel_tensor.size(1)
         if mel_length > self.max_mel_length:
@@ -239,12 +253,13 @@ def build_dataloader(path_list,
                      num_workers=1,
                      device='cpu',
                      collate_config={},
-                     dataset_config={}):
+                     dataset_config={},
+                     frame_count = None):
     
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
+    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, frame_count=frame_count, **dataset_config)
     collate_fn = Collater(**collate_config)
     data_loader = DataLoader(dataset,
-                             batch_size=batch_size,
+                             batch_size=min(batch_size, len(dataset)),
                              shuffle=(not validation),
                              num_workers=num_workers,
                              drop_last=(not validation),

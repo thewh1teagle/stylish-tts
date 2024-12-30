@@ -130,11 +130,13 @@ class JDCNet(nn.Module):
         classifier_out = classifier_out.contiguous().view((-1, 512))  # (b * 31, 512)
         classifier_out = self.classifier(classifier_out)
         classifier_out = classifier_out.view((-1, seq_len, self.num_class))  # (b, 31, num_class)
-        
+
+        result = torch.abs(classifier_out.squeeze((1, 2)))
+
         # sizes: (b, 31, 722), (b, 31, 2)
         # classifier output consists of predicted pitch classes per frame
         # detector output consists of: (isvoice, notvoice) estimates per frame
-        return torch.abs(classifier_out.squeeze()), GAN_feature, poolblock_out
+        return result, GAN_feature, poolblock_out
 
     @staticmethod
     def init_weights(m):

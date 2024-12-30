@@ -68,8 +68,7 @@ def main(config_path):
     logger.addHandler(file_handler)
 
     
-    batch_size = config.get('batch_size', 10)
-
+    #batch_size_list = [int(item) for item in config.get('batch_size').split("|")]
     epochs = config.get('epochs', 200)
     save_freq = config.get('save_freq', 2)
     log_interval = config.get('log_interval', 10)
@@ -78,41 +77,58 @@ def main(config_path):
     data_params = config.get('data_params', None)
     sr = config['preprocess_params'].get('sr', 24000)
     train_path = data_params['train_data']
+    train_bin_count = data_params['train_bin_count']
     val_path = data_params['val_data']
     root_path = data_params['root_path']
     min_length = data_params['min_length']
     OOD_data = data_params['OOD_data']
 
-    max_len = config.get('max_len', 200)
+    max_frame_batch = config.get('max_len')
     
     loss_params = Munch(config['loss_params'])
     diff_epoch = loss_params.diff_epoch
     joint_epoch = loss_params.joint_epoch
     
     optimizer_params = Munch(config['optimizer_params'])
-    
-    train_list, val_list = get_data_path_list(train_path, val_path)
+
     device = accelerator.device
 
-    train_dataloader = build_dataloader(train_list,
-                                        root_path,
-                                        OOD_data=OOD_data,
-                                        min_length=min_length,
-                                        batch_size=batch_size,
-                                        num_workers=2,
-                                        dataset_config={},
-                                        device=device)
-
+    # load data
+    val_list = get_data_path_list(val_path)
     val_dataloader = build_dataloader(val_list,
                                       root_path,
                                       OOD_data=OOD_data,
                                       min_length=min_length,
-                                      batch_size=batch_size,
+                                      batch_size=1,
                                       validation=True,
                                       num_workers=0,
                                       device=device,
                                       dataset_config={})
-    
+    train_dataloader_list = []
+    train_max = 0
+    train_total_steps = 0
+    for i in range(train_bin_count):
+        train_list = get_data_path_list(
+            "%s/list-%d.txt" % (train_path, i))
+        if len(train_list) == 0:
+            continue
+        # Bins are size 20, they start at frame 80, and the clips are padded to 40 past the start
+        frame_count = i*20 + 80 + 40
+        batch_size = max_frame_batch // frame_count
+        train_max += len(train_list) // batch_size
+        train_total_steps += len(train_list)
+        train_dataloader_list.append(
+            build_dataloader(train_list,
+                             root_path,
+                             OOD_data=OOD_data,
+                             min_length=min_length,
+                             batch_size=batch_size,
+                             num_workers=16,
+                             dataset_config={},
+                             device=device,
+                             frame_count=frame_count))
+
+
     # load pretrained ASR model
     ASR_config = config.get('ASR_config', False)
     ASR_path = config.get('ASR_path', False)
@@ -183,7 +199,7 @@ def main(config_path):
         "max_lr": optimizer_params.lr,
         "pct_start": float(0),
         "epochs": epochs,
-        "steps_per_epoch": len(train_dataloader),
+        "steps_per_epoch": train_total_steps,
     }
     scheduler_params_dict= {key: scheduler_params.copy() for key in model}
     scheduler_params_dict['bert']['max_lr'] = optimizer_params.bert_lr * 2
@@ -214,6 +230,8 @@ def main(config_path):
     if load_pretrained:
         model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
                                     load_only_params=config.get('load_only_params', True))
+        if start_epoch > 0:
+            start_epoch += 1
         
     n_down = model.text_aligner.n_down
 
@@ -243,9 +261,11 @@ def main(config_path):
                                 sig=slmadv_params.sig
                                )
 
-    model, optimizer, train_dataloader = accelerator.prepare(
-        model, optimizer, train_dataloader
+    model, optimizer = accelerator.prepare(
+        model, optimizer
     )
+    val_dataloader = accelerator.prepare(val_dataloader)
+    train_dataloader_list = [accelerator.prepare(loader) for loader in train_dataloader_list]
 
     for epoch in range(start_epoch, epochs):
         running_loss = 0
@@ -262,7 +282,8 @@ def main(config_path):
         model.msd.train()
         model.mpd.train()
 
-        for i, batch in enumerate(train_dataloader):
+        def train_batch(i, batch, running_loss, iters):
+            #for i, batch in enumerate(train_dataloader):
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch
@@ -283,7 +304,7 @@ def main(config_path):
                 s2s_attn = s2s_attn[..., 1:]
                 s2s_attn = s2s_attn.transpose(-1, -2)
             except:
-                continue
+                return running_loss, iters
 
             mask_ST = mask_from_lens(s2s_attn, input_lengths, mel_input_length // (2 ** n_down))
             s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
@@ -311,8 +332,8 @@ def main(config_path):
                 s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
                 gs.append(s)
 
-            s_dur = torch.stack(ss).squeeze()  # global prosodic styles
-            gs = torch.stack(gs).squeeze() # global acoustic styles
+            s_dur = torch.stack(ss).squeeze(1)  # global prosodic styles
+            gs = torch.stack(gs).squeeze(1) # global acoustic styles
             s_trg = torch.cat([gs, s_dur], dim=-1).detach() # ground truth for denoiser
 
             bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
@@ -356,46 +377,50 @@ def main(config_path):
                                                     s2s_attn_mono, 
                                                     text_mask)
                 
-            mel_len_st = int(mel_input_length.min().item() / 2 - 1)
-            mel_len = min(int(mel_input_length.min().item() / 2 - 1), max_len // 2)
+            #mel_len_st = int(mel_input_length.min().item() / 2 - 1)
+            #mel_len = min(int(mel_input_length.min().item() / 2 - 1), max_len // 2)
             en = []
             gt = []
             p_en = []
             wav = []
-            st = []
+            #st = []
             
             for bib in range(len(mel_input_length)):
-                mel_length = int(mel_input_length[bib].item() / 2)
+                #mel_length = int(mel_input_length[bib].item() / 2)
 
-                random_start = np.random.randint(0, mel_length - mel_len)
-                en.append(asr[bib, :, random_start:random_start+mel_len])
-                p_en.append(p[bib, :, random_start:random_start+mel_len])
-                gt.append(mels[bib, :, (random_start * 2):((random_start+mel_len) * 2)])
+                #random_start = np.random.randint(0, mel_length - mel_len)
+                #en.append(asr[bib, :, random_start:random_start+mel_len])
+                en.append(asr[bib])
+                #p_en.append(p[bib, :, random_start:random_start+mel_len])
+                p_en.append(p[bib])
+                #gt.append(mels[bib, :, (random_start * 2):((random_start+mel_len) * 2)])
+                gt.append(mels[bib])
                 
-                y = waves[bib][(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
+                #y = waves[bib][(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
+                y = waves[bib]
                 wav.append(torch.from_numpy(y).to(device))
                 
                 # style reference (better to be different from the GT)
-                random_start = np.random.randint(0, mel_length - mel_len_st)
-                st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
+                #random_start = np.random.randint(0, mel_length - mel_len_st)
+                #st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
                 
             wav = torch.stack(wav).float().detach()
 
             en = torch.stack(en)
             p_en = torch.stack(p_en)
             gt = torch.stack(gt).detach()
-            st = torch.stack(st).detach()
+            #st = torch.stack(st).detach()
             
             
             if gt.size(-1) < 80:
-                continue
+                return running_loss, iters
             
             s = model.style_encoder(gt.unsqueeze(1))           
             s_dur = model.predictor_encoder(gt.unsqueeze(1))
                 
             with torch.no_grad():
                 F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
-                F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1).squeeze()
+                F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1).squeeze(1)
 
                 N_real = log_norm(gt.unsqueeze(1)).squeeze(1)
                 
@@ -422,7 +447,7 @@ def main(config_path):
 
             loss_mel = stft_loss(y_rec, wav)
             loss_gen_all = gl(wav, y_rec).mean()
-            loss_lm = wl(wav.detach().squeeze(), y_rec.squeeze()).mean()
+            loss_lm = wl(wav.detach().squeeze(1), y_rec.squeeze(1)).mean()
 
             loss_ce = 0
             loss_dur = 0
@@ -550,7 +575,7 @@ def main(config_path):
             
             if (i+1)%log_interval == 0:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
-                    %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
+                    %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -568,8 +593,21 @@ def main(config_path):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
-            
+            return running_loss, iters
+
+        train_count = 0
+        random.shuffle(train_dataloader_list)
+        for i in range(len(train_dataloader_list)):
+            train_dataloader = train_dataloader_list[i]
+            for _, batch in enumerate(train_dataloader):
+                #import gc
+                #gc.collect()
+                #torch.cuda.empty_cache()
+                running_loss, iters = train_batch(train_count, batch, running_loss, iters)
+                train_count += 1
+
         loss_test = 0
+        max_len = 1620
         loss_align = 0
         loss_f = 0
         _ = [model[key].eval() for key in model]
@@ -612,8 +650,8 @@ def main(config_path):
                         s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
                         gs.append(s)
 
-                    s = torch.stack(ss).squeeze()
-                    gs = torch.stack(gs).squeeze()
+                    s = torch.stack(ss).squeeze(1)
+                    gs = torch.stack(gs).squeeze(1)
                     s_trg = torch.cat([s, gs], dim=-1).detach()
 
                     bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
@@ -666,7 +704,7 @@ def main(config_path):
                     s = model.style_encoder(gt.unsqueeze(1))
 
                     y_rec = model.decoder(en, F0_fake, N_fake, s)
-                    loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
+                    loss_mel = stft_loss(y_rec.squeeze(1), wav.detach())
 
                     F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1)) 
 

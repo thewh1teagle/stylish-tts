@@ -57,7 +57,7 @@ def main(config_path):
     file_handler.setFormatter(logging.Formatter('%(levelname)s:%(asctime)s: %(message)s'))
     logger.logger.addHandler(file_handler)
     
-    batch_size = config.get('batch_size', 10)
+    #batch_size_list = [int(item) for item in config.get('batch_size').split("|")]
     device = accelerator.device
     
     epochs = config.get('epochs_1st', 200)
@@ -68,35 +68,49 @@ def main(config_path):
     data_params = config.get('data_params', None)
     sr = config['preprocess_params'].get('sr', 24000)
     train_path = data_params['train_data']
+    train_bin_count = data_params['train_bin_count']
     val_path = data_params['val_data']
     root_path = data_params['root_path']
     min_length = data_params['min_length']
     OOD_data = data_params['OOD_data']
     
-    max_len = config.get('max_len', 200)
+    max_frame_batch = config.get('max_len')
     
     # load data
-    train_list, val_list = get_data_path_list(train_path, val_path)
-
-    train_dataloader = build_dataloader(train_list,
-                                        root_path,
-                                        OOD_data=OOD_data,
-                                        min_length=min_length,
-                                        batch_size=batch_size,
-                                        num_workers=2,
-                                        dataset_config={},
-                                        device=device)
-
+    val_list = get_data_path_list(val_path)
     val_dataloader = build_dataloader(val_list,
                                       root_path,
                                       OOD_data=OOD_data,
                                       min_length=min_length,
-                                      batch_size=batch_size,
+                                      batch_size=1,
                                       validation=True,
                                       num_workers=0,
                                       device=device,
                                       dataset_config={})
-    
+
+    train_dataloader_list = []
+    train_max = 0
+    train_total_steps = 0
+    for i in range(train_bin_count):
+        train_list = get_data_path_list(
+            "%s/list-%d.txt" % (train_path, i))
+        # Bins are size 20, they start at frame 80, and the clips are padded to 40 past the start
+        frame_count = i*20 + 80 + 40
+        batch_size = max_frame_batch // frame_count
+        train_max += len(train_list)//batch_size
+        train_total_steps += len(train_list)
+        train_dataloader_list.append(
+            build_dataloader(train_list,
+                             root_path,
+                             OOD_data=OOD_data,
+                             min_length=min_length,
+                             batch_size=batch_size,
+                             num_workers=8,
+                             dataset_config={},
+                             device=device,
+                             frame_count=frame_count))
+
+
     with accelerator.main_process_first():
         # load pretrained ASR model
         ASR_config = config.get('ASR_config', False)
@@ -116,7 +130,7 @@ def main(config_path):
         "max_lr": float(config['optimizer_params'].get('lr', 1e-4)),
         "pct_start": float(config['optimizer_params'].get('pct_start', 0.0)),
         "epochs": epochs,
-        "steps_per_epoch": len(train_dataloader),
+        "steps_per_epoch": train_total_steps,
     }
     
     model_params = recursive_munch(config['model_params'])
@@ -133,9 +147,8 @@ def main(config_path):
     for k in model:
         model[k] = accelerator.prepare(model[k])
     
-    train_dataloader, val_dataloader = accelerator.prepare(
-        train_dataloader, val_dataloader
-    )
+    val_dataloader = accelerator.prepare(val_dataloader)
+    train_dataloader_list = [accelerator.prepare(loader) for loader in train_dataloader_list]
     
     _ = [model[key].to(device) for key in model]
 
@@ -152,6 +165,7 @@ def main(config_path):
         if config.get('pretrained_model', '') != '':
             model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
                                         load_only_params=config.get('load_only_params', True))
+            start_epoch += 1
         else:
             start_epoch = 0
             iters = 0
@@ -176,8 +190,9 @@ def main(config_path):
         start_time = time.time()
 
         _ = [model[key].train() for key in model]
-
-        for i, batch in enumerate(train_dataloader):
+        
+        def train_batch(i, batch, running_loss, iters):
+            #for i, batch in enumerate(train_dataloader):
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, _, _, mels, mel_input_length, _ = batch
@@ -213,44 +228,44 @@ def main(config_path):
                 asr = (t_en @ s2s_attn_mono)
     
             # get clips
-            mel_input_length_all = accelerator.gather(mel_input_length) # for balanced load
-            mel_len = min([int(mel_input_length_all.min().item() / 2 - 1), max_len // 2])
-            mel_len_st = int(mel_input_length.min().item() / 2 - 1)
+            #mel_input_length_all = accelerator.gather(mel_input_length) # for balanced load
+            #mel_len = min([int(mel_input_length_all.min().item() / 2 - 1), max_len // 2])
+            #mel_len_st = int(mel_input_length.min().item() / 2 - 1)
         
             en = []
             gt = []
             wav = []
-            st = []
+            #st = []
             
             for bib in range(len(mel_input_length)):
-                mel_length = int(mel_input_length[bib].item() / 2)
+                #mel_length = int(mel_input_length[bib].item() / 2)
 
-                random_start = np.random.randint(0, mel_length - mel_len)
-                en.append(asr[bib, :, random_start:random_start+mel_len])
-                gt.append(mels[bib, :, (random_start * 2):((random_start+mel_len) * 2)])
+                #random_start = np.random.randint(0, mel_length - mel_len)
+                en.append(asr[bib])#, :, random_start:random_start+mel_len])
+                gt.append(mels[bib])#, :, (random_start * 2):((random_start+mel_len) * 2)])
 
-                y = waves[bib][(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
+                y = waves[bib]#[(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
                 wav.append(torch.from_numpy(y).to(device))
                 
                 # style reference (better to be different from the GT)
-                random_start = np.random.randint(0, mel_length - mel_len_st)
-                st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
+                #random_start = np.random.randint(0, mel_length - mel_len_st)
+                #st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
 
             en = torch.stack(en)
             gt = torch.stack(gt).detach()
-            st = torch.stack(st).detach()
+            #st = torch.stack(st).detach()
 
             wav = torch.stack(wav).float().detach()
 
             # clip too short to be used by the style encoder
             if gt.shape[-1] < 80:
-                continue
+                return running_loss, iters
                 
             with torch.no_grad():    
                 real_norm = log_norm(gt.unsqueeze(1)).squeeze(1).detach()
                 F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
                 
-            s = model.style_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
+            s = model.style_encoder( gt.unsqueeze(1))
             
             y_rec = model.decoder(en, F0_real, real_norm, s)
             
@@ -306,10 +321,10 @@ def main(config_path):
                 optimizer.step('pitch_extractor')
             
             iters = iters + 1
-            
+
             if (i+1)%log_interval == 0 and accelerator.is_main_process:
                 log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
-                        %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
+                        %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -321,8 +336,22 @@ def main(config_path):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
-                                
+            return running_loss, iters
+
+        train_count = 0
+        random.shuffle(train_dataloader_list)
+        for i in range(len(train_dataloader_list)):
+            train_dataloader = train_dataloader_list[i]
+            #max_len = max_len_list[i]
+            for _, batch in enumerate(train_dataloader):
+                #import gc
+                #gc.collect()
+                #torch.cuda.empty_cache()
+                running_loss, iters = train_batch(train_count, batch, running_loss, iters)
+                train_count += 1
+
         loss_test = 0
+        max_len = 1620
 
         _ = [model[key].eval() for key in model]
 
@@ -400,7 +429,7 @@ def main(config_path):
                     en = asr[bib, :, :mel_length // 2].unsqueeze(0)
                                         
                     F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
-                    F0_real = F0_real.unsqueeze(0)
+                    #F0_real = F0_real.unsqueeze(0)
                     s = model.style_encoder(gt.unsqueeze(1))
                     real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
                     

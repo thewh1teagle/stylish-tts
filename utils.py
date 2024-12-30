@@ -10,6 +10,7 @@ import torchaudio
 import librosa
 import matplotlib.pyplot as plt
 from munch import Munch
+import os
 
 def maximum_path(neg_cent, mask):
   """ Cython optimized version.
@@ -26,18 +27,25 @@ def maximum_path(neg_cent, mask):
   maximum_path_c(path, neg_cent, t_t_max, t_s_max)
   return torch.from_numpy(path).to(device=device, dtype=dtype)
 
-def get_data_path_list(train_path=None, val_path=None):
-    if train_path is None:
-        train_path = "Data/train_list.txt"
-    if val_path is None:
-        val_path = "Data/val_list.txt"
+def get_data_path_list(path):
+  result = []
+  if os.path.isfile(path):
+    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+      result = f.readlines()
+  return result
 
-    with open(train_path, 'r', encoding='utf-8', errors='ignore') as f:
-        train_list = f.readlines()
-    with open(val_path, 'r', encoding='utf-8', errors='ignore') as f:
-        val_list = f.readlines()
-
-    return train_list, val_list
+#def get_data_path_list(train_path=None, val_path=None):
+#    if train_path is None:
+#        train_path = "Data/train_list.txt"
+#    if val_path is None:
+#        val_path = "Data/val_list.txt"
+#
+#    with open(train_path, 'r', encoding='utf-8', errors='ignore') as f:
+#        train_list = f.readlines()
+#    with open(val_path, 'r', encoding='utf-8', errors='ignore') as f:
+#        val_list = f.readlines()
+#
+#    return train_list, val_list
 
 def length_to_mask(lengths):
     mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
