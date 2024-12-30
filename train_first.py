@@ -57,7 +57,6 @@ def main(config_path):
     file_handler.setFormatter(logging.Formatter('%(levelname)s:%(asctime)s: %(message)s'))
     logger.logger.addHandler(file_handler)
     
-    #batch_size_list = [int(item) for item in config.get('batch_size').split("|")]
     device = accelerator.device
     
     epochs = config.get('epochs_1st', 200)
@@ -192,7 +191,6 @@ def main(config_path):
         _ = [model[key].train() for key in model]
         
         def train_batch(i, batch, running_loss, iters):
-            #for i, batch in enumerate(train_dataloader):
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, _, _, mels, mel_input_length, _ = batch
@@ -235,25 +233,21 @@ def main(config_path):
             en = []
             gt = []
             wav = []
-            #st = []
+            st = []
             
             for bib in range(len(mel_input_length)):
-                #mel_length = int(mel_input_length[bib].item() / 2)
+                en.append(asr[bib])
+                gt.append(mels[bib])
 
-                #random_start = np.random.randint(0, mel_length - mel_len)
-                en.append(asr[bib])#, :, random_start:random_start+mel_len])
-                gt.append(mels[bib])#, :, (random_start * 2):((random_start+mel_len) * 2)])
-
-                y = waves[bib]#[(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
+                y = waves[bib]
                 wav.append(torch.from_numpy(y).to(device))
                 
                 # style reference (better to be different from the GT)
-                #random_start = np.random.randint(0, mel_length - mel_len_st)
-                #st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
+                st.append(mels[bib])
 
             en = torch.stack(en)
             gt = torch.stack(gt).detach()
-            #st = torch.stack(st).detach()
+            st = torch.stack(st).detach()
 
             wav = torch.stack(wav).float().detach()
 
@@ -265,7 +259,7 @@ def main(config_path):
                 real_norm = log_norm(gt.unsqueeze(1)).squeeze(1).detach()
                 F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
                 
-            s = model.style_encoder( gt.unsqueeze(1))
+            s = model.style_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
             
             y_rec = model.decoder(en, F0_real, real_norm, s)
             
@@ -342,11 +336,7 @@ def main(config_path):
         random.shuffle(train_dataloader_list)
         for i in range(len(train_dataloader_list)):
             train_dataloader = train_dataloader_list[i]
-            #max_len = max_len_list[i]
             for _, batch in enumerate(train_dataloader):
-                #import gc
-                #gc.collect()
-                #torch.cuda.empty_cache()
                 running_loss, iters = train_batch(train_count, batch, running_loss, iters)
                 train_count += 1
 

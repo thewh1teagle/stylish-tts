@@ -34,19 +34,6 @@ def get_data_path_list(path):
       result = f.readlines()
   return result
 
-#def get_data_path_list(train_path=None, val_path=None):
-#    if train_path is None:
-#        train_path = "Data/train_list.txt"
-#    if val_path is None:
-#        val_path = "Data/val_list.txt"
-#
-#    with open(train_path, 'r', encoding='utf-8', errors='ignore') as f:
-#        train_list = f.readlines()
-#    with open(val_path, 'r', encoding='utf-8', errors='ignore') as f:
-#        val_list = f.readlines()
-#
-#    return train_list, val_list
-
 def length_to_mask(lengths):
     mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
     mask = torch.gt(mask+1, lengths.unsqueeze(1))

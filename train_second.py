@@ -64,9 +64,6 @@ def main(config_path):
     file_handler.setFormatter(logging.Formatter('%(levelname)s:%(asctime)s: %(message)s'))
     logger.addHandler(file_handler)
 
-    
-    #batch_size = config.get('batch_size', 10)
-
     epochs = config.get('epochs_2nd', 200)
     save_freq = config.get('save_freq', 2)
     log_interval = config.get('log_interval', 10)
@@ -81,7 +78,6 @@ def main(config_path):
     min_length = data_params['min_length']
     OOD_data = data_params['OOD_data']
 
-    #max_len = config.get('max_len', 200)
     max_frame_batch = config.get('max_len')
     
     loss_params = Munch(config['loss_params'])
@@ -361,35 +357,29 @@ def main(config_path):
                                                     s2s_attn_mono, 
                                                     text_mask)
             
-            #mel_len = min(int(mel_input_length.min().item() / 2 - 1), max_len // 2)
-            #mel_len_st = int(mel_input_length.min().item() / 2 - 1)
             en = []
             gt = []
-            #st = []
+            st = []
             p_en = []
             wav = []
 
             for bib in range(len(mel_input_length)):
-                #mel_length = int(mel_input_length[bib].item() / 2)
-
-                #random_start = np.random.randint(0, mel_length - mel_len)
-                en.append(asr[bib])#, :, random_start:random_start+mel_len])
-                p_en.append(p[bib])#, :, random_start:random_start+mel_len])
-                gt.append(mels[bib])#, :, (random_start * 2):((random_start+mel_len) * 2)])
+                en.append(asr[bib])
+                p_en.append(p[bib])
+                gt.append(mels[bib])
                 
-                y = waves[bib]#[(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
+                y = waves[bib]
                 wav.append(torch.from_numpy(y).to(device))
 
                 # style reference (better to be different from the GT)
-                #random_start = np.random.randint(0, mel_length - mel_len_st)
-                #st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
+                st.append(mels[bib])
                 
             wav = torch.stack(wav).float().detach()
 
             en = torch.stack(en)
             p_en = torch.stack(p_en)
             gt = torch.stack(gt).detach()
-            #st = torch.stack(st).detach()
+            st = torch.stack(st).detach()
             
             if gt.size(-1) < 80:
                 return running_loss, iters
