@@ -45,9 +45,11 @@ Example with a batch_size that used to be 8 and a max_len that used to be 800:
 
 Then in `data_params`, edit your `train_data` field to point to the directory of training lists you made with `make-train-list.py`. And add a new `train_bin_count` variable which is 1 larger than the largest number in your training list filename:
 
-```data_params:
+```
+data_params:
   train_data: "/your/train/dir"
-  train_bin_count: 76 # Assumes max segment length of 20 seconds```
+  train_bin_count: 76 # Assumes max segment length of 20 seconds
+```
 
 ## Running the new training
 
