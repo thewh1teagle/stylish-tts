@@ -1,3 +1,76 @@
+# StyleTTS Improved Training Code (still being tested)
+
+This code is mostly the same as the original StyleTTS 2 repo and you
+can read the original documentation below.
+
+[Original Repository](https://github.com/yl4579/StyleTTS2)
+
+`train_first.py`, `train_second.py`, and
+`train_finetune_accelerate.py` have been updated to train faster via
+fine-grained dynamic batching and to pad each segment in a batch
+instead of randomly clipping them in order to provide a more
+deterministic training which converges faster. Validation is done with
+a forced batch_size of 1 to provide deterministic validation as well
+(an optimization might be to modify validation to use padding as
+well).
+
+Based on some experimentation, the original method became increasingly
+problematic the larger your batch size became. It is likely the cause
+of problems reported when using newer hardware (that allowed higher
+batch size) and also some of the problems reported with longer
+utterances.
+
+## Preparing to use the new method
+
+If you have a training list and configuration file that works with the
+original training methodology, you can easily adapt it to work with
+this modifications.
+
+### Make new training lists from your original list
+
+First, run `make-train-list.py` to generate a mini train list for every 20-frame-long bin in your dataset:
+
+```python make-train-list.py --wav /your/wav/dir --out /your/new/train-dir < your-old-train-list.txt```
+
+### Edit your config.yml file
+
+Then you need to edit your config.yml file.
+
+- Remove the `batch_size` variable
+- Change the `max_len` variable to be its old value * the old batch_size
+
+Example with a batch_size that used to be 8 and a max_len that used to be 800:
+
+```max_len: 6400 # maximum number of frames * max batch size```
+
+Then in `data_params`, edit your `train_data` field to point to the directory of training lists you made with `make-train-list.py`. And add a new `train_bin_count` variable which is 1 larger than the largest number in your training list filename:
+
+```data_params:
+  train_data: "/your/train/dir"
+  train_bin_count: 76 # Assumes max segment length of 20 seconds```
+
+## Running the new training
+
+Now you should be able to run your first, second, or finetune stages
+using the training scripts as described in the original documentation
+below. The batch size for each batch will automatically adjust to
+whatever value keeps it less than the max_len for the given length of
+the bin.
+
+## Limitations
+
+I have not modified the original train_finetune.py script so that will
+fail. I have not actually tried multispeaker datasets and
+configurations, though I believe they should work.
+
+I am providing this mostly so that others can follow in my
+footsteps. I might be able to help on the discord but I am not
+guaranteeing it will work for you. Ultimately it is up to you to make
+it work.
+
+I have used this to finetune a single speaker dataset and to train one
+from scratch. So I have a reason to believe in its efficacy.
+
 # StyleTTS 2: Towards Human-Level Text-to-Speech through Style Diffusion and Adversarial Training with Large Speech Language Models
 
 ### Yinghao Aaron Li, Cong Han, Vinay S. Raghavan, Gavin Mischler, Nima Mesgarani
