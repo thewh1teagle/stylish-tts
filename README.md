@@ -46,7 +46,20 @@ Example with a batch_size that used to be 8 and a max_len that used to be 800:
 
 ```max_len: 6400 # maximum number of frames * max batch size```
 
-#### IMPORTANT: Adjusting the max_len is how you deal with memory issues. Increase it if nvtop reveals you are not using close to the maximum memory and decrease it if you get out of memory exceptions. It operates as a kind of maximum-number-of-batch-frames number now.
+#### IMPORTANT: Adjusting the max_len is how you deal with memory issues.
+
+Increase it if nvtop reveals you are not using close to the maximum memory and decrease it if you get out of memory exceptions. It operates as a kind of maximum-number-of-batch-frames number now.
+
+It is likely a good idea to have a separate config file with different
+max_len for different sub-stages. You can have max_len quite a bit
+higher in the initial part of first stage training and then you must
+decrease it for TMA. Similarly, for both finetuning and second stage
+training you can have max_len higher before style diffusion and joint
+adversarial training and then when you get to those sub-stages, reduce
+max_len for it loading your last checkpoint. I keep logs and
+checkpoints for different sub-stages in different sub-directories as
+well, especially given that StyleTTS 2 epoch numbering is a bit wonky
+and needs fixed.
 
 Then in `data_params`, edit your `train_data` field to point to the directory of training lists you made with `make-train-list.py`. And add a new `train_bin_count` variable which is 1 larger than the largest number in your training list filename:
 
