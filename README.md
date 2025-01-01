@@ -18,13 +18,16 @@ Based on some experimentation, the original method became increasingly
 problematic the larger your batch size became. It is likely the cause
 of problems reported when using newer hardware (that allowed higher
 batch size) and also some of the problems reported with longer
-utterances.
+utterances. In the original clipping method, the larger the
+batch_size, the smaller the clips of segments used for training on
+average because the smallest clip in each batch was the one used to
+determine the clip length.
 
 ## Preparing to use the new method
 
 If you have a training list and configuration file that works with the
 original training methodology, you can easily adapt it to work with
-this modifications.
+these modifications.
 
 ### Make new training lists from your original list
 
@@ -42,6 +45,8 @@ Then you need to edit your config.yml file.
 Example with a batch_size that used to be 8 and a max_len that used to be 800:
 
 ```max_len: 6400 # maximum number of frames * max batch size```
+
+#### IMPORTANT: Adjusting the max_len is how you deal with memory issues. Increase it if nvtop reveals you are not using close to the maximum memory and decrease it if you get out of memory exceptions. It operates as a kind of maximum-number-of-batch-frames number now.
 
 Then in `data_params`, edit your `train_data` field to point to the directory of training lists you made with `make-train-list.py`. And add a new `train_bin_count` variable which is 1 larger than the largest number in your training list filename:
 
