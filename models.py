@@ -615,7 +615,7 @@ def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
     return asr_model
 
 def build_model(args, text_aligner, pitch_extractor, bert):
-    assert args.decoder.type in ['istftnet', 'hifigan'], 'Decoder type unknown'
+    assert args.decoder.type in ['istftnet', 'hifigan', 'ringformer', 'vocos'], 'Decoder type unknown'
     
     if args.decoder.type == "istftnet":
         from Modules.istftnet import Decoder
@@ -625,7 +625,23 @@ def build_model(args, text_aligner, pitch_extractor, bert):
                 upsample_initial_channel=args.decoder.upsample_initial_channel,
                 resblock_dilation_sizes=args.decoder.resblock_dilation_sizes,
                 upsample_kernel_sizes=args.decoder.upsample_kernel_sizes, 
-                gen_istft_n_fft=args.decoder.gen_istft_n_fft, gen_istft_hop_size=args.decoder.gen_istft_hop_size) 
+                gen_istft_n_fft=args.decoder.gen_istft_n_fft, gen_istft_hop_size=args.decoder.gen_istft_hop_size)
+    elif args.decoder.type == "ringformer":
+        from Modules.ringformer import Decoder
+        decoder = Decoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
+                resblock_kernel_sizes = args.decoder.resblock_kernel_sizes,
+                upsample_rates = args.decoder.upsample_rates,
+                upsample_initial_channel=args.decoder.upsample_initial_channel,
+                resblock_dilation_sizes=args.decoder.resblock_dilation_sizes,
+                upsample_kernel_sizes=args.decoder.upsample_kernel_sizes, 
+                gen_istft_n_fft=args.decoder.gen_istft_n_fft, gen_istft_hop_size=args.decoder.gen_istft_hop_size)
+    elif args.decoder.type == "vocos":
+        from Modules.vocos import Decoder
+        decoder = Decoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
+                intermediate_dim=args.decoder.intermediate_dim,
+                num_layers=args.decoder.num_layers,
+                gen_istft_n_fft=args.decoder.gen_istft_n_fft,
+                gen_istft_hop_size=args.decoder.gen_istft_hop_size)
     else:
         from Modules.hifigan import Decoder
         decoder = Decoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
