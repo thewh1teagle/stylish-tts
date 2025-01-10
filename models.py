@@ -143,9 +143,12 @@ class StyleEncoder(nn.Module):
         blocks += [spectral_norm(nn.Conv2d(1, dim_in, 3, 1, 1))]
 
         repeat_num = 4
-        for _ in range(repeat_num):
+        for i in range(repeat_num):
             dim_out = min(dim_in*2, max_conv_dim)
-            blocks += [ResBlk(dim_in, dim_out, downsample='half')]
+            down = 'half'
+            if i % 2 == 1:
+                down = 'none'
+            blocks += [ResBlk(dim_in, dim_out, downsample=down)]
             dim_in = dim_out
 
         blocks += [nn.LeakyReLU(0.2)]

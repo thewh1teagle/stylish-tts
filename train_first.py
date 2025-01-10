@@ -93,8 +93,8 @@ def main(config_path):
     for i in range(train_bin_count):
         train_list = get_data_path_list(
             "%s/list-%d.txt" % (train_path, i))
-        # Bins are size 20, they start at frame 80, and the clips are padded to 40 past the start
-        frame_count = i*20 + 80 + 40
+        # Bins are size 20, they start at frame 80, and the clips are padded to 20 past the start
+        frame_count = i*4 + 20 + 4
         batch_size = max_frame_batch // frame_count
         train_max += len(train_list)//batch_size
         train_total_steps += len(train_list)
@@ -166,7 +166,7 @@ def main(config_path):
                                         load_only_params=config.get('load_only_params', True))
             start_epoch += 1
         else:
-            start_epoch = 0
+            start_epoch = 1
             iters = 0
     
     # in case not distributed
@@ -252,7 +252,7 @@ def main(config_path):
             wav = torch.stack(wav).float().detach()
 
             # clip too short to be used by the style encoder
-            if gt.shape[-1] < 80:
+            if gt.shape[-1] < 20:
                 return running_loss, iters
                 
             with torch.no_grad():    
@@ -318,7 +318,7 @@ def main(config_path):
 
             if (i+1)%log_interval == 0 and accelerator.is_main_process:
                 log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
-                        %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
+                        %(epoch, epochs, i+1, train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -405,10 +405,10 @@ def main(config_path):
                 iters_test += 1
 
         if accelerator.is_main_process:
-            print('Epochs:', epoch + 1)
+            print('Epochs:', epoch)
             log_print('Validation loss: %.3f' % (loss_test / iters_test) + '\n\n\n\n', logger)
             print('\n\n\n')
-            writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch + 1)
+            writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch)
             attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
             writer.add_figure('eval/attn', attn_image, epoch)
             

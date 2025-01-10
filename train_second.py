@@ -102,14 +102,18 @@ def main(config_path):
     train_dataloader_list = []
     train_max = 0
     train_total_steps = 0
+    most_data_index = None
+    most_data_size = 0
     for i in range(train_bin_count):
         train_list = get_data_path_list(
             "%s/list-%d.txt" % (train_path, i))
         if len(train_list) == 0:
             continue
-        # Bins are size 20, they start at frame 80, and the clips are padded to 40 past the start
-        frame_count = i*20 + 80 + 40
+        # Bins are size 20, they start at frame 80, and the clips are padded to 20 past the start
+        frame_count = i*4 + 20 + 4
         batch_size = max_frame_batch // frame_count
+        if batch_size*frame_count > most_data_size:
+            most_data_index = i
         train_max += len(train_list)//batch_size
         train_total_steps += len(train_list)
         train_dataloader_list.append(
@@ -123,6 +127,11 @@ def main(config_path):
                              device=device,
                              frame_count=frame_count))
 
+    most_dataloader = None
+    if most_data_index is not None:
+        most_dataloader = train_dataloader_list[most_data_index]
+        train_dataloader_list = (train_dataloader_list[:most_data_index]
+                                 + train_dataloader_list[most_data_index+1:])
     # load pretrained ASR model
     ASR_config = config.get('ASR_config', False)
     ASR_path = config.get('ASR_path', False)
@@ -381,7 +390,7 @@ def main(config_path):
             gt = torch.stack(gt).detach()
             st = torch.stack(st).detach()
             
-            if gt.size(-1) < 80:
+            if gt.size(-1) < 20:
                 return running_loss, iters
 
             s_dur = model.predictor_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
@@ -572,6 +581,9 @@ def main(config_path):
 
         train_count = 0
         random.shuffle(train_dataloader_list)
+        if most_dataloader is not None:
+            train_dataloader_list = [most_dataloader] + train_dataloader_list
+            most_dataloader = None
         for i in range(len(train_dataloader_list)):
             train_dataloader = train_dataloader_list[i]
             for _, batch in enumerate(train_dataloader):

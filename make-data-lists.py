@@ -21,10 +21,12 @@ already = {}
 time_bins = {}
 
 def length_to_bin(length):
-    if length < 100:
-        bin = 0
+    if length < 20:
+        bin = -1
+    #elif length < 45:
+    #    bin = 0
     else:
-        bin = (length - 80) // 20
+        bin = (length - 20) // 4
     return bin
 
 for line in sys.stdin:
@@ -35,9 +37,10 @@ for line in sys.stdin:
         already[fields[0].strip()] = True
     audio, sample_rate = sf.read(str(wavdir / fields[0].strip()))
     binkey = length_to_bin(audio.shape[0] // 300)
-    if binkey not in time_bins:
-        time_bins[binkey] = []
-    time_bins[binkey].append((fields[0].strip(), fields[1].strip(), fields[2].strip()))
+    if binkey >= 0:
+        if binkey not in time_bins:
+            time_bins[binkey] = []
+        time_bins[binkey].append((fields[0].strip(), fields[1].strip(), fields[2].strip()))
 
 for key in sorted(time_bins.keys()):
     #print(str(key) + ":", len(time_bins[key]))
