@@ -79,6 +79,7 @@ def main(config_path):
     OOD_data = data_params['OOD_data']
 
     max_frame_batch = config.get('max_len')
+    quick_test = config.get('quick_test', False)
     
     loss_params = Munch(config['loss_params'])
     diff_epoch = loss_params.diff_epoch
@@ -295,7 +296,8 @@ def main(config_path):
                     s2s_attn = s2s_attn.transpose(-1, -2)
                     s2s_attn = s2s_attn[..., 1:]
                     s2s_attn = s2s_attn.transpose(-1, -2)
-                except:
+                except Exception as e:
+                    print("s2s_attn fail", e)
                     return running_loss, iters
 
                 mask_ST = mask_from_lens(s2s_attn, input_lengths, mel_input_length // (2 ** n_down))
@@ -504,6 +506,7 @@ def main(config_path):
                                  ref_lengths, use_ind, s_trg.detach(), ref if multispeaker else None)
 
                 if slm_out is None:
+                    print("slm_out none")
                     return running_loss, iters
                     
                 d_loss_slm, loss_gen_lm, y_pred = slm_out
@@ -557,7 +560,7 @@ def main(config_path):
                 
             iters = iters + 1
             
-            if (i+1)%log_interval == 0:
+            if (i+1)%log_interval == 0 and not quick_test:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f'
                     %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm))
                 
@@ -589,6 +592,10 @@ def main(config_path):
             for _, batch in enumerate(train_dataloader):
                 running_loss, iters = train_batch(train_count, batch, running_loss, iters)
                 train_count += 1
+                if quick_test:
+                    print('Quick Test: %d/%d'
+                          % (i, len(train_dataloader_list)))
+                    break
         
         loss_test = 0
         max_len = 1620
@@ -796,7 +803,10 @@ def main(config_path):
 
                     if bib >= 5:
                         break
-                            
+        if quick_test:
+            print("Quick test done")
+            break
+            
         if epoch % saving_epoch == 0:
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test

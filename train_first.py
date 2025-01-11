@@ -74,6 +74,7 @@ def main(config_path):
     OOD_data = data_params['OOD_data']
     
     max_frame_batch = config.get('max_len')
+    quick_test = config.get('quick_test', False)
     
     # load data
     val_list = get_data_path_list(val_path)
@@ -316,7 +317,7 @@ def main(config_path):
             
             iters = iters + 1
 
-            if (i+1)%log_interval == 0 and accelerator.is_main_process:
+            if (i+1)%log_interval == 0 and accelerator.is_main_process and not quick_test:
                 log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
                         %(epoch, epochs, i+1, train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
                 
@@ -339,6 +340,10 @@ def main(config_path):
             for _, batch in enumerate(train_dataloader):
                 running_loss, iters = train_batch(train_count, batch, running_loss, iters)
                 train_count += 1
+                if quick_test:
+                    print('Quick Test: %d/%d'
+                          % (i, len(train_dataloader_list)))
+                    break
 
         loss_test = 0
         max_len = 1620
@@ -431,6 +436,9 @@ def main(config_path):
                     
                     if bib >= 6:
                         break
+            if quick_test:
+                print("Quick test done")
+                break
 
             if epoch % saving_epoch == 0:
                 if (loss_test / iters_test) < best_loss:
@@ -446,7 +454,7 @@ def main(config_path):
                 save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
                 torch.save(state, save_path)
                                 
-    if accelerator.is_main_process:
+    if accelerator.is_main_process and not quick_test:
         print('Saving..')
         state = {
             'net':  {key: model[key].state_dict() for key in model}, 

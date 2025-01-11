@@ -82,6 +82,7 @@ def main(config_path):
     OOD_data = data_params['OOD_data']
 
     max_frame_batch = config.get('max_len')
+    quick_test = config.get('quick_test', False)
     
     loss_params = Munch(config['loss_params'])
     diff_epoch = loss_params.diff_epoch
@@ -151,7 +152,7 @@ def main(config_path):
         if key != "mpd" and key != "msd" and key != "wd":
             model[key] = MyDataParallel(model[key])
             
-    start_epoch = 0
+    start_epoch = 1
     iters = 0
 
     load_pretrained = config.get('pretrained_model', '') != '' and config.get('second_stage_load_pretrained', False)
@@ -167,9 +168,10 @@ def main(config_path):
                 ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion']) # keep starting epoch for tensorboard log
 
             # these epochs should be counted from the start epoch
-            diff_epoch += start_epoch
-            joint_epoch += start_epoch
-            epochs += start_epoch
+            #start_epoch = 1
+            #diff_epoch += start_epoch
+            #joint_epoch += start_epoch
+            #epochs += start_epoch
             
             model.predictor_encoder = copy.deepcopy(model.style_encoder)
         else:
@@ -228,8 +230,9 @@ def main(config_path):
     if load_pretrained:
         model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
                                     load_only_params=config.get('load_only_params', True))
-        if start_epoch > 0:
-            start_epoch += 1
+        start_epoch += 1
+    else:
+        start_epoch = 1
         
     n_down = model.text_aligner.n_down
 
@@ -560,7 +563,7 @@ def main(config_path):
 
             iters = iters + 1
             
-            if (i+1)%log_interval == 0:
+            if (i+1)%log_interval == 0 and not quick_test:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
                     %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
                 
@@ -592,6 +595,10 @@ def main(config_path):
                 #torch.cuda.empty_cache()
                 running_loss, iters = train_batch(train_count, batch, running_loss, iters)
                 train_count += 1
+                if quick_test:
+                    print('Quick Test: %d/%d'
+                          % (i, len(train_dataloader_list)))
+                    break
 
         loss_test = 0
         max_len = 1620
@@ -705,15 +712,18 @@ def main(config_path):
                 except:
                     continue
 
-        print('Epochs:', epoch + 1)
+        print('Epochs:', epoch)
         logger.info('Validation loss: %.3f, Dur loss: %.3f, F0 loss: %.3f' % (loss_test / iters_test, loss_align / iters_test, loss_f / iters_test) + '\n\n\n')
         print('\n\n\n')
-        writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch + 1)
-        writer.add_scalar('eval/dur_loss', loss_test / iters_test, epoch + 1)
-        writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch + 1)
+        writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch)
+        writer.add_scalar('eval/dur_loss', loss_test / iters_test, epoch)
+        writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch)
         
-        
-        if (epoch + 1) % save_freq == 0 :
+        if quick_test:
+            print("Quick test done")
+            break
+
+        if epoch % save_freq == 0 :
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test
             print('Saving..')
