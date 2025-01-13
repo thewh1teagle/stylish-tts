@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import re
 import sys
+import json
 import yaml
 import shutil
 import numpy as np
@@ -40,7 +41,8 @@ logger = get_logger(__name__, log_level="DEBUG")
 
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config.yml', type=str)
-def main(config_path):
+@click.option('--probe_batch/--no-probe_batch', default=False)
+def main(config_path, probe_batch):
     config = yaml.safe_load(open(config_path))
 
     log_dir = config['log_dir']
@@ -75,6 +77,7 @@ def main(config_path):
     
     max_frame_batch = config.get('max_len')
     quick_test = config.get('quick_test', False)
+    batch_file = osp.join(log_dir, "batch_sizes.json")
     
     # load data
     val_list = get_data_path_list(val_path)
@@ -90,25 +93,36 @@ def main(config_path):
 
     train_dataloader_list = []
     train_max = 0
-    train_total_steps = 0
-    for i in range(train_bin_count):
-        train_list = get_data_path_list(
-            "%s/list-%d.txt" % (train_path, i))
-        # Bins are size 20, they start at frame 80, and the clips are padded to 20 past the start
-        frame_count = i*4 + 20 + 4
-        batch_size = max_frame_batch // frame_count
-        train_max += len(train_list)//batch_size
-        train_total_steps += len(train_list)
-        train_dataloader_list.append(
-            build_dataloader(train_list,
-                             root_path,
-                             OOD_data=OOD_data,
-                             min_length=min_length,
-                             batch_size=batch_size,
-                             num_workers=8,
-                             dataset_config={},
-                             device=device,
-                             frame_count=frame_count))
+    train_total_steps = 1
+    if not probe_batch:
+        train_total_steps = 0
+        batch_dict = {}
+        if osp.isfile(batch_file):
+            with open(batch_file, "r") as batch_input:
+                batch_dict = json.load(batch_input)
+        for i in range(train_bin_count):
+            train_list = get_data_path_list(
+                "%s/list-%d.txt" % (train_path, i))
+            # Bins are size 4, they start at frame 20, and the clips are padded to 4 past the start
+            frame_count = i*4 + 20 + 4
+            batch_size = 1
+            #batch_size = max_frame_batch // frame_count
+            if str(i) in batch_dict:
+                batch_size = batch_dict[str(i)]
+                if batch_size > 10:
+                    batch_size = int(batch_size*0.9) # Bit more margin
+            train_max += len(train_list)//batch_size
+            train_total_steps += len(train_list)
+            train_dataloader_list.append(
+                build_dataloader(train_list,
+                                 root_path,
+                                 OOD_data=OOD_data,
+                                 min_length=min_length,
+                                 batch_size=batch_size,
+                                 num_workers=16,
+                                 dataset_config={},
+                                 device=device,
+                                 frame_count=frame_count))
 
 
     with accelerator.main_process_first():
@@ -148,7 +162,8 @@ def main(config_path):
         model[k] = accelerator.prepare(model[k])
     
     val_dataloader = accelerator.prepare(val_dataloader)
-    train_dataloader_list = [accelerator.prepare(loader) for loader in train_dataloader_list]
+    if not probe_batch:
+        train_dataloader_list = [accelerator.prepare(loader) for loader in train_dataloader_list]
     
     _ = [model[key].to(device) for key in model]
 
@@ -253,7 +268,9 @@ def main(config_path):
             wav = torch.stack(wav).float().detach()
 
             # clip too short to be used by the style encoder
-            if gt.shape[-1] < 20:
+            if (gt.shape[-1] < 20
+                or (gt.shape[-1] < 80
+                    and not model_params.skip_downsamples):
                 return running_loss, iters
                 
             with torch.no_grad():    
@@ -333,17 +350,76 @@ def main(config_path):
                 print('Time elasped:', time.time()-start_time)
             return running_loss, iters
 
-        train_count = 0
-        random.shuffle(train_dataloader_list)
-        for i in range(len(train_dataloader_list)):
-            train_dataloader = train_dataloader_list[i]
-            for _, batch in enumerate(train_dataloader):
-                running_loss, iters = train_batch(train_count, batch, running_loss, iters)
-                train_count += 1
-                if quick_test:
-                    print('Quick Test: %d/%d'
-                          % (i, len(train_dataloader_list)))
-                    break
+        if probe_batch:
+            batch_dict = {}
+            batch_size = None
+            counting_up = True
+            for i in range(train_bin_count):
+                train_list = get_data_path_list(
+                    "%s/list-%d.txt" % (train_path, i))
+                if len(train_list) == 0:
+                    continue
+                frame_count = i*4 + 20 + 4
+                if batch_size is None:
+                    batch_size = min(100, max_frame_batch // frame_count)
+                elif batch_size > 60 and batch_size < 100:
+                    batch_size = batch_size*(frame_count-4)//frame_count + 1
+                done = False
+                while not done:
+                    try:
+                        loader = accelerator.prepare(
+                            build_dataloader(train_list,
+                                             root_path,
+                                             OOD_data=OOD_data,
+                                             min_length=min_length,
+                                             batch_size=batch_size,
+                                             num_workers=8,
+                                             dataset_config={},
+                                             device=device,
+                                             frame_count=frame_count))
+                        print("Attempting %d/%d @ %d"
+                              % (frame_count, train_bin_count*4 + 20 + 4,
+                                 batch_size))
+                        for _, batch in enumerate(loader):
+                            _, _ = train_batch(0, batch, 0, 0)
+                            break
+                        if counting_up and batch_size < 99:
+                            batch_size += 1
+                        else:
+                            batch_dict[str(i)] = batch_size
+                            done = True
+                    except Exception as e:
+                        print("Probe failed", e)
+                        import gc
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        counting_up = False
+                        batch_size -= 1
+            with open(batch_file, "w") as o:
+                json.dump(batch_dict, o)
+            quit()
+        else:
+            train_count = 0
+            random.shuffle(train_dataloader_list)
+            for i in range(len(train_dataloader_list)):
+                train_dataloader = train_dataloader_list[i]
+                for _, batch in enumerate(train_dataloader):
+                    try:
+                        running_loss, iters = train_batch(train_count, batch, running_loss, iters)
+                    except Exception as e:
+                        log_print("TRAIN_BATCH EXCEPTION: " + str(e), logger)
+                        try:
+                            import gc
+                            gc.collect()
+                            torch.cuda.empty_cache()
+                            running_loss, iters = train_batch(train_count, batch, running_loss, iters)
+                        except Exception as e:
+                            log_print("TRAIN BATCH EXCEPTION RETRY: " + str(e), logger)
+                    train_count += 1
+                    if quick_test:
+                        print('Quick Test: %d/%d'
+                              % (i, len(train_dataloader_list)))
+                        break
 
         loss_test = 0
         max_len = 1620

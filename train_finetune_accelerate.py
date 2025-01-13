@@ -402,7 +402,9 @@ def main(config_path):
             st = torch.stack(st).detach()
             
             
-            if gt.size(-1) < 80:
+            if (gt.shape[-1] < 20
+                or (gt.shape[-1] < 80
+                    and not model_params.skip_downsamples):
                 return running_loss, iters
             
             s = model.style_encoder(gt.unsqueeze(1))           

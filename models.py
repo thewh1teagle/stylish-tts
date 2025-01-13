@@ -137,7 +137,8 @@ class ResBlk(nn.Module):
         return x / math.sqrt(2)  # unit variance
 
 class StyleEncoder(nn.Module):
-    def __init__(self, dim_in=48, style_dim=48, max_conv_dim=384):
+    def __init__(self, dim_in=48, style_dim=48, max_conv_dim=384,
+                 skip_downsamples = False):
         super().__init__()
         blocks = []
         blocks += [spectral_norm(nn.Conv2d(1, dim_in, 3, 1, 1))]
@@ -146,7 +147,7 @@ class StyleEncoder(nn.Module):
         for i in range(repeat_num):
             dim_out = min(dim_in*2, max_conv_dim)
             down = 'half'
-            if i % 2 == 1:
+            if i % 2 == 1 and skip_downsamples:
                 down = 'none'
             blocks += [ResBlk(dim_in, dim_out, downsample=down)]
             dim_in = dim_out
@@ -655,8 +656,8 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     
     predictor = ProsodyPredictor(style_dim=args.style_dim, d_hid=args.hidden_dim, nlayers=args.n_layer, max_dur=args.max_dur, dropout=args.dropout)
     
-    style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim) # acoustic style encoder
-    predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim) # prosodic style encoder
+    style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim, skip_downsamples=args.skip_downsamples) # acoustic style encoder
+    predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim, skip_downsamples=args.skip_downsamples) # prosodic style encoder
         
     # define diffusion model
     if args.multispeaker:
