@@ -270,7 +270,7 @@ def main(config_path, probe_batch):
             # clip too short to be used by the style encoder
             if (gt.shape[-1] < 20
                 or (gt.shape[-1] < 80
-                    and not model_params.skip_downsamples):
+                    and not model_params.skip_downsamples)):
                 return running_loss, iters
                 
             with torch.no_grad():    

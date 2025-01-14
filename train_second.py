@@ -394,7 +394,7 @@ def main(config_path):
             
            if (gt.shape[-1] < 20
                or (gt.shape[-1] < 80
-                    and not model_params.skip_downsamples):
+                    and not model_params.skip_downsamples)):
                return running_loss, iters
 
             s_dur = model.predictor_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
