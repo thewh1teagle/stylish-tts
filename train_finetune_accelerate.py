@@ -111,8 +111,8 @@ def main(config_path):
             "%s/list-%d.txt" % (train_path, i))
         if len(train_list) == 0:
             continue
-        # Bins are size 20, they start at frame 80, and the clips are padded to 40 past the start
-        frame_count = i*20 + 80 + 40
+        # Bins are size 4, they start at frame 20, and the clips are padded to 34 past the start
+        frame_count = i*4 + 20 + 34
         batch_size = max_frame_batch // frame_count
         train_max += len(train_list) // batch_size
         train_total_steps += len(train_list)

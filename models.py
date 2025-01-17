@@ -147,7 +147,7 @@ class StyleEncoder(nn.Module):
         for i in range(repeat_num):
             dim_out = min(dim_in*2, max_conv_dim)
             down = 'half'
-            if i % 2 == 1 and skip_downsamples:
+            if i == repeat_num - 1 and skip_downsamples:
                 down = 'none'
             blocks += [ResBlk(dim_in, dim_out, downsample=down)]
             dim_in = dim_out

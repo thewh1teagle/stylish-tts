@@ -103,14 +103,14 @@ def main(config_path, probe_batch):
         for i in range(train_bin_count):
             train_list = get_data_path_list(
                 "%s/list-%d.txt" % (train_path, i))
-            # Bins are size 4, they start at frame 20, and the clips are padded to 4 past the start
-            frame_count = i*4 + 20 + 4
+            # Bins are size 4, they start at frame 20, and the clips are padded to 34 past the start
+            frame_count = i*4 + 20 + 34
             batch_size = 1
             #batch_size = max_frame_batch // frame_count
             if str(i) in batch_dict:
                 batch_size = batch_dict[str(i)]
                 if batch_size > 10:
-                    batch_size = int(batch_size*0.9) # Bit more margin
+                    batch_size = int(batch_size*0.8) # Bit more margin
             train_max += len(train_list)//batch_size
             train_total_steps += len(train_list)
             train_dataloader_list.append(
@@ -268,9 +268,10 @@ def main(config_path, probe_batch):
             wav = torch.stack(wav).float().detach()
 
             # clip too short to be used by the style encoder
-            if (gt.shape[-1] < 20
+            if (gt.shape[-1] < 40
                 or (gt.shape[-1] < 80
                     and not model_params.skip_downsamples)):
+                log_print("Skipping batch. TOO SHORT", logger)
                 return running_loss, iters
                 
             with torch.no_grad():    
