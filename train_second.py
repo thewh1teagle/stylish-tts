@@ -16,7 +16,7 @@ import warnings
 warnings.simplefilter('ignore')
 from torch.utils.tensorboard import SummaryWriter
 
-from meldataset import build_dataloader
+from meldataset import build_dataloader, BatchManager
 
 from Utils.ASR.models import ASRCNN
 from Utils.JDC.model import JDCNet
@@ -50,7 +50,8 @@ logger.addHandler(handler)
 
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config.yml', type=str)
-def main(config_path):
+@click.option('--probe_batch/--no-probe_batch', default=False)
+def main(config_path, probe_batch):
     config = yaml.safe_load(open(config_path))
     
     log_dir = config['log_dir']
@@ -78,9 +79,6 @@ def main(config_path):
     min_length = data_params['min_length']
     OOD_data = data_params['OOD_data']
 
-    max_frame_batch = config.get('max_len')
-    quick_test = config.get('quick_test', False)
-    
     loss_params = Munch(config['loss_params'])
     diff_epoch = loss_params.diff_epoch
     joint_epoch = loss_params.joint_epoch
@@ -99,40 +97,18 @@ def main(config_path):
                                       num_workers=0,
                                       device=device,
                                       dataset_config={})
-
-    train_dataloader_list = []
-    train_max = 0
-    train_total_steps = 0
-    most_data_index = None
-    most_data_size = 0
-    for i in range(train_bin_count):
-        train_list = get_data_path_list(
-            "%s/list-%d.txt" % (train_path, i))
-        if len(train_list) == 0:
-            continue
-        # Bins are size 20, they start at frame 20, and the clips are padded to 34 past the start
-        frame_count = i*4 + 20 + 34
-        batch_size = max_frame_batch // frame_count
-        if batch_size*frame_count > most_data_size:
-            most_data_index = i
-        train_max += len(train_list)//batch_size
-        train_total_steps += len(train_list)
-        train_dataloader_list.append(
-            build_dataloader(train_list,
-                             root_path,
-                             OOD_data=OOD_data,
-                             min_length=min_length,
-                             batch_size=batch_size,
-                             num_workers=8,
-                             dataset_config={},
-                             device=device,
-                             frame_count=frame_count))
-
-    most_dataloader = None
-    if most_data_index is not None:
-        most_dataloader = train_dataloader_list[most_data_index]
-        train_dataloader_list = (train_dataloader_list[:most_data_index]
-                                 + train_dataloader_list[most_data_index+1:])
+    def log_print_function(s):
+        log_print(s, logger)
+    batch_manager = BatchManager(train_bin_count, train_path,
+                                 log_dir,
+                                 probe_batch=probe_batch,
+                                 root_path=root_path,
+                                 OOD_data=OOD_data,
+                                 min_length=min_length,
+                                 device=device,
+                                 accelerator=None,
+                                 log_print=log_print_function)
+    
     # load pretrained ASR model
     ASR_config = config.get('ASR_config', False)
     ASR_path = config.get('ASR_path', False)
@@ -147,6 +123,8 @@ def main(config_path):
     plbert = load_plbert(BERT_path)
     
     # build model
+    if 'skip_downsamples' not in config['model_params']:
+        config['model_params']['skip_downsamples'] = False
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
@@ -157,7 +135,7 @@ def main(config_path):
         if key != "mpd" and key != "msd" and key != "wd":
             model[key] = MyDataParallel(model[key])
             
-    start_epoch = 0
+    start_epoch = 1
     iters = 0
 
     load_pretrained = config.get('pretrained_model', '') != '' and config.get('second_stage_load_pretrained', False)
@@ -173,10 +151,10 @@ def main(config_path):
                 ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion']) # keep starting epoch for tensorboard log
 
             # these epochs should be counted from the start epoch
-            diff_epoch += start_epoch
-            joint_epoch += start_epoch
-            epochs += start_epoch
-            
+            #diff_epoch += start_epoch
+            #joint_epoch += start_epoch
+            #epochs += start_epoch
+            start_epoch = 1
             model.predictor_encoder = copy.deepcopy(model.style_encoder)
         else:
             raise ValueError('You need to specify the path to the first stage model.') 
@@ -203,7 +181,7 @@ def main(config_path):
         "max_lr": optimizer_params.lr,
         "pct_start": float(0),
         "epochs": epochs,
-        "steps_per_epoch": train_total_steps,
+        "steps_per_epoch": batch_manager.train_total_steps,
     }
     scheduler_params_dict= {key: scheduler_params.copy() for key in model}
     scheduler_params_dict['bert']['max_lr'] = optimizer_params.bert_lr * 2
@@ -234,6 +212,7 @@ def main(config_path):
     if load_pretrained:
         model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
                                     load_only_params=config.get('load_only_params', True))
+        start_epoch += 1
         
     n_down = model.text_aligner.n_down
 
@@ -392,10 +371,11 @@ def main(config_path):
             gt = torch.stack(gt).detach()
             st = torch.stack(st).detach()
             
-           if (gt.shape[-1] < 20
-               or (gt.shape[-1] < 80
+            if (gt.shape[-1] < 40
+                or (gt.shape[-1] < 80
                     and not model_params.skip_downsamples)):
-               return running_loss, iters
+                log_print("Skipping batch. TOO SHORT", logger)
+                return running_loss, iters
 
             s_dur = model.predictor_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
             s = model.style_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
@@ -562,9 +542,9 @@ def main(config_path):
                 
             iters = iters + 1
             
-            if (i+1)%log_interval == 0 and not quick_test:
+            if (i+1)%log_interval == 0:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f'
-                    %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm))
+                    %(epoch, epochs, i+1, batch_manager.train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm))
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -584,20 +564,7 @@ def main(config_path):
                 print('Time elasped:', time.time()-start_time)
             return running_loss, iters
 
-        train_count = 0
-        random.shuffle(train_dataloader_list)
-        if most_dataloader is not None:
-            train_dataloader_list = [most_dataloader] + train_dataloader_list
-            most_dataloader = None
-        for i in range(len(train_dataloader_list)):
-            train_dataloader = train_dataloader_list[i]
-            for _, batch in enumerate(train_dataloader):
-                running_loss, iters = train_batch(train_count, batch, running_loss, iters)
-                train_count += 1
-                if quick_test:
-                    print('Quick Test: %d/%d'
-                          % (i, len(train_dataloader_list)))
-                    break
+        batch_manager.epoch_loop(train_batch)
         
         loss_test = 0
         max_len = 1620
@@ -714,12 +681,12 @@ def main(config_path):
                     traceback.print_exc()
                     continue
 
-        print('Epochs:', epoch + 1)
+        print('Epochs:', epoch)
         logger.info('Validation loss: %.3f, Dur loss: %.3f, F0 loss: %.3f' % (loss_test / iters_test, loss_align / iters_test, loss_f / iters_test) + '\n\n\n')
         print('\n\n\n')
-        writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch + 1)
-        writer.add_scalar('eval/dur_loss', loss_align / iters_test, epoch + 1)
-        writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch + 1)
+        writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch)
+        writer.add_scalar('eval/dur_loss', loss_align / iters_test, epoch)
+        writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch)
         #if epoch < joint_epoch:
         if False:
             # generating reconstruction examples with GT duration
@@ -748,7 +715,7 @@ def main(config_path):
 
                     writer.add_audio('pred/y' + str(bib), y_pred.cpu().numpy().squeeze(1), epoch, sample_rate=sr)
 
-                    if epoch == 0:
+                    if epoch == 1:
                         writer.add_audio('gt/y' + str(bib), waves[bib].squeeze(1), epoch, sample_rate=sr)
 
                     if bib >= 5:
@@ -805,9 +772,6 @@ def main(config_path):
 
                     if bib >= 5:
                         break
-        if quick_test:
-            print("Quick test done")
-            break
             
         if epoch % saving_epoch == 0:
             if (loss_test / iters_test) < best_loss:

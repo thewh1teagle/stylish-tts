@@ -655,7 +655,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     text_encoder = TextEncoder(channels=args.hidden_dim, kernel_size=5, depth=args.n_layer, n_symbols=args.n_token)
     
     predictor = ProsodyPredictor(style_dim=args.style_dim, d_hid=args.hidden_dim, nlayers=args.n_layer, max_dur=args.max_dur, dropout=args.dropout)
-    
+
     style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim, skip_downsamples=args.skip_downsamples) # acoustic style encoder
     predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim, skip_downsamples=args.skip_downsamples) # prosodic style encoder
         

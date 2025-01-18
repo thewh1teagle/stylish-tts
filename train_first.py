@@ -23,7 +23,7 @@ import torchaudio
 import librosa
 
 from models import *
-from meldataset import build_dataloader
+from meldataset import build_dataloader, BatchManager
 from utils import *
 from losses import *
 from optimizers import build_optimizer
@@ -75,10 +75,6 @@ def main(config_path, probe_batch):
     min_length = data_params['min_length']
     OOD_data = data_params['OOD_data']
     
-    max_frame_batch = config.get('max_len')
-    quick_test = config.get('quick_test', False)
-    batch_file = osp.join(log_dir, "batch_sizes.json")
-    
     # load data
     val_list = get_data_path_list(val_path)
     val_dataloader = build_dataloader(val_list,
@@ -90,40 +86,17 @@ def main(config_path, probe_batch):
                                       num_workers=0,
                                       device=device,
                                       dataset_config={})
-
-    train_dataloader_list = []
-    train_max = 0
-    train_total_steps = 1
-    if not probe_batch:
-        train_total_steps = 0
-        batch_dict = {}
-        if osp.isfile(batch_file):
-            with open(batch_file, "r") as batch_input:
-                batch_dict = json.load(batch_input)
-        for i in range(train_bin_count):
-            train_list = get_data_path_list(
-                "%s/list-%d.txt" % (train_path, i))
-            # Bins are size 4, they start at frame 20, and the clips are padded to 34 past the start
-            frame_count = i*4 + 20 + 34
-            batch_size = 1
-            #batch_size = max_frame_batch // frame_count
-            if str(i) in batch_dict:
-                batch_size = batch_dict[str(i)]
-                if batch_size > 10:
-                    batch_size = int(batch_size*0.8) # Bit more margin
-            train_max += len(train_list)//batch_size
-            train_total_steps += len(train_list)
-            train_dataloader_list.append(
-                build_dataloader(train_list,
-                                 root_path,
+    def log_print_function(s):
+        log_print(s, logger)
+    batch_manager = BatchManager(train_bin_count, train_path,
+                                 log_dir,
+                                 probe_batch=probe_batch,
+                                 root_path=root_path,
                                  OOD_data=OOD_data,
                                  min_length=min_length,
-                                 batch_size=batch_size,
-                                 num_workers=16,
-                                 dataset_config={},
                                  device=device,
-                                 frame_count=frame_count))
-
+                                 accelerator=accelerator,
+                                 log_print=log_print_function)
 
     with accelerator.main_process_first():
         # load pretrained ASR model
@@ -144,9 +117,11 @@ def main(config_path, probe_batch):
         "max_lr": float(config['optimizer_params'].get('lr', 1e-4)),
         "pct_start": float(config['optimizer_params'].get('pct_start', 0.0)),
         "epochs": epochs,
-        "steps_per_epoch": train_total_steps,
+        "steps_per_epoch": batch_manager.train_total_steps,
     }
     
+    if 'skip_downsamples' not in config['model_params']:
+        config['model_params']['skip_downsamples'] = False
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
@@ -162,8 +137,6 @@ def main(config_path, probe_batch):
         model[k] = accelerator.prepare(model[k])
     
     val_dataloader = accelerator.prepare(val_dataloader)
-    if not probe_batch:
-        train_dataloader_list = [accelerator.prepare(loader) for loader in train_dataloader_list]
     
     _ = [model[key].to(device) for key in model]
 
@@ -337,7 +310,7 @@ def main(config_path, probe_batch):
 
             if (i+1)%log_interval == 0 and accelerator.is_main_process and not quick_test:
                 log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
-                        %(epoch, epochs, i+1, train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
+                        %(epoch, epochs, i+1, batch_manager.train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -351,76 +324,7 @@ def main(config_path, probe_batch):
                 print('Time elasped:', time.time()-start_time)
             return running_loss, iters
 
-        if probe_batch:
-            batch_dict = {}
-            batch_size = None
-            counting_up = True
-            for i in range(train_bin_count):
-                train_list = get_data_path_list(
-                    "%s/list-%d.txt" % (train_path, i))
-                if len(train_list) == 0:
-                    continue
-                frame_count = i*4 + 20 + 4
-                if batch_size is None:
-                    batch_size = min(100, max_frame_batch // frame_count)
-                elif batch_size > 60 and batch_size < 100:
-                    batch_size = batch_size*(frame_count-4)//frame_count + 1
-                done = False
-                while not done:
-                    try:
-                        loader = accelerator.prepare(
-                            build_dataloader(train_list,
-                                             root_path,
-                                             OOD_data=OOD_data,
-                                             min_length=min_length,
-                                             batch_size=batch_size,
-                                             num_workers=8,
-                                             dataset_config={},
-                                             device=device,
-                                             frame_count=frame_count))
-                        print("Attempting %d/%d @ %d"
-                              % (frame_count, train_bin_count*4 + 20 + 4,
-                                 batch_size))
-                        for _, batch in enumerate(loader):
-                            _, _ = train_batch(0, batch, 0, 0)
-                            break
-                        if counting_up and batch_size < 99:
-                            batch_size += 1
-                        else:
-                            batch_dict[str(i)] = batch_size
-                            done = True
-                    except Exception as e:
-                        print("Probe failed", e)
-                        import gc
-                        gc.collect()
-                        torch.cuda.empty_cache()
-                        counting_up = False
-                        batch_size -= 1
-            with open(batch_file, "w") as o:
-                json.dump(batch_dict, o)
-            quit()
-        else:
-            train_count = 0
-            random.shuffle(train_dataloader_list)
-            for i in range(len(train_dataloader_list)):
-                train_dataloader = train_dataloader_list[i]
-                for _, batch in enumerate(train_dataloader):
-                    try:
-                        running_loss, iters = train_batch(train_count, batch, running_loss, iters)
-                    except Exception as e:
-                        log_print("TRAIN_BATCH EXCEPTION: " + str(e), logger)
-                        try:
-                            import gc
-                            gc.collect()
-                            torch.cuda.empty_cache()
-                            running_loss, iters = train_batch(train_count, batch, running_loss, iters)
-                        except Exception as e:
-                            log_print("TRAIN BATCH EXCEPTION RETRY: " + str(e), logger)
-                    train_count += 1
-                    if quick_test:
-                        print('Quick Test: %d/%d'
-                              % (i, len(train_dataloader_list)))
-                        break
+        batch_manager.epoch_loop(train_batch)
 
         loss_test = 0
         max_len = 1620

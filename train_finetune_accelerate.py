@@ -82,7 +82,6 @@ def main(config_path):
     OOD_data = data_params['OOD_data']
 
     max_frame_batch = config.get('max_len')
-    quick_test = config.get('quick_test', False)
     
     loss_params = Munch(config['loss_params'])
     diff_epoch = loss_params.diff_epoch
@@ -142,6 +141,8 @@ def main(config_path):
     plbert = load_plbert(BERT_path)
     
     # build model
+    if 'skip_downsamples' not in config['model_params']:
+        config['model_params']['skip_downsamples'] = False
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
@@ -402,9 +403,10 @@ def main(config_path):
             st = torch.stack(st).detach()
             
             
-            if (gt.shape[-1] < 20
+            if (gt.shape[-1] < 40
                 or (gt.shape[-1] < 80
                     and not model_params.skip_downsamples)):
+                log_print("Skipping batch. TOO SHORT", logger)
                 return running_loss, iters
             
             s = model.style_encoder(gt.unsqueeze(1))           
@@ -565,7 +567,7 @@ def main(config_path):
 
             iters = iters + 1
             
-            if (i+1)%log_interval == 0 and not quick_test:
+            if (i+1)%log_interval == 0:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
                     %(epoch+1, epochs, i+1, train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
                 
@@ -597,10 +599,6 @@ def main(config_path):
                 #torch.cuda.empty_cache()
                 running_loss, iters = train_batch(train_count, batch, running_loss, iters)
                 train_count += 1
-                if quick_test:
-                    print('Quick Test: %d/%d'
-                          % (i, len(train_dataloader_list)))
-                    break
 
         loss_test = 0
         max_len = 1620
@@ -721,10 +719,6 @@ def main(config_path):
         writer.add_scalar('eval/dur_loss', loss_test / iters_test, epoch)
         writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch)
         
-        if quick_test:
-            print("Quick test done")
-            break
-
         if epoch % save_freq == 0 :
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test

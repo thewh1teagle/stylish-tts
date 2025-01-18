@@ -7,6 +7,8 @@ import numpy as np
 import random
 import soundfile as sf
 import librosa
+import gc
+import json
 
 import torch
 from torch import nn
@@ -15,6 +17,7 @@ import torchaudio
 from torch.utils.data import DataLoader
 
 import logging
+import utils
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -268,3 +271,154 @@ def build_dataloader(path_list,
 
     return data_loader
 
+class BatchManager:
+    def __init__(self, train_bin_count, train_path, log_dir,
+                 probe_batch=False, root_path="", OOD_data=[],
+                 min_length=50, device="cpu",
+                 accelerator=None, log_print=None):
+        self.train_bin_count = train_bin_count
+        self.train_path = train_path
+        self.train_max = 0
+        self.train_total_steps = 1
+        self.probe_batch = probe_batch
+        self.batch_dict = {}
+        self.log_dir = log_dir
+
+        self.root_path = root_path
+        self.OOD_data = OOD_data
+        self.min_length = min_length
+        self.device = device
+        self.accelerator = accelerator
+        self.log_print = log_print
+
+        if not self.probe_batch:
+            self.init_for_training()
+
+    def build_loader(self, train_list, batch_size, frame_count):
+        loader = build_dataloader(train_list,
+                                  self.root_path,
+                                  OOD_data=self.OOD_data,
+                                  min_length=self.min_length,
+                                  batch_size=batch_size,
+                                  num_workers=16,
+                                  dataset_config={},
+                                  device=self.device,
+                                  frame_count=frame_count)
+        if self.accelerator is not None:
+            return self.accelerator.prepare(loader)
+        else:
+            return loader
+    
+    def init_for_training(self):
+        batch_file = osp.join(self.log_dir, "batch_sizes.json")
+        if osp.isfile(batch_file):
+            with open(batch_file, "r") as batch_input:
+                self.batch_dict = json.load(batch_input)
+        
+        for i in range(self.train_bin_count):
+            train_list = utils.get_data_path_list(
+                "%s/list-%d.txt" % (self.train_path, i))
+            frame_count = get_frame_count(i)
+            batch_size = self.get_batch_size(i)
+            self.train_max += len(train_list)//batch_size
+            self.train_total_steps += len(train_list)
+
+    def get_batch_size(self, i):
+        batch_size = 1
+        if str(i) in self.batch_dict:
+            batch_size = self.batch_dict[str(i)]
+        return batch_size
+
+    def set_batch_size(self, i, batch_size):
+        self.batch_dict[str(i)] = batch_size
+
+    def save_batch_dict(self):
+        batch_file = osp.join(self.log_dir, "batch_sizes.json")
+        with open(batch_file, "w") as o:
+            json.dump(self.batch_dict, o)
+
+    def epoch_loop(self, train_batch):
+        if self.probe_batch:
+            self.probe_loop(train_batch)
+        else:
+            self.train_loop(train_batch)
+
+    def probe_loop(self, train_batch):
+        self.batch_dict = {}
+        batch_size = 100
+        for i in range(self.train_bin_count):
+            train_list = utils.get_data_path_list(
+                "%s/list-%d.txt" % (self.train_path, i))
+            if len(train_list) < 2:
+                self.batch_dict[str(i)] = 0
+                continue
+            frame_count = get_frame_count(i)
+            done = False
+            while not done:
+                try:
+                    if batch_size > 0:
+                        loader = self.build_loader(train_list,
+                                                   batch_size,
+                                                   frame_count)
+                        print("Attempting %d/%d @ %d"
+                              % (frame_count,
+                                 get_frame_count(self.train_bin_count),
+                                 batch_size))
+                        for _, batch in enumerate(loader):
+                            _, _ = train_batch(0, batch, 0, 0)
+                            break
+                    self.set_batch_size(i, batch_size)
+                    
+                    done = True
+                except Exception as e:
+                    print("Probe failed", e)
+                    import gc
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    counting_up = False
+                    batch_size -= 1
+        self.save_batch_dict()
+        quit()
+
+    def train_loop(self, train_batch):
+        running_loss = 0
+        iters = 0
+        train_count = 0
+        bin_list = random.sample(range(self.train_bin_count),
+                                 self.train_bin_count)
+        for i in bin_list:
+            train_list = utils.get_data_path_list(
+                "%s/list-%d.txt" % (self.train_path, i))
+            if len(train_list) < 2:
+                print("Skipping bin ", i, " (too short or doesn't exits)")
+                continue
+            batch_size = self.get_batch_size(i)
+            if batch_size == 0:
+                print("Skipping bin ", i, " (batch_size 0)")
+            frame_count = get_frame_count(i)
+            #print("Training bin %d (%d frames) @ batch_size %d"
+            #      % (i, frame_count, batch_size))
+            loader = self.build_loader(train_list,
+                                       batch_size,
+                                       frame_count)
+            for _, batch in enumerate(loader):
+                try:
+                    running_loss, iters = train_batch(
+                        train_count, batch, running_loss, iters)
+                except Exception as e:
+                    if "CUDA out of memory" in str(e):
+                        self.log_print("TRAIN_BATCH OOM ("
+                                       + str(i) + ") @ batch_size "
+                                       + str(batch_size))
+                        batch_size -= 1
+                        self.set_batch_size(i, batch_size)
+                        self.save_batch_dict()
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        break
+                    else:
+                        raise e
+                train_count += 1
+
+def get_frame_count(i):
+    return i*4 + 20 + 34
