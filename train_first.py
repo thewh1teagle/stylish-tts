@@ -308,7 +308,7 @@ def main(config_path, probe_batch):
             
             iters = iters + 1
 
-            if (i+1)%log_interval == 0 and accelerator.is_main_process and not quick_test:
+            if (i+1)%log_interval == 0 and accelerator.is_main_process:
                 log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
                         %(epoch, epochs, i+1, batch_manager.train_max, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
                 
@@ -417,9 +417,6 @@ def main(config_path, probe_batch):
                     
                     if bib >= 6:
                         break
-            if quick_test:
-                print("Quick test done")
-                break
 
             if epoch % saving_epoch == 0:
                 if (loss_test / iters_test) < best_loss:
@@ -435,7 +432,7 @@ def main(config_path, probe_batch):
                 save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
                 torch.save(state, save_path)
                                 
-    if accelerator.is_main_process and not quick_test:
+    if accelerator.is_main_process:
         print('Saving..')
         state = {
             'net':  {key: model[key].state_dict() for key in model}, 
