@@ -50,7 +50,7 @@ logger.addHandler(handler)
 
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config.yml', type=str)
-@click.option('--probe_batch/--no-probe_batch', default=False)
+@click.option('--probe_batch', default=None, type=int)
 def main(config_path, probe_batch):
     config = yaml.safe_load(open(config_path))
     
@@ -73,7 +73,6 @@ def main(config_path, probe_batch):
     data_params = config.get('data_params', None)
     sr = config['preprocess_params'].get('sr', 24000)
     train_path = data_params['train_data']
-    train_bin_count = data_params['train_bin_count']
     val_path = data_params['val_data']
     root_path = data_params['root_path']
     min_length = data_params['min_length']
@@ -92,14 +91,14 @@ def main(config_path, probe_batch):
                                       root_path,
                                       OOD_data=OOD_data,
                                       min_length=min_length,
-                                      batch_size=1,
+                                      batch_size={},
                                       validation=True,
                                       num_workers=0,
                                       device=device,
                                       dataset_config={})
     def log_print_function(s):
         log_print(s, logger)
-    batch_manager = BatchManager(train_bin_count, train_path,
+    batch_manager = BatchManager(train_path,
                                  log_dir,
                                  probe_batch=probe_batch,
                                  root_path=root_path,
@@ -181,7 +180,7 @@ def main(config_path, probe_batch):
         "max_lr": optimizer_params.lr,
         "pct_start": float(0),
         "epochs": epochs,
-        "steps_per_epoch": batch_manager.train_total_steps,
+        "steps_per_epoch": batch_manager.get_step_count(),
     }
     scheduler_params_dict= {key: scheduler_params.copy() for key in model}
     scheduler_params_dict['bert']['max_lr'] = optimizer_params.bert_lr * 2
@@ -544,7 +543,7 @@ def main(config_path, probe_batch):
             
             if (i+1)%log_interval == 0:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f'
-                    %(epoch, epochs, i+1, batch_manager.train_max, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm))
+                    %(epoch, epochs, i+1, batch_manager.get_step_count(), running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm))
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -564,7 +563,7 @@ def main(config_path, probe_batch):
                 print('Time elasped:', time.time()-start_time)
             return running_loss, iters
 
-        batch_manager.epoch_loop(train_batch)
+        batch_manager.epoch_loop(epoch, train_batch)
         
         loss_test = 0
         max_len = 1620

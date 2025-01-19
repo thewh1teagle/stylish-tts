@@ -14,7 +14,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import torchaudio
-from torch.utils.data import DataLoader
+import torch.utils.data
+import torch.distributed as dist
 
 import logging
 import utils
@@ -77,7 +78,6 @@ class FilePathDataset(torch.utils.data.Dataset):
                  validation=False,
                  OOD_data="Data/OOD_texts.txt",
                  min_length=50,
-                 frame_count=None,
                  ):
 
         spect_params = SPECT_PARAMS
@@ -103,7 +103,19 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.ptexts = [t.split('|')[idx] for t in tl]
         
         self.root_path = root_path
-        self.frame_count = frame_count
+
+    def sample_lengths(self):
+        print("Calculating sample lengths")
+        result = []
+        for data in self.data_list:
+            wave_path = data[0]
+            wave, sr = sf.read(osp.join(self.root_path, wave_path))
+            wave_len = wave.shape[0]
+            if sr != 24000:
+                wave_len *= 24000/sr
+            result.append(wave_len)
+        print("Finished sample lengths")
+        return result
 
     def __len__(self):
         return len(self.data_list)
@@ -149,9 +161,11 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         pad_start = 5000
         pad_end = 5000
-        if self.frame_count is not None:
-            pad_start = (self.frame_count*300 - wave.shape[0]) // 2
-            pad_end = self.frame_count*300 - wave.shape[0] - pad_start
+        time_bin = get_time_bin(wave.shape[0])
+        if time_bin != -1:
+            frame_count = get_frame_count(time_bin)
+            pad_start = (frame_count*300 - wave.shape[0]) // 2
+            pad_end = frame_count*300 - wave.shape[0] - pad_start
         wave = np.concatenate([np.zeros([pad_start]), wave, np.zeros([pad_end])], axis=0)
         
         text = self.text_cleaner(text)
@@ -252,76 +266,162 @@ def build_dataloader(path_list,
                      validation=False,
                      OOD_data="Data/OOD_texts.txt",
                      min_length=50,
-                     batch_size=4,
+                     batch_size={},
                      num_workers=1,
                      device='cpu',
                      collate_config={},
                      dataset_config={},
-                     frame_count = None):
+                     probe_batch = False):
     
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, frame_count=frame_count, **dataset_config)
+    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
     collate_fn = Collater(**collate_config)
-    data_loader = DataLoader(dataset,
-                             batch_size=min(batch_size, len(dataset)),
-                             shuffle=(not validation),
+    drop_last = not validation and probe_batch is not None
+    data_loader = torch.utils.data.DataLoader(dataset,
+                             #batch_size=min(batch_size, len(dataset)),
+                             #shuffle=(not validation),
                              num_workers=num_workers,
-                             drop_last=(not validation),
+                             batch_sampler=DynamicBatchSampler(
+                                 dataset.sample_lengths(),
+                                 batch_size,
+                                 shuffle=(not validation),
+                                 drop_last=drop_last,
+                                 num_replicas=1, rank=0),
+                             #drop_last=(not validation),
                              collate_fn=collate_fn,
                              pin_memory=(device != 'cpu'))
 
     return data_loader
 
+class DynamicBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, sample_lengths, batch_sizes,
+                 num_replicas = None, rank = None,
+                 shuffle = True, seed = 0, drop_last = False):
+        self.batch_sizes = batch_sizes
+        if num_replicas is None:
+            self.num_replicas = dist.get_world_size()
+        else:
+            self.num_replicas = num_replicas
+        if rank is None:
+            self.rank = dist.get_rank()
+        else:
+            self.rank = rank
+        self.shuffle = shuffle
+        self.seed = seed
+        self.drop_last = drop_last
+
+        self.time_bins = {}
+        self.epoch = 0
+        self.total_len = 0
+        self.last_bin = None
+        self.force_bin = None
+        self.force_batch_size = None
+
+        for i in range(len(sample_lengths)):
+            bin_num = get_time_bin(sample_lengths[i])
+            if bin_num != -1:
+                if bin_num not in self.time_bins:
+                    self.time_bins[bin_num] = []
+                self.time_bins[bin_num].append(i)
+
+        total = 0
+        for key in self.time_bins.keys():
+            total += len(self.time_bins[key])
+        for key in self.time_bins.keys():
+            val = self.time_bins[key]
+            total_batch = self.get_batch_size(key) * num_replicas
+            self.total_len += len(val) // total_batch
+            if not self.drop_last and len(val) % total_batch != 0:
+                self.total_len += 1
+
+    def __iter__(self):
+        sampler_order = list(self.time_bins.keys())
+        sampler_indices = []
+        if self.force_bin is not None:
+            sampler_order = [self.force_bin]
+            sampler_indices = [0]
+        elif self.shuffle:
+            g = torch.Generator()
+            g.manual_seed(self.seed + self.epoch)
+            sampler_indices = torch.randperm(len(sampler_order),
+                                             generator=g).tolist()
+        else:
+            sampler_indices = list(range(len(sampler_order)))
+
+        for index in sampler_indices:
+            key = sampler_order[index]
+            current_bin = self.time_bins[key]
+            dist = torch.utils.data.distributed.DistributedSampler(
+                current_bin,
+                num_replicas=self.num_replicas,
+                rank=self.rank,
+                shuffle=self.shuffle,
+                seed=self.seed,
+                drop_last=self.drop_last)
+            dist.set_epoch(self.epoch)
+            sampler = torch.utils.data.sampler.BatchSampler(
+                dist,
+                self.get_batch_size(key),
+                self.drop_last)
+            for item_list in sampler:
+                self.last_bin = key
+                yield [current_bin[i] for i in item_list]
+
+    def __len__(self):
+        return self.total_len
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+    def probe_batch(self, new_bin, batch_size):
+        self.force_bin = new_bin
+        if len(self.time_bins[new_bin]) < batch_size:
+            batch_size = len(self.time_bins[new_bin])
+        self.force_batch_size = batch_size
+        return batch_size
+
+    def get_batch_size(self, key):
+        result = 1
+        if self.force_batch_size is not None:
+            result = self.force_batch_size
+        elif str(key) in self.batch_sizes:
+            result = self.batch_sizes[str(key)]
+        return result
+
 class BatchManager:
-    def __init__(self, train_bin_count, train_path, log_dir,
-                 probe_batch=False, root_path="", OOD_data=[],
+    def __init__(self, train_path, log_dir,
+                 probe_batch=None, root_path="", OOD_data=[],
                  min_length=50, device="cpu",
                  accelerator=None, log_print=None):
-        self.train_bin_count = train_bin_count
         self.train_path = train_path
-        self.train_max = 0
-        self.train_total_steps = 1
         self.probe_batch = probe_batch
-        self.batch_dict = {}
         self.log_dir = log_dir
-
-        self.root_path = root_path
-        self.OOD_data = OOD_data
-        self.min_length = min_length
-        self.device = device
-        self.accelerator = accelerator
         self.log_print = log_print
 
-        if not self.probe_batch:
-            self.init_for_training()
-
-    def build_loader(self, train_list, batch_size, frame_count):
-        loader = build_dataloader(train_list,
-                                  self.root_path,
-                                  OOD_data=self.OOD_data,
-                                  min_length=self.min_length,
-                                  batch_size=batch_size,
-                                  num_workers=16,
-                                  dataset_config={},
-                                  device=self.device,
-                                  frame_count=frame_count)
-        if self.accelerator is not None:
-            return self.accelerator.prepare(loader)
-        else:
-            return loader
-    
-    def init_for_training(self):
-        batch_file = osp.join(self.log_dir, "batch_sizes.json")
-        if osp.isfile(batch_file):
-            with open(batch_file, "r") as batch_input:
-                self.batch_dict = json.load(batch_input)
-        
-        for i in range(self.train_bin_count):
-            train_list = utils.get_data_path_list(
-                "%s/list-%d.txt" % (self.train_path, i))
-            frame_count = get_frame_count(i)
-            batch_size = self.get_batch_size(i)
-            self.train_max += len(train_list)//batch_size
-            self.train_total_steps += len(train_list)
+        self.batch_dict = {}
+        if self.probe_batch is None:
+            batch_file = osp.join(self.log_dir, "batch_sizes.json")
+            if osp.isfile(batch_file):
+                with open(batch_file, "r") as batch_input:
+                    self.batch_dict = json.load(batch_input)
+        train_list = utils.get_data_path_list(self.train_path)
+        if len(train_list) == 0:
+            print("Could not open train_list", self.train_path)
+            exit()
+        self.loader = build_dataloader(train_list,
+                                       root_path,
+                                       OOD_data=OOD_data,
+                                       min_length=min_length,
+                                       batch_size=self.batch_dict,
+                                       num_workers=16,
+                                       dataset_config={},
+                                       device=device,
+                                       probe_batch=probe_batch)
+        if accelerator is not None:
+            accelerator.even_batches = False
+            self.loader = accelerator.prepare(self.loader)
+            
+    def get_step_count(self):
+        return len(self.loader.batch_sampler)
 
     def get_batch_size(self, i):
         batch_size = 1
@@ -337,88 +437,77 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, train_batch):
-        if self.probe_batch:
+    def epoch_loop(self, epoch, train_batch):
+        if self.probe_batch is not None:
             self.probe_loop(train_batch)
         else:
-            self.train_loop(train_batch)
+            self.train_loop(epoch, train_batch)
 
     def probe_loop(self, train_batch):
         self.batch_dict = {}
-        batch_size = 100
-        for i in range(self.train_bin_count):
-            train_list = utils.get_data_path_list(
-                "%s/list-%d.txt" % (self.train_path, i))
-            if len(train_list) < 2:
-                self.batch_dict[str(i)] = 0
-                continue
-            frame_count = get_frame_count(i)
+        batch_size = self.probe_batch
+        sampler = self.loader.batch_sampler
+        time_keys = sorted(list(sampler.time_bins.keys()))
+        max_frame_size = get_frame_count(time_keys[-1])
+        for key in time_keys:
+            frame_count = get_frame_count(key)
             done = False
             while not done:
                 try:
                     if batch_size > 0:
-                        loader = self.build_loader(train_list,
-                                                   batch_size,
-                                                   frame_count)
                         print("Attempting %d/%d @ %d"
-                              % (frame_count,
-                                 get_frame_count(self.train_bin_count),
+                              % (frame_count, max_frame_size,
                                  batch_size))
-                        for _, batch in enumerate(loader):
+                        #sampler.set_epoch(0)
+                        real_size = sampler.probe_batch(key, batch_size)
+                        for _, batch in enumerate(self.loader):
                             _, _ = train_batch(0, batch, 0, 0)
                             break
-                    self.set_batch_size(i, batch_size)
-                    
+                    self.set_batch_size(key, real_size)
                     done = True
                 except Exception as e:
-                    print("Probe failed", e)
-                    import gc
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    counting_up = False
-                    batch_size -= 1
+                    if "CUDA out of memory" in str(e):
+                        print("Probe saw OOM -- backing off")
+                        import gc
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        counting_up = False
+                        batch_size -= 1
+                    else:
+                        raise e
         self.save_batch_dict()
         quit()
 
-    def train_loop(self, train_batch):
+    def train_loop(self, epoch, train_batch):
         running_loss = 0
         iters = 0
-        train_count = 0
-        bin_list = random.sample(range(self.train_bin_count),
-                                 self.train_bin_count)
-        for i in bin_list:
-            train_list = utils.get_data_path_list(
-                "%s/list-%d.txt" % (self.train_path, i))
-            if len(train_list) < 2:
-                print("Skipping bin ", i, " (too short or doesn't exits)")
-                continue
-            batch_size = self.get_batch_size(i)
-            if batch_size == 0:
-                print("Skipping bin ", i, " (batch_size 0)")
-            frame_count = get_frame_count(i)
-            #print("Training bin %d (%d frames) @ batch_size %d"
-            #      % (i, frame_count, batch_size))
-            loader = self.build_loader(train_list,
-                                       batch_size,
-                                       frame_count)
-            for _, batch in enumerate(loader):
-                try:
-                    running_loss, iters = train_batch(
-                        train_count, batch, running_loss, iters)
-                except Exception as e:
-                    if "CUDA out of memory" in str(e):
-                        self.log_print("TRAIN_BATCH OOM ("
-                                       + str(i) + ") @ batch_size "
-                                       + str(batch_size))
-                        batch_size -= 1
-                        self.set_batch_size(i, batch_size)
-                        self.save_batch_dict()
-                        gc.collect()
-                        torch.cuda.empty_cache()
-                        break
-                    else:
-                        raise e
-                train_count += 1
+        sampler = self.loader.batch_sampler
+        #sampler.set_epoch(epoch)
+        for i, batch in enumerate(self.loader):
+            try:
+                running_loss, iters = train_batch(
+                    i, batch, running_loss, iters)
+            except Exception as e:
+                batch_size = self.get_batch_size(sampler.last_bin)
+                if "CUDA out of memory" in str(e):
+                    self.log_print("TRAIN_BATCH OOM ("
+                                   + str(sampler.last_bin)
+                                   + ") @ batch_size "
+                                   + str(batch_size))
+                    batch_size -= 1
+                    self.set_batch_size(sampler.last_bin, batch_size)
+                    self.save_batch_dict()
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                else:
+                    raise e
 
 def get_frame_count(i):
-    return i*4 + 20 + 34
+    return i*20 + 20 + 40
+
+def get_time_bin(sample_count):
+    result = -1
+    frames = sample_count // 300
+    if frames >= 20:
+        result = (frames - 20) // 20
+    return result
