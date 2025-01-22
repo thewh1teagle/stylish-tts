@@ -329,9 +329,10 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         for key in self.time_bins.keys():
             val = self.time_bins[key]
             total_batch = self.get_batch_size(key) * num_replicas
-            self.total_len += len(val) // total_batch
-            if not self.drop_last and len(val) % total_batch != 0:
-                self.total_len += 1
+            if total_batch > 0:
+                self.total_len += len(val) // total_batch
+                if not self.drop_last and len(val) % total_batch != 0:
+                    self.total_len += 1
 
     def __iter__(self):
         sampler_order = list(self.time_bins.keys())
@@ -349,6 +350,8 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
 
         for index in sampler_indices:
             key = sampler_order[index]
+            if self.get_batch_size(key) <= 0:
+                continue
             current_bin = self.time_bins[key]
             dist = torch.utils.data.distributed.DistributedSampler(
                 current_bin,
