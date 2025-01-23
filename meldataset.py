@@ -485,6 +485,7 @@ class BatchManager:
         running_loss = 0
         iters = 0
         sampler = self.loader.batch_sampler
+        last_oom = -1
         #sampler.set_epoch(epoch)
         for i, batch in enumerate(self.loader):
             try:
@@ -497,9 +498,11 @@ class BatchManager:
                                    + str(sampler.last_bin)
                                    + ") @ batch_size "
                                    + str(batch_size))
-                    batch_size -= 1
-                    self.set_batch_size(sampler.last_bin, batch_size)
-                    self.save_batch_dict()
+                    if last_oom != sampler.last_bin:
+                        last_oom = sampler.last_bin
+                        batch_size -= 1
+                        self.set_batch_size(sampler.last_bin, batch_size)
+                        self.save_batch_dict()
                     gc.collect()
                     torch.cuda.empty_cache()
                 else:
