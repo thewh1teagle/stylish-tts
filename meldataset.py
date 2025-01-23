@@ -60,7 +60,7 @@ MEL_PARAMS = {
 }
 
 to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000)
+    n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
 mean, std = -4, 4
 
 def preprocess(wave):
