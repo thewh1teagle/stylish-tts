@@ -561,7 +561,7 @@ def main(config_path, probe_batch):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
-            optimizer.scheduler()
+            #optimizer.scheduler()
             return running_loss, iters
 
         batch_manager.epoch_loop(epoch, train_batch)
