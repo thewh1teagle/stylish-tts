@@ -475,7 +475,8 @@ class BatchManager:
                         gc.collect()
                         torch.cuda.empty_cache()
                         counting_up = False
-                        batch_size -= 1
+                        if batch_size > 1:
+                            batch_size -= 1
                     else:
                         raise e
         self.save_batch_dict()
