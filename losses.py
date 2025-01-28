@@ -92,7 +92,16 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         sc_loss /= len(self.stft_losses)
 
         return sc_loss
-    
+
+def magphase_loss(mag, phase, gt):
+    result = 0.
+    if mag is not None and phase is not None:
+        y_stft = torch.stft(gt, n_fft=20, hop_length=5, win_length=20, return_complex=True)
+        target_mag = torch.abs(y_stft)
+        target_phase = torch.angle(y_stft)
+        result = (torch.nn.functional.l1_loss(mag, target_mag)
+                  + torch.nn.functional.l1_loss(phase, target_phase))
+    return result
     
 def feature_loss(fmap_r, fmap_g):
     loss = 0

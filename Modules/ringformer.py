@@ -400,7 +400,7 @@ class Generator(torch.nn.Module):
         spec = torch.exp(x[:,:self.post_n_fft // 2 + 1, :])
         phase = torch.sin(x[:, self.post_n_fft // 2 + 1:, :])
         out = self.stft.inverse(spec, phase).to(x.device)
-        return out#, spec, phase
+        return out, spec, phase
 
 
     def remove_weight_norm(self):
@@ -528,7 +528,7 @@ class Decoder(nn.Module):
             if block.upsample_type != "none":
                 res = False
                 
-        x = self.generator(x, s, F0_curve)
-        return x
+        x, mag, phase = self.generator(x, s, F0_curve)
+        return x, mag, phase
     
     

@@ -525,6 +525,6 @@ class Decoder(nn.Module):
                 res = False
                 
         x = self.generator(x, s, F0_curve)
-        return x
+        return x, None, None
     
     

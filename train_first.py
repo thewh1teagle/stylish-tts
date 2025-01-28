@@ -252,7 +252,7 @@ def main(config_path, probe_batch):
                 
             s = model.style_encoder(st.unsqueeze(1) if multispeaker else gt.unsqueeze(1))
             
-            y_rec = model.decoder(en, F0_real, real_norm, s)
+            y_rec, mag_rec, phase_rec = model.decoder(en, F0_real, real_norm, s)
             
             # discriminator loss
             
@@ -268,7 +268,7 @@ def main(config_path, probe_batch):
             # generator loss
             optimizer.zero_grad()
             loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
-            
+            loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
             if epoch >= TMA_epoch: # start TMA training
                 loss_s2s = 0
                 for _s2s_pred, _text_input, _text_length in zip(s2s_pred, texts, input_lengths):
@@ -284,14 +284,15 @@ def main(config_path, probe_batch):
                 loss_params.lambda_mono * loss_mono + \
                 loss_params.lambda_s2s * loss_s2s + \
                 loss_params.lambda_gen * loss_gen_all + \
-                loss_params.lambda_slm * loss_slm
+                loss_params.lambda_slm * loss_slm + \
+                1 * loss_magphase
 
             else:
                 loss_s2s = 0
                 loss_mono = 0
                 loss_gen_all = 0
                 loss_slm = 0
-                g_loss = loss_mel
+                g_loss = loss_mel + loss_magphase
             
             running_loss += accelerator.gather(loss_mel).mean().item()
 
@@ -308,8 +309,8 @@ def main(config_path, probe_batch):
             iters = iters + 1
 
             if (i+1)%log_interval == 0 and accelerator.is_main_process:
-                log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
-                        %(epoch, epochs, i+1, batch_manager.get_step_count(), running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
+                log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f, MP Loss: %.5f'
+                        %(epoch, epochs, i+1, batch_manager.get_step_count(), running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm, loss_magphase), logger)
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -317,6 +318,7 @@ def main(config_path, probe_batch):
                 writer.add_scalar('train/mono_loss', loss_mono, iters)
                 writer.add_scalar('train/s2s_loss', loss_s2s, iters)
                 writer.add_scalar('train/slm_loss', loss_slm, iters)
+                writer.add_scalar('train/mp_loss', loss_magphase, iters)
 
                 running_loss = 0
                 
@@ -382,7 +384,7 @@ def main(config_path, probe_batch):
                 F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
                 s = model.style_encoder(gt.unsqueeze(1))
                 real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-                y_rec = model.decoder(en, F0_real, real_norm, s)
+                y_rec, _, _ = model.decoder(en, F0_real, real_norm, s)
 
                 loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
 
@@ -408,7 +410,7 @@ def main(config_path, probe_batch):
                     s = model.style_encoder(gt.unsqueeze(1))
                     real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
                     
-                    y_rec = model.decoder(en, F0_real, real_norm, s)
+                    y_rec, _, _ = model.decoder(en, F0_real, real_norm, s)
                     
                     writer.add_audio('eval/y' + str(bib), y_rec.cpu().numpy().squeeze(), epoch, sample_rate=sr)
                     if epoch == 0:

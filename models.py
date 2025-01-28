@@ -19,7 +19,7 @@ from Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from Modules.diffusion.modules import Transformer1d, StyleTransformer1d
 from Modules.diffusion.diffusion import AudioDiffusionConditional
 
-from Modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
+from Modules.discriminators import MultiPeriodDiscriminator, MultiScaleSubbandCQTDiscriminator, WavLMDiscriminator
 
 from munch import Munch
 import yaml
@@ -705,7 +705,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             pitch_extractor=pitch_extractor,
 
             mpd = MultiPeriodDiscriminator(),
-            msd = MultiResSpecDiscriminator(),
+            msd = MultiScaleSubbandCQTDiscriminator(),
         
             # slm discriminator head
             wd = WavLMDiscriminator(args.slm.hidden, args.slm.nlayers, args.slm.initial_channel),

@@ -696,5 +696,5 @@ class Decoder(nn.Module):
         
         x = self.generator(x, s, F0_curve)
         x = x.unsqueeze(1)
-        return x
+        return x, None, None
     

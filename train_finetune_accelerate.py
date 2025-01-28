@@ -403,13 +403,14 @@ def main(config_path, probe_batch):
                 N_real = log_norm(gt.unsqueeze(1)).squeeze(1)
                 
                 y_rec_gt = wav.unsqueeze(1)
-                y_rec_gt_pred = model.decoder(en, F0_real, N_real, s)
+                y_rec_gt_pred, _, _ = model.decoder(en, F0_real, N_real, s)
 
                 wav = y_rec_gt
 
             F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
 
-            y_rec = model.decoder(en, F0_fake, N_fake, s)
+            y_rec, mag_rec, phase_rec = model.decoder(en, F0_fake, N_fake, s)
+            loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
 
             loss_F0_rec =  (F.smooth_l1_loss(F0_real, F0_fake)) / 10
             loss_norm_rec = F.smooth_l1_loss(N_real, N_fake)
@@ -461,7 +462,8 @@ def main(config_path, probe_batch):
                      loss_params.lambda_sty * loss_sty + \
                      loss_params.lambda_diff * loss_diff + \
                     loss_params.lambda_mono * loss_mono + \
-                    loss_params.lambda_s2s * loss_s2s
+                    loss_params.lambda_s2s * loss_s2s + \
+                    1 * loss_magphase
             
             running_loss += loss_mel.item()
             accelerator.backward(g_loss)
@@ -552,8 +554,8 @@ def main(config_path, probe_batch):
             iters = iters + 1
             
             if (i+1)%log_interval == 0:
-                logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
-                    %(epoch, epochs, i+1, batch_manager.get_step_count(), running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
+                logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f, MP Loss: %.5f'
+                    %(epoch, epochs, i+1, batch_manager.get_step_count(), running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono, loss_magphase))
                 
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
@@ -672,7 +674,7 @@ def main(config_path, probe_batch):
 
                     s = model.style_encoder(gt.unsqueeze(1))
 
-                    y_rec = model.decoder(en, F0_fake, N_fake, s)
+                    y_rec, _, _ = model.decoder(en, F0_fake, N_fake, s)
                     loss_mel = stft_loss(y_rec.squeeze(1), wav.detach())
 
                     F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1)) 
