@@ -1,4 +1,4 @@
-#coding: utf-8
+# coding: utf-8
 import os
 import os.path as osp
 import time
@@ -19,6 +19,7 @@ import torch.distributed as dist
 
 import logging
 import utils
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -26,7 +27,7 @@ import pandas as pd
 
 _pad = "$"
 _punctuation = ';:,.!?¡¿—…"()“” '
-_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
 
 # Export all symbols:
@@ -36,9 +37,11 @@ dicts = {}
 for i in range(len((symbols))):
     dicts[symbols[i]] = i
 
+
 class TextCleaner:
     def __init__(self, dummy=None):
         self.word_index_dictionary = dicts
+
     def __call__(self, text):
         indexes = []
         for char in text:
@@ -48,20 +51,19 @@ class TextCleaner:
                 print("Meld " + char + ": " + text)
         return indexes
 
+
 np.random.seed(1)
 random.seed(1)
-SPECT_PARAMS = {
-    "n_fft": 2048,
-    "win_length": 1200,
-    "hop_length": 300
-}
+SPECT_PARAMS = {"n_fft": 2048, "win_length": 1200, "hop_length": 300}
 MEL_PARAMS = {
     "n_mels": 80,
 }
 
 to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
+    n_mels=80, n_fft=2048, win_length=1200, hop_length=300
+)
 mean, std = -4, 4
+
 
 def preprocess(wave):
     wave_tensor = torch.from_numpy(wave).float()
@@ -69,21 +71,23 @@ def preprocess(wave):
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
 
+
 class FilePathDataset(torch.utils.data.Dataset):
-    def __init__(self,
-                 data_list,
-                 root_path,
-                 sr=24000,
-                 data_augmentation=False,
-                 validation=False,
-                 OOD_data="Data/OOD_texts.txt",
-                 min_length=50,
-                 ):
+    def __init__(
+        self,
+        data_list,
+        root_path,
+        sr=24000,
+        data_augmentation=False,
+        validation=False,
+        OOD_data="Data/OOD_texts.txt",
+        min_length=50,
+    ):
 
         spect_params = SPECT_PARAMS
         mel_params = MEL_PARAMS
         self.cache = {}
-        _data_list = [l.strip().split('|') for l in data_list]
+        _data_list = [l.strip().split("|") for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = TextCleaner()
         self.sr = sr
@@ -95,13 +99,13 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.mean, self.std = -4, 4
         self.data_augmentation = data_augmentation and (not validation)
         self.max_mel_length = 192
-        
+
         self.min_length = min_length
-        with open(OOD_data, 'r', encoding='utf-8') as f:
+        with open(OOD_data, "r", encoding="utf-8") as f:
             tl = f.readlines()
-        idx = 1 if '.wav' in tl[0].split('|')[0] else 0
-        self.ptexts = [t.split('|')[idx] for t in tl]
-        
+        idx = 1 if ".wav" in tl[0].split("|")[0] else 0
+        self.ptexts = [t.split("|")[idx] for t in tl]
+
         self.root_path = root_path
 
     def sample_lengths(self):
@@ -112,7 +116,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave, sr = sf.read(osp.join(self.root_path, wave_path))
             wave_len = wave.shape[0]
             if sr != 24000:
-                wave_len *= 24000/sr
+                wave_len *= 24000 / sr
             result.append(wave_len)
         print("Finished sample lengths")
         return result
@@ -120,34 +124,43 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data_list)
 
-    def __getitem__(self, idx):        
+    def __getitem__(self, idx):
         data = self.data_list[idx]
         path = data[0]
         wave, text_tensor, speaker_id, mel_tensor = self._cache_tensor(data)
-        
+
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
-        acoustic_feature = acoustic_feature[:, :(length_feature - length_feature % 2)]
-        
+        acoustic_feature = acoustic_feature[:, : (length_feature - length_feature % 2)]
+
         # get reference sample
         ref_data = (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
         ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
-        
+
         # get OOD text
-        
+
         ps = ""
-        
+
         while len(ps) < self.min_length:
             rand_idx = np.random.randint(0, len(self.ptexts) - 1)
             ps = self.ptexts[rand_idx]
-            
+
             text = self.text_cleaner(ps)
             text.insert(0, 0)
             text.append(0)
 
             ref_text = torch.LongTensor(text)
-        
-        return speaker_id, acoustic_feature, text_tensor, ref_text, ref_mel_tensor, ref_label, path, wave
+
+        return (
+            speaker_id,
+            acoustic_feature,
+            text_tensor,
+            ref_text,
+            ref_mel_tensor,
+            ref_label,
+            path,
+            wave,
+        )
 
     def _load_tensor(self, data):
         wave_path, text, speaker_id = data
@@ -164,27 +177,29 @@ class FilePathDataset(torch.utils.data.Dataset):
         time_bin = get_time_bin(wave.shape[0])
         if time_bin != -1:
             frame_count = get_frame_count(time_bin)
-            pad_start = (frame_count*300 - wave.shape[0]) // 2
-            pad_end = frame_count*300 - wave.shape[0] - pad_start
-        wave = np.concatenate([np.zeros([pad_start]), wave, np.zeros([pad_end])], axis=0)
-        
+            pad_start = (frame_count * 300 - wave.shape[0]) // 2
+            pad_end = frame_count * 300 - wave.shape[0] - pad_start
+        wave = np.concatenate(
+            [np.zeros([pad_start]), wave, np.zeros([pad_end])], axis=0
+        )
+
         text = self.text_cleaner(text)
-        
+
         text.insert(0, 0)
         text.append(0)
-        
+
         text = torch.LongTensor(text)
 
         return wave, text, speaker_id
 
     def _cache_tensor(self, data):
         path = data[0]
-        #if path in self.cache:
-        #(wave, text_tensor, speaker_id, mel_tensor) = self.cache[path]
-        #else:
+        # if path in self.cache:
+        # (wave, text_tensor, speaker_id, mel_tensor) = self.cache[path]
+        # else:
         wave, text_tensor, speaker_id = self._load_tensor(data)
         mel_tensor = preprocess(wave).squeeze()
-        #self.cache[path] = (wave, text_tensor, speaker_id,
+        # self.cache[path] = (wave, text_tensor, speaker_id,
         #                    mel_tensor)
         return (wave, text_tensor, speaker_id, mel_tensor)
 
@@ -194,7 +209,9 @@ class FilePathDataset(torch.utils.data.Dataset):
         mel_length = mel_tensor.size(1)
         if mel_length > self.max_mel_length:
             random_start = np.random.randint(0, mel_length - self.max_mel_length)
-            mel_tensor = mel_tensor[:, random_start:random_start + self.max_mel_length]
+            mel_tensor = mel_tensor[
+                :, random_start : random_start + self.max_mel_length
+            ]
 
         return mel_tensor, speaker_id
 
@@ -210,7 +227,6 @@ class Collater(object):
         self.min_mel_length = 192
         self.max_mel_length = 192
         self.return_wave = return_wave
-        
 
     def __call__(self, batch):
         # batch[0] = wave, mel, text, f0, speakerid
@@ -236,10 +252,19 @@ class Collater(object):
         output_lengths = torch.zeros(batch_size).long()
         ref_mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
         ref_labels = torch.zeros((batch_size)).long()
-        paths = ['' for _ in range(batch_size)]
+        paths = ["" for _ in range(batch_size)]
         waves = [None for _ in range(batch_size)]
-        
-        for bid, (label, mel, text, ref_text, ref_mel, ref_label, path, wave) in enumerate(batch):
+
+        for bid, (
+            label,
+            mel,
+            text,
+            ref_text,
+            ref_mel,
+            ref_label,
+            path,
+            wave,
+        ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
             rtext_size = ref_text.size(0)
@@ -253,49 +278,78 @@ class Collater(object):
             paths[bid] = path
             ref_mel_size = ref_mel.size(1)
             ref_mels[bid, :, :ref_mel_size] = ref_mel
-            
+
             ref_labels[bid] = ref_label
             waves[bid] = wave
 
-        return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels
+        return (
+            waves,
+            texts,
+            input_lengths,
+            ref_texts,
+            ref_lengths,
+            mels,
+            output_lengths,
+            ref_mels,
+        )
 
 
+def build_dataloader(
+    path_list,
+    root_path,
+    validation=False,
+    OOD_data="Data/OOD_texts.txt",
+    min_length=50,
+    batch_size={},
+    num_workers=1,
+    device="cpu",
+    collate_config={},
+    dataset_config={},
+    probe_batch=False,
+):
 
-def build_dataloader(path_list,
-                     root_path,
-                     validation=False,
-                     OOD_data="Data/OOD_texts.txt",
-                     min_length=50,
-                     batch_size={},
-                     num_workers=1,
-                     device='cpu',
-                     collate_config={},
-                     dataset_config={},
-                     probe_batch = False):
-    
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
+    dataset = FilePathDataset(
+        path_list,
+        root_path,
+        OOD_data=OOD_data,
+        min_length=min_length,
+        validation=validation,
+        **dataset_config
+    )
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch is not None
-    data_loader = torch.utils.data.DataLoader(dataset,
-                             #batch_size=min(batch_size, len(dataset)),
-                             #shuffle=(not validation),
-                             num_workers=num_workers,
-                             batch_sampler=DynamicBatchSampler(
-                                 dataset.sample_lengths(),
-                                 batch_size,
-                                 shuffle=(not validation),
-                                 drop_last=drop_last,
-                                 num_replicas=1, rank=0),
-                             #drop_last=(not validation),
-                             collate_fn=collate_fn,
-                             pin_memory=(device != 'cpu'))
+    data_loader = torch.utils.data.DataLoader(
+        dataset,
+        # batch_size=min(batch_size, len(dataset)),
+        # shuffle=(not validation),
+        num_workers=num_workers,
+        batch_sampler=DynamicBatchSampler(
+            dataset.sample_lengths(),
+            batch_size,
+            shuffle=(not validation),
+            drop_last=drop_last,
+            num_replicas=1,
+            rank=0,
+        ),
+        # drop_last=(not validation),
+        collate_fn=collate_fn,
+        pin_memory=(device != "cpu"),
+    )
 
     return data_loader
 
+
 class DynamicBatchSampler(torch.utils.data.Sampler):
-    def __init__(self, sample_lengths, batch_sizes,
-                 num_replicas = None, rank = None,
-                 shuffle = True, seed = 0, drop_last = False):
+    def __init__(
+        self,
+        sample_lengths,
+        batch_sizes,
+        num_replicas=None,
+        rank=None,
+        shuffle=True,
+        seed=0,
+        drop_last=False,
+    ):
         self.batch_sizes = batch_sizes
         if num_replicas is None:
             self.num_replicas = dist.get_world_size()
@@ -343,8 +397,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         elif self.shuffle:
             g = torch.Generator()
             g.manual_seed(self.seed + self.epoch)
-            sampler_indices = torch.randperm(len(sampler_order),
-                                             generator=g).tolist()
+            sampler_indices = torch.randperm(len(sampler_order), generator=g).tolist()
         else:
             sampler_indices = list(range(len(sampler_order)))
 
@@ -359,12 +412,12 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
                 rank=self.rank,
                 shuffle=self.shuffle,
                 seed=self.seed,
-                drop_last=self.drop_last)
+                drop_last=self.drop_last,
+            )
             dist.set_epoch(self.epoch)
             sampler = torch.utils.data.sampler.BatchSampler(
-                dist,
-                self.get_batch_size(key),
-                self.drop_last)
+                dist, self.get_batch_size(key), self.drop_last
+            )
             for item_list in sampler:
                 self.last_bin = key
                 yield [current_bin[i] for i in item_list]
@@ -390,11 +443,20 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
             result = self.batch_sizes[str(key)]
         return result
 
+
 class BatchManager:
-    def __init__(self, train_path, log_dir,
-                 probe_batch=None, root_path="", OOD_data=[],
-                 min_length=50, device="cpu",
-                 accelerator=None, log_print=None):
+    def __init__(
+        self,
+        train_path,
+        log_dir,
+        probe_batch=None,
+        root_path="",
+        OOD_data=[],
+        min_length=50,
+        device="cpu",
+        accelerator=None,
+        log_print=None,
+    ):
         self.train_path = train_path
         self.probe_batch = probe_batch
         self.log_dir = log_dir
@@ -410,19 +472,21 @@ class BatchManager:
         if len(train_list) == 0:
             print("Could not open train_list", self.train_path)
             exit()
-        self.loader = build_dataloader(train_list,
-                                       root_path,
-                                       OOD_data=OOD_data,
-                                       min_length=min_length,
-                                       batch_size=self.batch_dict,
-                                       num_workers=16,
-                                       dataset_config={},
-                                       device=device,
-                                       probe_batch=probe_batch)
+        self.loader = build_dataloader(
+            train_list,
+            root_path,
+            OOD_data=OOD_data,
+            min_length=min_length,
+            batch_size=self.batch_dict,
+            num_workers=16,
+            dataset_config={},
+            device=device,
+            probe_batch=probe_batch,
+        )
         if accelerator is not None:
             accelerator.even_batches = False
             self.loader = accelerator.prepare(self.loader)
-            
+
     def get_step_count(self):
         return len(self.loader.batch_sampler)
 
@@ -458,10 +522,11 @@ class BatchManager:
             while not done:
                 try:
                     if batch_size > 0:
-                        print("Attempting %d/%d @ %d"
-                              % (frame_count, max_frame_size,
-                                 batch_size))
-                        #sampler.set_epoch(0)
+                        print(
+                            "Attempting %d/%d @ %d"
+                            % (frame_count, max_frame_size, batch_size)
+                        )
+                        # sampler.set_epoch(0)
                         real_size = sampler.probe_batch(key, batch_size)
                         for _, batch in enumerate(self.loader):
                             _, _ = train_batch(0, batch, 0, 0)
@@ -472,6 +537,7 @@ class BatchManager:
                     if "CUDA out of memory" in str(e):
                         print("Probe saw OOM -- backing off")
                         import gc
+
                         gc.collect()
                         torch.cuda.empty_cache()
                         counting_up = False
@@ -487,18 +553,19 @@ class BatchManager:
         iters = 0
         sampler = self.loader.batch_sampler
         last_oom = -1
-        #sampler.set_epoch(epoch)
+        # sampler.set_epoch(epoch)
         for i, batch in enumerate(self.loader):
             try:
-                running_loss, iters = train_batch(
-                    i, batch, running_loss, iters)
+                running_loss, iters = train_batch(i, batch, running_loss, iters)
             except Exception as e:
                 batch_size = self.get_batch_size(sampler.last_bin)
                 if "CUDA out of memory" in str(e):
-                    self.log_print("TRAIN_BATCH OOM ("
-                                   + str(sampler.last_bin)
-                                   + ") @ batch_size "
-                                   + str(batch_size))
+                    self.log_print(
+                        "TRAIN_BATCH OOM ("
+                        + str(sampler.last_bin)
+                        + ") @ batch_size "
+                        + str(batch_size)
+                    )
                     if last_oom != sampler.last_bin:
                         last_oom = sampler.last_bin
                         batch_size -= 1
@@ -509,8 +576,10 @@ class BatchManager:
                 else:
                     raise e
 
+
 def get_frame_count(i):
-    return i*20 + 20 + 40
+    return i * 20 + 20 + 40
+
 
 def get_time_bin(sample_count):
     result = -1

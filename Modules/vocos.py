@@ -8,6 +8,7 @@ import time
 import torch
 from torch import nn
 import torch.nn.functional as F
+
 # from torch.nn.utils import weight_norm
 from torch.nn.utils import remove_weight_norm
 from torch.nn.utils.parametrizations import weight_norm
@@ -17,11 +18,12 @@ from .utils import init_weights, get_padding
 from typing import Optional, Tuple
 from scipy.signal import get_window
 
+
 class AdaIN1d(nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
         self.norm = nn.InstanceNorm1d(num_features, affine=False)
-        self.fc = nn.Linear(style_dim, num_features*2)
+        self.fc = nn.Linear(style_dim, num_features * 2)
 
     def forward(self, x, s):
         h = self.fc(s)
@@ -33,44 +35,105 @@ class AdaIN1d(nn.Module):
 class AdaINResBlock1(torch.nn.Module):
     def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5), style_dim=64):
         super(AdaINResBlock1, self).__init__()
-        self.convs1 = nn.ModuleList([
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[0],
-                               padding=get_padding(kernel_size, dilation[0]))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[1],
-                               padding=get_padding(kernel_size, dilation[1]))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[2],
-                               padding=get_padding(kernel_size, dilation[2])))
-        ])
+        self.convs1 = nn.ModuleList(
+            [
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[0],
+                        padding=get_padding(kernel_size, dilation[0]),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[1],
+                        padding=get_padding(kernel_size, dilation[1]),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[2],
+                        padding=get_padding(kernel_size, dilation[2]),
+                    )
+                ),
+            ]
+        )
         self.convs1.apply(init_weights)
 
-        self.convs2 = nn.ModuleList([
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
-                               padding=get_padding(kernel_size, 1))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
-                               padding=get_padding(kernel_size, 1))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
-                               padding=get_padding(kernel_size, 1)))
-        ])
+        self.convs2 = nn.ModuleList(
+            [
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                ),
+            ]
+        )
         self.convs2.apply(init_weights)
-        
-        self.adain1 = nn.ModuleList([
-            AdaIN1d(style_dim, channels),
-            AdaIN1d(style_dim, channels),
-            AdaIN1d(style_dim, channels),
-        ])
-        
-        self.adain2 = nn.ModuleList([
-            AdaIN1d(style_dim, channels),
-            AdaIN1d(style_dim, channels),
-            AdaIN1d(style_dim, channels),
-        ])
-        
-        self.alpha1 = nn.ParameterList([nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs1))])
-        self.alpha2 = nn.ParameterList([nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs2))])
 
+        self.adain1 = nn.ModuleList(
+            [
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+            ]
+        )
+
+        self.adain2 = nn.ModuleList(
+            [
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+            ]
+        )
+
+        self.alpha1 = nn.ParameterList(
+            [nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs1))]
+        )
+        self.alpha2 = nn.ParameterList(
+            [nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs2))]
+        )
 
     def forward(self, x, s):
-        for c1, c2, n1, n2, a1, a2 in zip(self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2):
+        for c1, c2, n1, n2, a1, a2 in zip(
+            self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2
+        ):
             xt = n1(x, s)
             xt = xt + (1 / a1) * (torch.sin(a1 * xt) ** 2)  # Snake1D
             xt = c1(xt)
@@ -85,7 +148,8 @@ class AdaINResBlock1(torch.nn.Module):
             remove_weight_norm(l)
         for l in self.convs2:
             remove_weight_norm(l)
-            
+
+
 class ConvNeXtBlock(nn.Module):
     """ConvNeXt Block adapted from https://github.com/facebookresearch/ConvNeXt to 1D audio signal.
 
@@ -104,10 +168,14 @@ class ConvNeXtBlock(nn.Module):
         style_dim: int,
     ):
         super().__init__()
-        self.dwconv = nn.Conv1d(dim, dim, kernel_size=7, padding=3, groups=dim)  # depthwise conv
+        self.dwconv = nn.Conv1d(
+            dim, dim, kernel_size=7, padding=3, groups=dim
+        )  # depthwise conv
         # self.norm = nn.LayerNorm(dim, eps=1e-6)
         self.norm = AdaIN1d(style_dim, dim)
-        self.pwconv1 = nn.Linear(dim, intermediate_dim)  # pointwise/1x1 convs, implemented with linear layers
+        self.pwconv1 = nn.Linear(
+            dim, intermediate_dim
+        )  # pointwise/1x1 convs, implemented with linear layers
         self.act = nn.GELU()
         self.pwconv2 = nn.Linear(intermediate_dim, dim)
         self.gamma = (
@@ -115,7 +183,7 @@ class ConvNeXtBlock(nn.Module):
             if layer_scale_init_value > 0
             else None
         )
-        
+
     def forward(self, x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
         residual = x
         x = self.dwconv(x)
@@ -131,8 +199,9 @@ class ConvNeXtBlock(nn.Module):
         x = residual + x
         return x
 
+
 class SineGen(torch.nn.Module):
-    """ Definition of sine generator
+    """Definition of sine generator
     SineGen(samp_rate, harmonic_num = 0,
             sine_amp = 0.1, noise_std = 0.003,
             voiced_threshold = 0,
@@ -147,10 +216,16 @@ class SineGen(torch.nn.Module):
         segment is always sin(np.pi) or cos(0)
     """
 
-    def __init__(self, samp_rate, upsample_scale, harmonic_num=0,
-                 sine_amp=0.1, noise_std=0.003,
-                 voiced_threshold=0,
-                 flag_for_pulse=False):
+    def __init__(
+        self,
+        samp_rate,
+        upsample_scale,
+        harmonic_num=0,
+        sine_amp=0.1,
+        noise_std=0.003,
+        voiced_threshold=0,
+        flag_for_pulse=False,
+    ):
         super(SineGen, self).__init__()
         self.sine_amp = sine_amp
         self.noise_std = noise_std
@@ -167,47 +242,53 @@ class SineGen(torch.nn.Module):
         return uv
 
     def _f02sine(self, f0_values):
-        """ f0_values: (batchsize, length, dim)
-            where dim indicates fundamental tone and overtones
+        """f0_values: (batchsize, length, dim)
+        where dim indicates fundamental tone and overtones
         """
         # convert to F0 in rad. The interger part n can be ignored
         # because 2 * np.pi * n doesn't affect phase
         rad_values = (f0_values / self.sampling_rate) % 1
 
         # initial phase noise (no noise for fundamental component)
-        rand_ini = torch.rand(f0_values.shape[0], f0_values.shape[2], \
-                              device=f0_values.device)
+        rand_ini = torch.rand(
+            f0_values.shape[0], f0_values.shape[2], device=f0_values.device
+        )
         rand_ini[:, 0] = 0
         rad_values[:, 0, :] = rad_values[:, 0, :] + rand_ini
 
         # instantanouse phase sine[t] = sin(2*pi \sum_i=1 ^{t} rad)
         if not self.flag_for_pulse:
-#             # for normal case
+            #             # for normal case
 
-#             # To prevent torch.cumsum numerical overflow,
-#             # it is necessary to add -1 whenever \sum_k=1^n rad_value_k > 1.
-#             # Buffer tmp_over_one_idx indicates the time step to add -1.
-#             # This will not change F0 of sine because (x-1) * 2*pi = x * 2*pi
-#             tmp_over_one = torch.cumsum(rad_values, 1) % 1
-#             tmp_over_one_idx = (padDiff(tmp_over_one)) < 0
-#             cumsum_shift = torch.zeros_like(rad_values)
-#             cumsum_shift[:, 1:, :] = tmp_over_one_idx * -1.0
+            #             # To prevent torch.cumsum numerical overflow,
+            #             # it is necessary to add -1 whenever \sum_k=1^n rad_value_k > 1.
+            #             # Buffer tmp_over_one_idx indicates the time step to add -1.
+            #             # This will not change F0 of sine because (x-1) * 2*pi = x * 2*pi
+            #             tmp_over_one = torch.cumsum(rad_values, 1) % 1
+            #             tmp_over_one_idx = (padDiff(tmp_over_one)) < 0
+            #             cumsum_shift = torch.zeros_like(rad_values)
+            #             cumsum_shift[:, 1:, :] = tmp_over_one_idx * -1.0
 
-#             phase = torch.cumsum(rad_values, dim=1) * 2 * np.pi
-            rad_values = torch.nn.functional.interpolate(rad_values.transpose(1, 2), 
-                                                         scale_factor=1/self.upsample_scale, 
-                                                         mode="linear").transpose(1, 2)
-    
-#             tmp_over_one = torch.cumsum(rad_values, 1) % 1
-#             tmp_over_one_idx = (padDiff(tmp_over_one)) < 0
-#             cumsum_shift = torch.zeros_like(rad_values)
-#             cumsum_shift[:, 1:, :] = tmp_over_one_idx * -1.0
-    
+            #             phase = torch.cumsum(rad_values, dim=1) * 2 * np.pi
+            rad_values = torch.nn.functional.interpolate(
+                rad_values.transpose(1, 2),
+                scale_factor=1 / self.upsample_scale,
+                mode="linear",
+            ).transpose(1, 2)
+
+            #             tmp_over_one = torch.cumsum(rad_values, 1) % 1
+            #             tmp_over_one_idx = (padDiff(tmp_over_one)) < 0
+            #             cumsum_shift = torch.zeros_like(rad_values)
+            #             cumsum_shift[:, 1:, :] = tmp_over_one_idx * -1.0
+
             phase = torch.cumsum(rad_values, dim=1) * 2 * np.pi
-            phase = torch.nn.functional.interpolate(phase.transpose(1, 2) * self.upsample_scale, 
-                                                    scale_factor=self.upsample_scale, mode="linear").transpose(1, 2)
+            phase = torch.nn.functional.interpolate(
+                phase.transpose(1, 2) * self.upsample_scale,
+                scale_factor=self.upsample_scale,
+                mode="linear",
+            ).transpose(1, 2)
             sines = torch.sin(phase)
-            
+
         else:
             # If necessary, make sure that the first time step of every
             # voiced segments is sin(pi) or cos(0)
@@ -239,16 +320,17 @@ class SineGen(torch.nn.Module):
         return sines
 
     def forward(self, f0):
-        """ sine_tensor, uv = forward(f0)
+        """sine_tensor, uv = forward(f0)
         input F0: tensor(batchsize=1, length, dim=1)
                   f0 for unvoiced steps should be 0
         output sine_tensor: tensor(batchsize=1, length, dim)
         output uv: tensor(batchsize=1, length, 1)
         """
-        f0_buf = torch.zeros(f0.shape[0], f0.shape[1], self.dim,
-                             device=f0.device)
+        f0_buf = torch.zeros(f0.shape[0], f0.shape[1], self.dim, device=f0.device)
         # fundamental component
-        fn = torch.multiply(f0, torch.FloatTensor([[range(1, self.harmonic_num + 2)]]).to(f0.device))
+        fn = torch.multiply(
+            f0, torch.FloatTensor([[range(1, self.harmonic_num + 2)]]).to(f0.device)
+        )
 
         # generate sine waveforms
         sine_waves = self._f02sine(fn) * self.sine_amp
@@ -271,7 +353,7 @@ class SineGen(torch.nn.Module):
 
 
 class SourceModuleHnNSF(torch.nn.Module):
-    """ SourceModule for hn-nsf
+    """SourceModule for hn-nsf
     SourceModule(sampling_rate, harmonic_num=0, sine_amp=0.1,
                  add_noise_std=0.003, voiced_threshod=0)
     sampling_rate: sampling_rate in Hz
@@ -288,16 +370,29 @@ class SourceModuleHnNSF(torch.nn.Module):
     uv (batchsize, length, 1)
     """
 
-    def __init__(self, sampling_rate, upsample_scale, harmonic_num=0, sine_amp=0.1,
-                 add_noise_std=0.003, voiced_threshod=0):
+    def __init__(
+        self,
+        sampling_rate,
+        upsample_scale,
+        harmonic_num=0,
+        sine_amp=0.1,
+        add_noise_std=0.003,
+        voiced_threshod=0,
+    ):
         super(SourceModuleHnNSF, self).__init__()
 
         self.sine_amp = sine_amp
         self.noise_std = add_noise_std
 
         # to produce sine waveforms
-        self.l_sin_gen = SineGen(sampling_rate, upsample_scale, harmonic_num,
-                                 sine_amp, add_noise_std, voiced_threshod)
+        self.l_sin_gen = SineGen(
+            sampling_rate,
+            upsample_scale,
+            harmonic_num,
+            sine_amp,
+            add_noise_std,
+            voiced_threshod,
+        )
 
         # to merge source harmonics into a single excitation
         self.l_linear = torch.nn.Linear(harmonic_num + 1, 1)
@@ -318,7 +413,8 @@ class SourceModuleHnNSF(torch.nn.Module):
         # source for noise branch, in the same shape as uv
         noise = torch.randn_like(uv) * self.sine_amp / 3
         return sine_merge, noise, uv
-    
+
+
 def safe_log(x: torch.Tensor, clip_val: float = 1e-7) -> torch.Tensor:
     """
     Computes the element-wise logarithm of the input tensor with clipping to avoid near-zero values.
@@ -339,6 +435,7 @@ def symlog(x: torch.Tensor) -> torch.Tensor:
 
 def symexp(x: torch.Tensor) -> torch.Tensor:
     return torch.sign(x) * (torch.exp(x.abs()) - 1)
+
 
 class Backbone(nn.Module):
     """Base class for the generator's backbone. It preserves the same temporal resolution across all layers."""
@@ -384,15 +481,17 @@ class Generator(Backbone):
         layer_scale_init_value = layer_scale_init_value or 1 / num_layers
 
         self.m_source = SourceModuleHnNSF(
-                    # sampling_rate=24000//gen_istft_hop_size,
-                    sampling_rate=24000,
-                    upsample_scale=1,
-                    harmonic_num=8, voiced_threshod=10)
+            # sampling_rate=24000//gen_istft_hop_size,
+            sampling_rate=24000,
+            upsample_scale=1,
+            harmonic_num=8,
+            voiced_threshod=10,
+        )
         # self.f0_upsamp = torch.nn.Upsample(scale_factor=gen_istft_hop_size)
         self.noise_convs = nn.ModuleList()
         self.noise_res = nn.ModuleList()
         self.convnext = nn.ModuleList()
-                
+
         for i in range(num_layers):
             # Add Conv1d for noise injection
             self.noise_convs.append(
@@ -417,7 +516,12 @@ class Generator(Backbone):
         self.final_layer_norm = nn.LayerNorm(dim, eps=1e-6)
         self.apply(self._init_weights)
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
-        self.stft = ISTFTHead(dim=dim, n_fft=gen_istft_n_fft, hop_length=gen_istft_hop_size, padding="same")
+        self.stft = ISTFTHead(
+            dim=dim,
+            n_fft=gen_istft_n_fft,
+            hop_length=gen_istft_hop_size,
+            padding="same",
+        )
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv1d, nn.Linear)):
@@ -438,6 +542,7 @@ class Generator(Backbone):
         x = self.stft(x)
         return x
 
+
 class ISTFT(nn.Module):
     """
     Custom implementation of ISTFT since torch.istft doesn't allow custom padding (other than `center=True`) with
@@ -453,7 +558,9 @@ class ISTFT(nn.Module):
         padding (str, optional): Type of padding. Options are "center" or "same". Defaults to "same".
     """
 
-    def __init__(self, n_fft: int, hop_length: int, win_length: int, padding: str = "same"):
+    def __init__(
+        self, n_fft: int, hop_length: int, win_length: int, padding: str = "same"
+    ):
         super().__init__()
         if padding not in ["center", "same"]:
             raise ValueError("Padding must be 'center' or 'same'.")
@@ -477,7 +584,14 @@ class ISTFT(nn.Module):
         """
         if self.padding == "center":
             # Fallback to pytorch native implementation
-            return torch.istft(spec, self.n_fft, self.hop_length, self.win_length, self.window, center=True)
+            return torch.istft(
+                spec,
+                self.n_fft,
+                self.hop_length,
+                self.win_length,
+                self.window,
+                center=True,
+            )
         elif self.padding == "same":
             pad = (self.win_length - self.hop_length) // 2
         else:
@@ -493,13 +607,19 @@ class ISTFT(nn.Module):
         # Overlap and Add
         output_size = (T - 1) * self.hop_length + self.win_length
         y = torch.nn.functional.fold(
-            ifft, output_size=(1, output_size), kernel_size=(1, self.win_length), stride=(1, self.hop_length),
+            ifft,
+            output_size=(1, output_size),
+            kernel_size=(1, self.win_length),
+            stride=(1, self.hop_length),
         )[:, 0, 0, pad:-pad]
 
         # Window envelope
         window_sq = self.window.square().expand(1, T, -1).transpose(1, 2)
         window_envelope = torch.nn.functional.fold(
-            window_sq, output_size=(1, output_size), kernel_size=(1, self.win_length), stride=(1, self.hop_length),
+            window_sq,
+            output_size=(1, output_size),
+            kernel_size=(1, self.win_length),
+            stride=(1, self.hop_length),
         ).squeeze()[pad:-pad]
 
         # Normalize
@@ -507,7 +627,8 @@ class ISTFT(nn.Module):
         y = y / window_envelope
 
         return y
-    
+
+
 class FourierHead(nn.Module):
     """Base class for inverse fourier modules."""
 
@@ -521,6 +642,7 @@ class FourierHead(nn.Module):
             Tensor: Reconstructed time-domain audio signal of shape (B, T), where T is the length of the output signal.
         """
         raise NotImplementedError("Subclasses must implement the forward method.")
+
 
 class ISTFTHead(FourierHead):
     """
@@ -539,11 +661,15 @@ class ISTFTHead(FourierHead):
         self.filter_length = n_fft
         self.win_length = n_fft
         self.hop_length = hop_length
-        self.window = torch.from_numpy(get_window("hann", self.win_length, fftbins=True).astype(np.float32))
+        self.window = torch.from_numpy(
+            get_window("hann", self.win_length, fftbins=True).astype(np.float32)
+        )
 
         out_dim = n_fft + 2
         self.out = torch.nn.Linear(dim, out_dim)
-        self.istft = ISTFT(n_fft=n_fft, hop_length=hop_length, win_length=n_fft, padding=padding)
+        self.istft = ISTFT(
+            n_fft=n_fft, hop_length=hop_length, win_length=n_fft, padding=padding
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -559,7 +685,9 @@ class ISTFTHead(FourierHead):
         x = self.out(x).transpose(1, 2)
         mag, p = x.chunk(2, dim=1)
         mag = torch.exp(mag)
-        mag = torch.clip(mag, max=1e2)  # safeguard to prevent excessively large magnitudes
+        mag = torch.clip(
+            mag, max=1e2
+        )  # safeguard to prevent excessively large magnitudes
         # wrapping happens here. These two lines produce real and imaginary value
         x = torch.cos(p)
         y = torch.sin(p)
@@ -567,7 +695,7 @@ class ISTFTHead(FourierHead):
         # only costs time
         # phase = torch.atan2(y, x)
         # S = mag * torch.exp(phase * 1j)
-        # better directly produce the complex value 
+        # better directly produce the complex value
         S = mag * (x + 1j * y)
         audio = self.istft(S)
         return audio
@@ -575,15 +703,26 @@ class ISTFTHead(FourierHead):
     def transform(self, input_data):
         forward_transform = torch.stft(
             input_data,
-            self.filter_length, self.hop_length, self.win_length, window=self.window.to(input_data.device),
-            return_complex=True)
+            self.filter_length,
+            self.hop_length,
+            self.win_length,
+            window=self.window.to(input_data.device),
+            return_complex=True,
+        )
 
         return torch.abs(forward_transform), torch.angle(forward_transform)
 
 
 class AdainResBlk1d(nn.Module):
-    def __init__(self, dim_in, dim_out, style_dim=64, actv=nn.LeakyReLU(0.2),
-                 upsample='none', dropout_p=0.0):
+    def __init__(
+        self,
+        dim_in,
+        dim_out,
+        style_dim=64,
+        actv=nn.LeakyReLU(0.2),
+        upsample="none",
+        dropout_p=0.0,
+    ):
         super().__init__()
         self.actv = actv
         self.upsample_type = upsample
@@ -591,13 +730,22 @@ class AdainResBlk1d(nn.Module):
         self.learned_sc = dim_in != dim_out
         self._build_weights(dim_in, dim_out, style_dim)
         self.dropout = nn.Dropout(dropout_p)
-        
-        if upsample == 'none':
+
+        if upsample == "none":
             self.pool = nn.Identity()
         else:
-            self.pool = weight_norm(nn.ConvTranspose1d(dim_in, dim_in, kernel_size=3, stride=2, groups=dim_in, padding=1, output_padding=1))
-        
-        
+            self.pool = weight_norm(
+                nn.ConvTranspose1d(
+                    dim_in,
+                    dim_in,
+                    kernel_size=3,
+                    stride=2,
+                    groups=dim_in,
+                    padding=1,
+                    output_padding=1,
+                )
+            )
+
     def _build_weights(self, dim_in, dim_out, style_dim):
         self.conv1 = weight_norm(nn.Conv1d(dim_in, dim_out, 3, 1, 1))
         self.conv2 = weight_norm(nn.Conv1d(dim_out, dim_out, 3, 1, 1))
@@ -626,46 +774,64 @@ class AdainResBlk1d(nn.Module):
         out = self._residual(x, s)
         out = (out + self._shortcut(x)) / math.sqrt(2)
         return out
-    
+
+
 class UpSample1d(nn.Module):
     def __init__(self, layer_type):
         super().__init__()
         self.layer_type = layer_type
 
     def forward(self, x):
-        if self.layer_type == 'none':
+        if self.layer_type == "none":
             return x
         else:
-            return F.interpolate(x, scale_factor=2, mode='nearest')
+            return F.interpolate(x, scale_factor=2, mode="nearest")
+
 
 class Decoder(nn.Module):
-    def __init__(self, dim_in=512, style_dim=64, dim_out=80, 
-                intermediate_dim=1536,
-                num_layers=8,
-                gen_istft_n_fft=1024, gen_istft_hop_size=256):
+    def __init__(
+        self,
+        dim_in=512,
+        style_dim=64,
+        dim_out=80,
+        intermediate_dim=1536,
+        num_layers=8,
+        gen_istft_n_fft=1024,
+        gen_istft_hop_size=256,
+    ):
         super().__init__()
-        
+
         self.decode = nn.ModuleList()
-        
+
         self.encode = AdainResBlk1d(dim_in + 2, 1024, style_dim)
-        
+
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True))
 
-        self.F0_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1))
-        
-        self.N_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1))
-        
+        self.F0_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
+        )
+
+        self.N_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
+        )
+
         self.asr_res = nn.Sequential(
             weight_norm(nn.Conv1d(512, 64, kernel_size=1)),
         )
-        
-        self.generator = Generator(input_channels=dim_out, dim=dim_in, style_dim=style_dim, 
-                                   intermediate_dim=intermediate_dim, num_layers=num_layers, 
-                                   gen_istft_n_fft=gen_istft_n_fft, gen_istft_hop_size=gen_istft_hop_size)
-        
+
+        self.generator = Generator(
+            input_channels=dim_out,
+            dim=dim_in,
+            style_dim=style_dim,
+            intermediate_dim=intermediate_dim,
+            num_layers=num_layers,
+            gen_istft_n_fft=gen_istft_n_fft,
+            gen_istft_hop_size=gen_istft_hop_size,
+        )
+
     def forward(self, asr, F0_curve, N, s):
         if self.training:
             downlist = [0, 3, 7]
@@ -673,19 +839,32 @@ class Decoder(nn.Module):
             downlist = [0, 3, 7, 15]
             N_down = downlist[random.randint(0, 3)]
             if F0_down:
-                F0_curve = nn.functional.conv1d(F0_curve.unsqueeze(1), torch.ones(1, 1, F0_down).to('cuda'), padding=F0_down//2).squeeze(1) / F0_down
+                F0_curve = (
+                    nn.functional.conv1d(
+                        F0_curve.unsqueeze(1),
+                        torch.ones(1, 1, F0_down).to("cuda"),
+                        padding=F0_down // 2,
+                    ).squeeze(1)
+                    / F0_down
+                )
             if N_down:
-                N = nn.functional.conv1d(N.unsqueeze(1), torch.ones(1, 1, N_down).to('cuda'), padding=N_down//2).squeeze(1)  / N_down
+                N = (
+                    nn.functional.conv1d(
+                        N.unsqueeze(1),
+                        torch.ones(1, 1, N_down).to("cuda"),
+                        padding=N_down // 2,
+                    ).squeeze(1)
+                    / N_down
+                )
 
-        
         F0 = self.F0_conv(F0_curve.unsqueeze(1))
         N = self.N_conv(N.unsqueeze(1))
-        
+
         x = torch.cat([asr, F0, N], axis=1)
         x = self.encode(x, s)
-        
+
         asr_res = self.asr_res(asr)
-        
+
         res = True
         for block in self.decode:
             if res:
@@ -693,8 +872,7 @@ class Decoder(nn.Module):
             x = block(x, s)
             if block.upsample_type != "none":
                 res = False
-        
+
         x = self.generator(x, s, F0_curve)
         x = x.unsqueeze(1)
         return x, None, None
-    

@@ -20,14 +20,16 @@ if not outdir.exists():
 already = {}
 time_bins = {}
 
+
 def length_to_bin(length):
     if length < 20:
         bin = -1
-    #elif length < 45:
+    # elif length < 45:
     #    bin = 0
     else:
         bin = (length - 20) // 4
     return bin
+
 
 for line in sys.stdin:
     fields = line.split("|")
@@ -40,10 +42,12 @@ for line in sys.stdin:
     if binkey >= 0:
         if binkey not in time_bins:
             time_bins[binkey] = []
-        time_bins[binkey].append((fields[0].strip(), fields[1].strip(), fields[2].strip()))
+        time_bins[binkey].append(
+            (fields[0].strip(), fields[1].strip(), fields[2].strip())
+        )
 
 for key in sorted(time_bins.keys()):
-    #print(str(key) + ":", len(time_bins[key]))
+    # print(str(key) + ":", len(time_bins[key]))
     filename = outdir / ("list-%d.txt" % key)
     with filename.open("w") as f:
         for item in time_bins[key]:
