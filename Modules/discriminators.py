@@ -7,6 +7,7 @@ from munch import Munch
 
 import torchaudio
 from nnAudio import features
+from einops import rearrange
 from .norm2d import NormConv2d
 from .utils import get_padding
 
