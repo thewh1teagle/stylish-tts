@@ -81,6 +81,17 @@ def main(config_path, probe_batch):
     root_path = data_params["root_path"]
     min_length = data_params["min_length"]
     OOD_data = data_params["OOD_data"]
+    debug = data_params.get("debug", False)
+
+    if not osp.exists(train_path):
+        print("Train data not found at {}".format(train_path))
+        exit(1)
+    if not osp.exists(val_path):
+        print("Validation data not found at {}".format(val_path))
+        exit(1)
+    if not osp.exists(root_path):
+        print("Root path not found at {}".format(root_path))
+        exit(1)
 
     # load data
     val_list = get_data_path_list(val_path)
@@ -197,190 +208,198 @@ def main(config_path, probe_batch):
         _ = [model[key].train() for key in model]
 
         def train_batch(i, batch, running_loss, iters):
-            waves = batch[0]
-            batch = [b.to(device) for b in batch[1:]]
-            texts, input_lengths, _, _, mels, mel_input_length, _ = batch
+            try:
+                waves = batch[0]
+                batch = [b.to(device) for b in batch[1:]]
+                texts, input_lengths, _, _, mels, mel_input_length, _ = batch
 
-            with torch.no_grad():
-                mask = length_to_mask(mel_input_length // (2**n_down)).to("cuda")
-                text_mask = length_to_mask(input_lengths).to(texts.device)
+                with torch.no_grad():
+                    mask = length_to_mask(mel_input_length // (2**n_down)).to("cuda")
+                    text_mask = length_to_mask(input_lengths).to(texts.device)
 
-            ppgs, s2s_pred, s2s_attn = model.text_aligner(mels, mask, texts)
+                ppgs, s2s_pred, s2s_attn = model.text_aligner(mels, mask, texts)
 
-            s2s_attn = s2s_attn.transpose(-1, -2)
-            s2s_attn = s2s_attn[..., 1:]
-            s2s_attn = s2s_attn.transpose(-1, -2)
+                s2s_attn = s2s_attn.transpose(-1, -2)
+                s2s_attn = s2s_attn[..., 1:]
+                s2s_attn = s2s_attn.transpose(-1, -2)
 
-            with torch.no_grad():
-                attn_mask = (
-                    (~mask)
-                    .unsqueeze(-1)
-                    .expand(mask.shape[0], mask.shape[1], text_mask.shape[-1])
-                    .float()
-                    .transpose(-1, -2)
-                )
-                attn_mask = (
-                    attn_mask.float()
-                    * (~text_mask)
-                    .unsqueeze(-1)
-                    .expand(text_mask.shape[0], text_mask.shape[1], mask.shape[-1])
-                    .float()
-                )
-                attn_mask = attn_mask < 1
-
-            s2s_attn.masked_fill_(attn_mask, 0.0)
-
-            with torch.no_grad():
-                mask_ST = mask_from_lens(
-                    s2s_attn, input_lengths, mel_input_length // (2**n_down)
-                )
-                s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
-
-            # encode
-            t_en = model.text_encoder(texts, input_lengths, text_mask)
-
-            # 50% of chance of using monotonic version
-            if bool(random.getrandbits(1)):
-                asr = t_en @ s2s_attn
-            else:
-                asr = t_en @ s2s_attn_mono
-
-            # get clips
-            # mel_input_length_all = accelerator.gather(mel_input_length) # for balanced load
-            # mel_len = min([int(mel_input_length_all.min().item() / 2 - 1), max_len // 2])
-            # mel_len_st = int(mel_input_length.min().item() / 2 - 1)
-
-            en = []
-            gt = []
-            wav = []
-            st = []
-
-            for bib in range(len(mel_input_length)):
-                en.append(asr[bib])
-                gt.append(mels[bib])
-
-                y = waves[bib]
-                wav.append(torch.from_numpy(y).to(device))
-
-                # style reference (better to be different from the GT)
-                st.append(mels[bib])
-
-            en = torch.stack(en)
-            gt = torch.stack(gt).detach()
-            st = torch.stack(st).detach()
-
-            wav = torch.stack(wav).float().detach()
-
-            # clip too short to be used by the style encoder
-            if gt.shape[-1] < 40 or (
-                gt.shape[-1] < 80 and not model_params.skip_downsamples
-            ):
-                log_print("Skipping batch. TOO SHORT", logger)
-                return running_loss, iters
-
-            with torch.no_grad():
-                real_norm = log_norm(gt.unsqueeze(1)).squeeze(1).detach()
-                F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
-
-            s = model.style_encoder(
-                st.unsqueeze(1) if multispeaker else gt.unsqueeze(1)
-            )
-
-            y_rec, mag_rec, phase_rec = model.decoder(en, F0_real, real_norm, s)
-
-            # discriminator loss
-
-            if epoch >= TMA_epoch:
-                optimizer.zero_grad()
-                d_loss = dl(wav.detach().unsqueeze(1).float(), y_rec.detach()).mean()
-                accelerator.backward(d_loss)
-                optimizer.step("msd")
-                optimizer.step("mpd")
-            else:
-                d_loss = 0
-
-            # generator loss
-            optimizer.zero_grad()
-            loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
-            loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
-            if epoch >= TMA_epoch:  # start TMA training
-                loss_s2s = 0
-                for _s2s_pred, _text_input, _text_length in zip(
-                    s2s_pred, texts, input_lengths
-                ):
-                    loss_s2s += F.cross_entropy(
-                        _s2s_pred[:_text_length], _text_input[:_text_length]
+                with torch.no_grad():
+                    attn_mask = (
+                        (~mask)
+                        .unsqueeze(-1)
+                        .expand(mask.shape[0], mask.shape[1], text_mask.shape[-1])
+                        .float()
+                        .transpose(-1, -2)
                     )
-                loss_s2s /= texts.size(0)
+                    attn_mask = (
+                        attn_mask.float()
+                        * (~text_mask)
+                        .unsqueeze(-1)
+                        .expand(text_mask.shape[0], text_mask.shape[1], mask.shape[-1])
+                        .float()
+                    )
+                    attn_mask = attn_mask < 1
 
-                loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
+                s2s_attn.masked_fill_(attn_mask, 0.0)
 
-                loss_gen_all = gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
-                loss_slm = wl(wav.detach(), y_rec).mean()
+                with torch.no_grad():
+                    mask_ST = mask_from_lens(
+                        s2s_attn, input_lengths, mel_input_length // (2**n_down)
+                    )
+                    s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
 
-                g_loss = (
-                    loss_params.lambda_mel * loss_mel
-                    + loss_params.lambda_mono * loss_mono
-                    + loss_params.lambda_s2s * loss_s2s
-                    + loss_params.lambda_gen * loss_gen_all
-                    + loss_params.lambda_slm * loss_slm
-                    + 1 * loss_magphase
+                # encode
+                t_en = model.text_encoder(texts, input_lengths, text_mask)
+
+                # 50% of chance of using monotonic version
+                if bool(random.getrandbits(1)):
+                    asr = t_en @ s2s_attn
+                else:
+                    asr = t_en @ s2s_attn_mono
+
+                # get clips
+                # mel_input_length_all = accelerator.gather(mel_input_length) # for balanced load
+                # mel_len = min([int(mel_input_length_all.min().item() / 2 - 1), max_len // 2])
+                # mel_len_st = int(mel_input_length.min().item() / 2 - 1)
+
+                en = []
+                gt = []
+                wav = []
+                st = []
+
+                for bib in range(len(mel_input_length)):
+                    en.append(asr[bib])
+                    gt.append(mels[bib])
+
+                    y = waves[bib]
+                    wav.append(torch.from_numpy(y).to(device))
+
+                    # style reference (better to be different from the GT)
+                    st.append(mels[bib])
+
+                en = torch.stack(en)
+                gt = torch.stack(gt).detach()
+                st = torch.stack(st).detach()
+
+                wav = torch.stack(wav).float().detach()
+
+                # clip too short to be used by the style encoder
+                if gt.shape[-1] < 40 or (
+                    gt.shape[-1] < 80 and not model_params.skip_downsamples
+                ):
+                    log_print("Skipping batch. TOO SHORT", logger)
+                    return running_loss, iters
+
+                with torch.no_grad():
+                    real_norm = log_norm(gt.unsqueeze(1)).squeeze(1).detach()
+                    F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
+
+                s = model.style_encoder(
+                    st.unsqueeze(1) if multispeaker else gt.unsqueeze(1)
                 )
 
-            else:
-                loss_s2s = 0
-                loss_mono = 0
-                loss_gen_all = 0
-                loss_slm = 0
-                g_loss = loss_mel + loss_magphase
+                y_rec, mag_rec, phase_rec = model.decoder(en, F0_real, real_norm, s)
 
-            running_loss += accelerator.gather(loss_mel).mean().item()
+                # discriminator loss
 
-            accelerator.backward(g_loss)
+                if epoch >= TMA_epoch:
+                    optimizer.zero_grad()
+                    d_loss = dl(
+                        wav.detach().unsqueeze(1).float(), y_rec.detach()
+                    ).mean()
+                    accelerator.backward(d_loss)
+                    optimizer.step("msd")
+                    optimizer.step("mpd")
+                else:
+                    d_loss = 0
 
-            optimizer.step("text_encoder")
-            optimizer.step("style_encoder")
-            optimizer.step("decoder")
+                # generator loss
+                optimizer.zero_grad()
+                loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
+                loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
+                if epoch >= TMA_epoch:  # start TMA training
+                    loss_s2s = 0
+                    for _s2s_pred, _text_input, _text_length in zip(
+                        s2s_pred, texts, input_lengths
+                    ):
+                        loss_s2s += F.cross_entropy(
+                            _s2s_pred[:_text_length], _text_input[:_text_length]
+                        )
+                    loss_s2s /= texts.size(0)
 
-            if epoch >= TMA_epoch:
-                optimizer.step("text_aligner")
-                optimizer.step("pitch_extractor")
+                    loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
 
-            iters = iters + 1
+                    loss_gen_all = gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
+                    loss_slm = wl(wav.detach(), y_rec).mean()
 
-            if (i + 1) % log_interval == 0 and accelerator.is_main_process:
-                log_print(
-                    "Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f, MP Loss: %.5f"
-                    % (
-                        epoch,
-                        epochs,
-                        i + 1,
-                        batch_manager.get_step_count(),
-                        running_loss / log_interval,
-                        loss_gen_all,
-                        d_loss,
-                        loss_mono,
-                        loss_s2s,
-                        loss_slm,
-                        loss_magphase,
-                    ),
-                    logger,
-                )
+                    g_loss = (
+                        loss_params.lambda_mel * loss_mel
+                        + loss_params.lambda_mono * loss_mono
+                        + loss_params.lambda_s2s * loss_s2s
+                        + loss_params.lambda_gen * loss_gen_all
+                        + loss_params.lambda_slm * loss_slm
+                        + 1 * loss_magphase
+                    )
 
-                writer.add_scalar("train/mel_loss", running_loss / log_interval, iters)
-                writer.add_scalar("train/gen_loss", loss_gen_all, iters)
-                writer.add_scalar("train/d_loss", d_loss, iters)
-                writer.add_scalar("train/mono_loss", loss_mono, iters)
-                writer.add_scalar("train/s2s_loss", loss_s2s, iters)
-                writer.add_scalar("train/slm_loss", loss_slm, iters)
-                writer.add_scalar("train/mp_loss", loss_magphase, iters)
+                else:
+                    loss_s2s = 0
+                    loss_mono = 0
+                    loss_gen_all = 0
+                    loss_slm = 0
+                    g_loss = loss_mel + loss_magphase
 
-                running_loss = 0
+                running_loss += accelerator.gather(loss_mel).mean().item()
 
-                print("Time elasped:", time.time() - start_time)
+                accelerator.backward(g_loss)
+
+                optimizer.step("text_encoder")
+                optimizer.step("style_encoder")
+                optimizer.step("decoder")
+
+                if epoch >= TMA_epoch:
+                    optimizer.step("text_aligner")
+                    optimizer.step("pitch_extractor")
+
+                iters = iters + 1
+
+                if (i + 1) % log_interval == 0 and accelerator.is_main_process:
+                    log_print(
+                        "Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f, MP Loss: %.5f"
+                        % (
+                            epoch,
+                            epochs,
+                            i + 1,
+                            batch_manager.get_step_count(),
+                            running_loss / log_interval,
+                            loss_gen_all,
+                            d_loss,
+                            loss_mono,
+                            loss_s2s,
+                            loss_slm,
+                            loss_magphase,
+                        ),
+                        logger,
+                    )
+
+                    writer.add_scalar(
+                        "train/mel_loss", running_loss / log_interval, iters
+                    )
+                    writer.add_scalar("train/gen_loss", loss_gen_all, iters)
+                    writer.add_scalar("train/d_loss", d_loss, iters)
+                    writer.add_scalar("train/mono_loss", loss_mono, iters)
+                    writer.add_scalar("train/s2s_loss", loss_s2s, iters)
+                    writer.add_scalar("train/slm_loss", loss_slm, iters)
+                    writer.add_scalar("train/mp_loss", loss_magphase, iters)
+
+                    running_loss = 0
+
+                    print("Time elasped:", time.time() - start_time)
+            except Exception as e:
+                optimizer.zero_grad()
+                raise e
             return running_loss, iters
 
-        batch_manager.epoch_loop(epoch, train_batch)
+        batch_manager.epoch_loop(epoch, train_batch, debug)
 
         loss_test = 0
         max_len = 1620

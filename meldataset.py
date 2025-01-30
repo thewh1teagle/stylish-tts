@@ -314,7 +314,7 @@ def build_dataloader(
         OOD_data=OOD_data,
         min_length=min_length,
         validation=validation,
-        **dataset_config
+        **dataset_config,
     )
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch is not None
@@ -505,11 +505,11 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, epoch, train_batch):
+    def epoch_loop(self, epoch, train_batch, debug=False):
         if self.probe_batch is not None:
             self.probe_loop(train_batch)
         else:
-            self.train_loop(epoch, train_batch)
+            self.train_loop(epoch, train_batch, debug)
 
     def probe_loop(self, train_batch):
         self.batch_dict = {}
@@ -522,7 +522,10 @@ class BatchManager:
             done = False
             while not done:
                 try:
-                    if batch_size > 0:
+                    if batch_size == 1:
+                        self.set_batch_size(key, 1)
+                        done = True
+                    elif batch_size > 0:
                         print(
                             "Attempting %d/%d @ %d"
                             % (frame_count, max_frame_size, batch_size)
@@ -532,10 +535,14 @@ class BatchManager:
                         for _, batch in enumerate(self.loader):
                             _, _ = train_batch(0, batch, 0, 0)
                             break
-                    self.set_batch_size(key, real_size)
+                        self.set_batch_size(key, real_size)
                     done = True
                 except Exception as e:
                     if "CUDA out of memory" in str(e):
+                        audio_length = (sampler.last_bin * 0.25) + 0.25
+                        self.log_print(
+                            f"TRAIN_BATCH OOM ({sampler.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                        )
                         print("Probe saw OOM -- backing off")
                         import gc
 
@@ -549,33 +556,43 @@ class BatchManager:
         self.save_batch_dict()
         quit()
 
-    def train_loop(self, epoch, train_batch):
+    def train_loop(self, epoch, train_batch, debug=False):
         running_loss = 0
         iters = 0
         sampler = self.loader.batch_sampler
         last_oom = -1
+        max_attempts = 3
         # sampler.set_epoch(epoch)
         for i, batch in enumerate(self.loader):
-            try:
-                running_loss, iters = train_batch(i, batch, running_loss, iters)
-            except Exception as e:
-                batch_size = self.get_batch_size(sampler.last_bin)
-                if "CUDA out of memory" in str(e):
-                    self.log_print(
-                        "TRAIN_BATCH OOM ("
-                        + str(sampler.last_bin)
-                        + ") @ batch_size "
-                        + str(batch_size)
-                    )
-                    if last_oom != sampler.last_bin:
-                        last_oom = sampler.last_bin
-                        batch_size -= 1
-                        self.set_batch_size(sampler.last_bin, batch_size)
-                        self.save_batch_dict()
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                else:
-                    raise e
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    if debug:
+                        batch_size = self.get_batch_size(sampler.last_bin)
+                        audio_length = (sampler.last_bin * 0.25) + 0.25
+                        self.log_print(
+                            f"train_batch(i={i}, batch={batch_size}, running_loss={running_loss}, iters={iters}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
+                        )
+                    running_loss, iters = train_batch(i, batch, running_loss, iters)
+                    break
+                except Exception as e:
+                    batch_size = self.get_batch_size(sampler.last_bin)
+                    audio_length = (sampler.last_bin * 0.25) + 0.25
+                    if "CUDA out of memory" in str(e):
+                        self.log_print(
+                            f"{attempt * ('⚠️' if attempt < max_attempts else '❌')}\n"
+                            f"TRAIN_BATCH OOM ({sampler.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                        )
+                        self.log_print(e)
+                        if last_oom != sampler.last_bin:
+                            last_oom = sampler.last_bin
+                            if batch_size > 1:
+                                batch_size -= 1
+                            self.set_batch_size(sampler.last_bin, batch_size)
+                            self.save_batch_dict()
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                    else:
+                        raise e
 
 
 def get_frame_count(i):
