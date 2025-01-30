@@ -481,6 +481,7 @@ class BatchManager:
             num_workers=16,
             dataset_config={},
             device=device,
+            drop_last=True,
             probe_batch=probe_batch,
         )
         if accelerator is not None:

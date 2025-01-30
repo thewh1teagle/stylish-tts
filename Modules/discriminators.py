@@ -233,7 +233,7 @@ class DiscriminatorCQT(nn.Module):
 
 multiscale_subband_cfg = {
     "hop_lengths": [512, 256, 256],
-    "sampling_rate": 22050,
+    "sampling_rate": 24000,
     "filters": 32,
     "max_filters": 1024,
     "filters_scale": 1,

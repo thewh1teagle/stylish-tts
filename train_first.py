@@ -458,6 +458,13 @@ def main(config_path, probe_batch):
                 en = torch.stack(en)
                 gt = torch.stack(gt).detach()
 
+                # clip too short to be used by the style encoder
+                if gt.shape[-1] < 40 or (
+                    gt.shape[-1] < 80 and not model_params.skip_downsamples
+                ):
+                    log_print("Skipping batch. TOO SHORT", logger)
+                    continue
+
                 F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
                 s = model.style_encoder(gt.unsqueeze(1))
                 real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)

@@ -771,6 +771,13 @@ def main(config_path, probe_batch):
                     en = torch.stack(en)
                     p_en = torch.stack(p_en)
                     gt = torch.stack(gt).detach()
+                    # clip too short to be used by the style encoder
+                    if gt.shape[-1] < 40 or (
+                        gt.shape[-1] < 80 and not model_params.skip_downsamples
+                    ):
+                        log_print("Skipping batch. TOO SHORT", logger)
+                        continue
+
                     s = model.predictor_encoder(gt.unsqueeze(1))
 
                     F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s)
