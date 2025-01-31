@@ -2,6 +2,8 @@ log_dir: "/your/output/dir"
 first_stage_path: "first_stage.pth"
 save_freq: 2
 log_interval: 10
+val_interval: 2000 # validate model every this number of iterations
+save_interval: 2000 # validate and save model every this number of iterations
 device: "cuda"
 epochs_1st: 200 # number of epochs for first stage training (pre-training)
 epochs_2nd: 100 # number of peochs for second stage training (joint training)
@@ -33,6 +35,8 @@ preprocess_params:
 
 model_params:
   multispeaker: false
+
+  skip_downsamples: False # set to True if you want to skip downsampling to allow for shorter segments
 
   dim_in: 64 
   hidden_dim: 512

@@ -74,6 +74,10 @@ def main(config_path, probe_batch):
     log_interval = config.get("log_interval", 10)
     saving_epoch = config.get("save_freq", 2)
 
+    debug = config.get("debug", False)
+    val_interval = config.get("val_interval", 1000)
+    save_interval = config.get("save_interval", 2000)
+
     data_params = config.get("data_params", None)
     sr = config["preprocess_params"].get("sr", 24000)
     train_path = data_params["train_data"]
@@ -81,7 +85,6 @@ def main(config_path, probe_batch):
     root_path = data_params["root_path"]
     min_length = data_params["min_length"]
     OOD_data = data_params["OOD_data"]
-    debug = data_params.get("debug", False)
 
     if not osp.exists(train_path):
         print("Train data not found at {}".format(train_path))
@@ -150,7 +153,7 @@ def main(config_path, probe_batch):
     model_params = recursive_munch(config["model_params"])
     multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
-
+    global best_loss
     best_loss = float("inf")  # best test loss
     loss_train_record = list([])
     loss_test_record = list([])
@@ -206,6 +209,189 @@ def main(config_path, probe_batch):
         start_time = time.time()
 
         _ = [model[key].train() for key in model]
+
+        def validation(current_epoch: int, current_step: int, save: bool):
+            global best_loss
+            loss_test = 0
+            max_len = 1620
+
+            _ = [model[key].eval() for key in model]
+
+            with torch.no_grad():
+                iters_test = 0
+                for batch_idx, batch in enumerate(val_dataloader):
+                    optimizer.zero_grad()
+
+                    waves = batch[0]
+                    batch = [b.to(device) for b in batch[1:]]
+                    texts, input_lengths, _, _, mels, mel_input_length, _ = batch
+
+                    with torch.no_grad():
+                        mask = length_to_mask(mel_input_length // (2**n_down)).to(
+                            "cuda"
+                        )
+                        ppgs, s2s_pred, s2s_attn = model.text_aligner(mels, mask, texts)
+
+                        s2s_attn = s2s_attn.transpose(-1, -2)
+                        s2s_attn = s2s_attn[..., 1:]
+                        s2s_attn = s2s_attn.transpose(-1, -2)
+
+                        text_mask = length_to_mask(input_lengths).to(texts.device)
+                        attn_mask = (
+                            (~mask)
+                            .unsqueeze(-1)
+                            .expand(mask.shape[0], mask.shape[1], text_mask.shape[-1])
+                            .float()
+                            .transpose(-1, -2)
+                        )
+                        attn_mask = (
+                            attn_mask.float()
+                            * (~text_mask)
+                            .unsqueeze(-1)
+                            .expand(
+                                text_mask.shape[0], text_mask.shape[1], mask.shape[-1]
+                            )
+                            .float()
+                        )
+                        attn_mask = attn_mask < 1
+                        s2s_attn.masked_fill_(attn_mask, 0.0)
+
+                    # encode
+                    t_en = model.text_encoder(texts, input_lengths, text_mask)
+
+                    asr = t_en @ s2s_attn
+
+                    # get clips
+                    mel_input_length_all = accelerator.gather(
+                        mel_input_length
+                    )  # for balanced load
+                    mel_len = min(
+                        [int(mel_input_length.min().item() / 2 - 1), max_len // 2]
+                    )
+
+                    en = []
+                    gt = []
+                    wav = []
+                    for bib in range(len(mel_input_length)):
+                        mel_length = int(mel_input_length[bib].item() / 2)
+
+                        random_start = np.random.randint(0, mel_length - mel_len)
+                        en.append(asr[bib, :, random_start : random_start + mel_len])
+                        gt.append(
+                            mels[
+                                bib,
+                                :,
+                                (random_start * 2) : ((random_start + mel_len) * 2),
+                            ]
+                        )
+                        y = waves[bib][
+                            (random_start * 2)
+                            * 300 : ((random_start + mel_len) * 2)
+                            * 300
+                        ]
+                        wav.append(torch.from_numpy(y).to("cuda"))
+
+                    wav = torch.stack(wav).float().detach()
+
+                    en = torch.stack(en)
+                    gt = torch.stack(gt).detach()
+
+                    # clip too short to be used by the style encoder
+                    if gt.shape[-1] < 40 or (
+                        gt.shape[-1] < 80 and not model_params.skip_downsamples
+                    ):
+                        log_print("Skipping batch. TOO SHORT", logger)
+                        continue
+
+                    F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
+                    s = model.style_encoder(gt.unsqueeze(1))
+                    real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
+                    y_rec, _, _ = model.decoder(en, F0_real, real_norm, s)
+
+                    loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
+
+                    loss_test += accelerator.gather(loss_mel).mean().item()
+                    iters_test += 1
+            if accelerator.is_main_process:
+                print(
+                    f"Epochs:{current_epoch} Steps:{current_step} Loss:{loss_test / iters_test} Best_Loss:{best_loss}"
+                )
+                log_print(
+                    f"Epochs:{current_epoch} Steps:{current_step} Loss:{loss_test / iters_test} Best_Loss:{best_loss}",
+                    logger,
+                )
+                log_print(
+                    "Validation loss: %.3f" % (loss_test / iters_test) + "\n\n\n\n",
+                    logger,
+                )
+                print("\n\n\n")
+                writer.add_scalar(
+                    "eval/mel_loss", loss_test / iters_test, current_epoch
+                )
+                attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
+                writer.add_figure("eval/attn", attn_image, current_epoch)
+
+                with torch.no_grad():
+                    for bib in range(len(asr)):
+                        mel_length = int(mel_input_length[bib].item())
+                        gt = mels[bib, :, :mel_length].unsqueeze(0)
+                        en = asr[bib, :, : mel_length // 2].unsqueeze(0)
+
+                        F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
+                        # F0_real = F0_real.unsqueeze(0)
+                        s = model.style_encoder(gt.unsqueeze(1))
+                        real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
+
+                        y_rec, _, _ = model.decoder(en, F0_real, real_norm, s)
+
+                        writer.add_audio(
+                            "eval/y" + str(bib),
+                            y_rec.cpu().numpy().squeeze(),
+                            current_epoch,
+                            sample_rate=sr,
+                        )
+                        if current_epoch == 0:
+                            writer.add_audio(
+                                "gt/y" + str(bib),
+                                waves[bib].squeeze(),
+                                current_epoch,
+                                sample_rate=sr,
+                            )
+
+                        if bib >= 6:
+                            break
+
+                if current_epoch % saving_epoch == 0 and save and current_step == -1:
+                    if (loss_test / iters_test) < best_loss:
+                        best_loss = loss_test / iters_test
+                    print("Saving..")
+                    state = {
+                        "net": {key: model[key].state_dict() for key in model},
+                        "optimizer": optimizer.state_dict(),
+                        "iters": iters,
+                        "val_loss": loss_test / iters_test,
+                        "epoch": current_epoch,
+                    }
+                    save_path = osp.join(log_dir, f"epoch_1st_{current_epoch:>05}.pth")
+                    torch.save(state, save_path)
+
+                if save and current_step != -1:
+                    if (loss_test / iters_test) < best_loss:
+                        best_loss = loss_test / iters_test
+                    print("Saving..")
+                    state = {
+                        "net": {key: model[key].state_dict() for key in model},
+                        "optimizer": optimizer.state_dict(),
+                        "iters": iters,
+                        "val_loss": loss_test / iters_test,
+                        "epoch": current_epoch,
+                    }
+                    save_path = osp.join(
+                        log_dir,
+                        f"epoch_1st_{current_epoch:>05}_step_{current_step:>09}.pth",
+                    )
+                    torch.save(state, save_path)
+            _ = [model[key].train() for key in model]  # Restore training mode
 
         def train_batch(i, batch, running_loss, iters):
             try:
@@ -394,6 +580,10 @@ def main(config_path, probe_batch):
                     running_loss = 0
 
                     print("Time elasped:", time.time() - start_time)
+                if (i + 1) % val_interval == 0 or (i + 1) % save_interval == 0:
+                    save = (i + 1) % save_interval == 0
+                    validation(epoch, i + 1, save)
+
             except Exception as e:
                 optimizer.zero_grad()
                 raise e
@@ -401,152 +591,7 @@ def main(config_path, probe_batch):
 
         batch_manager.epoch_loop(epoch, train_batch, debug)
 
-        loss_test = 0
-        max_len = 1620
-
-        _ = [model[key].eval() for key in model]
-
-        with torch.no_grad():
-            iters_test = 0
-            for batch_idx, batch in enumerate(val_dataloader):
-                optimizer.zero_grad()
-
-                waves = batch[0]
-                batch = [b.to(device) for b in batch[1:]]
-                texts, input_lengths, _, _, mels, mel_input_length, _ = batch
-
-                with torch.no_grad():
-                    mask = length_to_mask(mel_input_length // (2**n_down)).to("cuda")
-                    ppgs, s2s_pred, s2s_attn = model.text_aligner(mels, mask, texts)
-
-                    s2s_attn = s2s_attn.transpose(-1, -2)
-                    s2s_attn = s2s_attn[..., 1:]
-                    s2s_attn = s2s_attn.transpose(-1, -2)
-
-                    text_mask = length_to_mask(input_lengths).to(texts.device)
-                    attn_mask = (
-                        (~mask)
-                        .unsqueeze(-1)
-                        .expand(mask.shape[0], mask.shape[1], text_mask.shape[-1])
-                        .float()
-                        .transpose(-1, -2)
-                    )
-                    attn_mask = (
-                        attn_mask.float()
-                        * (~text_mask)
-                        .unsqueeze(-1)
-                        .expand(text_mask.shape[0], text_mask.shape[1], mask.shape[-1])
-                        .float()
-                    )
-                    attn_mask = attn_mask < 1
-                    s2s_attn.masked_fill_(attn_mask, 0.0)
-
-                # encode
-                t_en = model.text_encoder(texts, input_lengths, text_mask)
-
-                asr = t_en @ s2s_attn
-
-                # get clips
-                mel_input_length_all = accelerator.gather(
-                    mel_input_length
-                )  # for balanced load
-                mel_len = min(
-                    [int(mel_input_length.min().item() / 2 - 1), max_len // 2]
-                )
-
-                en = []
-                gt = []
-                wav = []
-                for bib in range(len(mel_input_length)):
-                    mel_length = int(mel_input_length[bib].item() / 2)
-
-                    random_start = np.random.randint(0, mel_length - mel_len)
-                    en.append(asr[bib, :, random_start : random_start + mel_len])
-                    gt.append(
-                        mels[
-                            bib, :, (random_start * 2) : ((random_start + mel_len) * 2)
-                        ]
-                    )
-                    y = waves[bib][
-                        (random_start * 2) * 300 : ((random_start + mel_len) * 2) * 300
-                    ]
-                    wav.append(torch.from_numpy(y).to("cuda"))
-
-                wav = torch.stack(wav).float().detach()
-
-                en = torch.stack(en)
-                gt = torch.stack(gt).detach()
-
-                # clip too short to be used by the style encoder
-                if gt.shape[-1] < 40 or (
-                    gt.shape[-1] < 80 and not model_params.skip_downsamples
-                ):
-                    log_print("Skipping batch. TOO SHORT", logger)
-                    continue
-
-                F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
-                s = model.style_encoder(gt.unsqueeze(1))
-                real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-                y_rec, _, _ = model.decoder(en, F0_real, real_norm, s)
-
-                loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
-
-                loss_test += accelerator.gather(loss_mel).mean().item()
-                iters_test += 1
-
-        if accelerator.is_main_process:
-            print("Epochs:", epoch)
-            log_print(
-                "Validation loss: %.3f" % (loss_test / iters_test) + "\n\n\n\n", logger
-            )
-            print("\n\n\n")
-            writer.add_scalar("eval/mel_loss", loss_test / iters_test, epoch)
-            attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
-            writer.add_figure("eval/attn", attn_image, epoch)
-
-            with torch.no_grad():
-                for bib in range(len(asr)):
-                    mel_length = int(mel_input_length[bib].item())
-                    gt = mels[bib, :, :mel_length].unsqueeze(0)
-                    en = asr[bib, :, : mel_length // 2].unsqueeze(0)
-
-                    F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
-                    # F0_real = F0_real.unsqueeze(0)
-                    s = model.style_encoder(gt.unsqueeze(1))
-                    real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-
-                    y_rec, _, _ = model.decoder(en, F0_real, real_norm, s)
-
-                    writer.add_audio(
-                        "eval/y" + str(bib),
-                        y_rec.cpu().numpy().squeeze(),
-                        epoch,
-                        sample_rate=sr,
-                    )
-                    if epoch == 0:
-                        writer.add_audio(
-                            "gt/y" + str(bib),
-                            waves[bib].squeeze(),
-                            epoch,
-                            sample_rate=sr,
-                        )
-
-                    if bib >= 6:
-                        break
-
-            if epoch % saving_epoch == 0:
-                if (loss_test / iters_test) < best_loss:
-                    best_loss = loss_test / iters_test
-                print("Saving..")
-                state = {
-                    "net": {key: model[key].state_dict() for key in model},
-                    "optimizer": optimizer.state_dict(),
-                    "iters": iters,
-                    "val_loss": loss_test / iters_test,
-                    "epoch": epoch,
-                }
-                save_path = osp.join(log_dir, "epoch_1st_%05d.pth" % epoch)
-                torch.save(state, save_path)
+        validation(epoch, -1, True)
 
     if accelerator.is_main_process:
         print("Saving..")
