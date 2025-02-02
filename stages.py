@@ -15,11 +15,109 @@ from losses import magphase_loss
 ###############################################
 
 
+def prepare_batch(batch, device, keys_to_transfer: list["str"] = None) -> tuple:
+    """
+    Prepares and transfers specified batch elements to the given device.
+
+    This function selects specified elements from a batch and moves them to the specified device
+    (e.g., CUDA or CPU). It returns a tuple containing only the requested elements, in the order
+    specified by `keys_to_transfer`.
+
+    Parameters
+    ----------
+    batch : list
+        A list containing elements of the batch, where each element corresponds to a predefined key.
+        The expected order is:
+        0. "waves"
+        1. "texts"
+        2. "input_lengths"
+        3. "ref_texts"
+        4. "ref_lengths"
+        5. "mels"
+        6. "mel_input_length"
+        7. "ref_mels"
+
+    device : torch.device or str
+        The device to which the selected batch elements should be moved. This can be a PyTorch device object
+        (e.g., `torch.device("cuda")`) or a string (`"cuda"`, `"cpu"`).
+
+    keys_to_transfer : list of str, optional
+        A list of keys specifying which elements of the batch should be moved to the device.
+        If `None`, all elements are transferred. The valid keys are:
+        - "waves"
+        - "texts"
+        - "input_lengths"
+        - "ref_texts"
+        - "ref_lengths"
+        - "mels"
+        - "mel_input_length"
+        - "ref_mels"
+
+    Returns
+    -------
+    tuple
+        A tuple containing the selected batch elements, moved to the specified device.
+        The elements appear in the order they are specified in `keys_to_transfer`.
+
+    Raises
+    ------
+    ValueError
+        If any key in `keys_to_transfer` is not a valid batch key.
+
+    Examples
+    --------
+    >>> batch = [
+    ...     torch.tensor([1, 2, 3]),  # waves
+    ...     torch.tensor([4, 5, 6]),  # texts
+    ...     torch.tensor([7, 8, 9]),  # input_lengths
+    ...     "unused_texts",           # ref_texts (string, just for demonstration)
+    ...     "unused_lengths",         # ref_lengths
+    ...     torch.tensor([10, 11, 12]), # mels
+    ...     torch.tensor([13, 14, 15]), # mel_input_length
+    ...     torch.tensor([16, 17, 18])  # ref_mels
+    ... ]
+
+    >>> device = torch.device("cuda")
+
+    >>> prepare_batch(batch, device, keys_to_transfer=["waves", "texts", "mels"])
+    (tensor([1, 2, 3], device='cuda'), tensor([4, 5, 6], device='cuda'), tensor([10, 11, 12], device='cuda'))
+    """
+    if keys_to_transfer is None:
+        keys_to_transfer = [
+            "waves",
+            "texts",
+            "input_lengths",
+            "ref_texts",
+            "ref_lengths",
+            "mels",
+            "mel_input_length",
+            "ref_mels",
+        ]
+    index = {
+        "waves": 0,
+        "texts": 1,
+        "input_lengths": 2,
+        "ref_texts": 3,
+        "ref_lengths": 4,
+        "mels": 5,
+        "mel_input_length": 6,
+        "ref_mels": 7,
+    }
+    prepared = tuple()
+    for key in keys_to_transfer:
+        if key not in index:
+            raise ValueError(f"Key {key} not found in batch select from {index.keys()}")
+        prepared += (batch[index[key]].to(device),)
+    return prepared
+
+
 def train_first(i, batch, running_loss, iters, train, epoch):
     try:
-        waves = batch[0].to(train.device)
-        batch = [b.to(train.device) for b in batch[1:]]
-        texts, input_lengths, _, _, mels, mel_input_length, _ = batch
+        waves, texts, input_lengths, mels, mel_input_length = prepare_batch(
+            batch,
+            train.device,
+            ["waves", "texts", "input_lengths", "mels", "mel_input_length"],
+        )
 
         with torch.no_grad():
             mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
@@ -205,10 +303,11 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train):
         iters_test = 0
         for batch_idx, batch in enumerate(train.val_dataloader):
             train.optimizer.zero_grad()
-
-            waves = batch[0].to(train.device)
-            batch = [b.to(train.device) for b in batch[1:]]
-            texts, input_lengths, _, _, mels, mel_input_length, _ = batch
+            waves, texts, input_lengths, mels, mel_input_length = prepare_batch(
+                batch,
+                train.device,
+                ["waves", "texts", "input_lengths", "mels", "mel_input_length"],
+            )
 
             with torch.no_grad():
                 mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
@@ -351,9 +450,8 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train):
 
 
 def train_second(i, batch, running_loss, iters, train, epoch):
-    waves = batch[0].to(train.device)
-    batch = [b.to(train.device) for b in batch[1:]]
     (
+        waves,
         texts,
         input_lengths,
         ref_texts,
@@ -361,7 +459,20 @@ def train_second(i, batch, running_loss, iters, train, epoch):
         mels,
         mel_input_length,
         ref_mels,
-    ) = batch
+    ) = prepare_batch(
+        batch,
+        train.device,
+        [
+            "waves",
+            "texts",
+            "input_lengths",
+            "ref_texts",
+            "ref_lengths",
+            "mels",
+            "mel_input_length",
+            "ref_mels",
+        ],
+    )
 
     with torch.no_grad():
         mask = length_to_mask(mel_input_length // (2**train.n_down)).to(train.device)
@@ -689,17 +800,21 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train):
             train.optimizer.zero_grad()
 
             try:
-                waves = batch[0].to(train.device)
-                batch = [b.to(train.device) for b in batch[1:]]
-                (
-                    texts,
-                    input_lengths,
-                    ref_texts,
-                    ref_lengths,
-                    mels,
-                    mel_input_length,
-                    ref_mels,
-                ) = batch
+                waves, texts, input_lengths, mels, mel_input_length, ref_mels = (
+                    prepare_batch(
+                        batch,
+                        train.device,
+                        [
+                            "waves",
+                            "texts",
+                            "input_lengths",
+                            "mels",
+                            "mel_input_length",
+                            "ref_mels",
+                        ],
+                    )
+                )
+
                 with torch.no_grad():
                     mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
                         train.device
