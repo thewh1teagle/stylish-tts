@@ -292,7 +292,8 @@ def main(config_path, probe_batch):
                             * 300 : ((random_start + mel_len) * 2)
                             * 300
                         ]
-                        wav.append(torch.from_numpy(y).to("cuda"))
+                        # wav.append(torch.from_numpy(y).to("cuda"))
+                        wav.append(y)
 
                     wav = torch.stack(wav).float().detach()
 
@@ -396,7 +397,7 @@ def main(config_path, probe_batch):
                     torch.save(state, save_path)
             _ = [model[key].train() for key in model]  # Restore training mode
 
-        def train_batch(i, batch, running_loss, iters):
+        def train_batch(i, batch, running_loss, iters, _skip1, _skip2):
             try:
                 waves = batch[0]
                 batch = [b.to(device) for b in batch[1:]]
@@ -461,7 +462,8 @@ def main(config_path, probe_batch):
                     gt.append(mels[bib])
 
                     y = waves[bib]
-                    wav.append(torch.from_numpy(y).to(device))
+                    # wav.append(torch.from_numpy(y).to(device))
+                    wav.append(y)
 
                     # style reference (better to be different from the GT)
                     st.append(mels[bib])
@@ -592,7 +594,7 @@ def main(config_path, probe_batch):
                 raise e
             return running_loss, iters
 
-        batch_manager.epoch_loop(epoch, train_batch, debug)
+        batch_manager.epoch_loop(epoch, train_batch, debug, train=None)
 
         validation(epoch, -1, True)
 

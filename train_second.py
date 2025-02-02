@@ -307,7 +307,7 @@ def main(config_path, probe_batch):
             start_ds = True
 
         # for i, batch in enumerate(train_dataloader):
-        def train_batch(i, batch, running_loss, iters):
+        def train_batch(i, batch, running_loss, iters, _skip1, _skip2):
             waves = batch[0].to(device)
             batch = [b.to(device) for b in batch[1:]]
             (
@@ -629,7 +629,7 @@ def main(config_path, probe_batch):
             # optimizer.scheduler()
             return running_loss, iters
 
-        batch_manager.epoch_loop(epoch, train_batch)
+        batch_manager.epoch_loop(epoch, train_batch, train=None)
 
         loss_test = 0
         max_len = 1620

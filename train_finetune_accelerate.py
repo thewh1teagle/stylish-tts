@@ -316,7 +316,7 @@ def main(config_path, probe_batch):
         model.msd.train()
         model.mpd.train()
 
-        def train_batch(i, batch, running_loss, iters):
+        def train_batch(i, batch, running_loss, iters, _skip1, _skip2):
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             (
@@ -441,7 +441,8 @@ def main(config_path, probe_batch):
                 gt.append(mels[bib])
 
                 y = waves[bib]
-                wav.append(torch.from_numpy(y).to(device))
+                # wav.append(torch.from_numpy(y).to(device))
+                wav.append(y)
 
                 # style reference (better to be different from the GT)
                 st.append(mels[bib])
@@ -476,7 +477,7 @@ def main(config_path, probe_batch):
             F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
 
             y_rec, mag_rec, phase_rec = model.decoder(en, F0_fake, N_fake, s)
-            loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
+            loss_magphase = magphase_loss(mag_rec, phase_rec, wav.squeeze(1).detach())
 
             loss_F0_rec = (F.smooth_l1_loss(F0_real, F0_fake)) / 10
             loss_norm_rec = F.smooth_l1_loss(N_real, N_fake)
@@ -683,7 +684,7 @@ def main(config_path, probe_batch):
                 print("Time elasped:", time.time() - start_time)
             return running_loss, iters
 
-        batch_manager.epoch_loop(epoch, train_batch)
+        batch_manager.epoch_loop(epoch, train_batch, None)
 
         loss_test = 0
         max_len = 1620
@@ -777,7 +778,8 @@ def main(config_path, probe_batch):
                             * 300 : ((random_start + mel_len) * 2)
                             * 300
                         ]
-                        wav.append(torch.from_numpy(y).to(device))
+                        # wav.append(torch.from_numpy(y).to(device))
+                        wav.append(y)
 
                     wav = torch.stack(wav).float().detach()
 

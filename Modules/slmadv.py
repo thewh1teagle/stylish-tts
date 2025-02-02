@@ -162,7 +162,8 @@ class SLMAdversarialLoss(torch.nn.Module):
             y = waves[bib][
                 (random_start * 2) * 300 : ((random_start + mel_len) * 2) * 300
             ]
-            wav.append(torch.from_numpy(y).to(ref_text.device))
+            # wav.append(torch.from_numpy(y).to(ref_text.device))
+            wav.append(y)
 
             if len(wav) >= self.batch_percentage * len(
                 waves
@@ -178,7 +179,7 @@ class SLMAdversarialLoss(torch.nn.Module):
         p_en = torch.stack(p_en)
 
         F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
-        y_pred = self.model.decoder(en, F0_fake, N_fake, sp[:, :128])
+        y_pred, _, _ = self.model.decoder(en, F0_fake, N_fake, sp[:, :128])
 
         # discriminator loss
         if (iters + 1) % self.skip_update == 0:
