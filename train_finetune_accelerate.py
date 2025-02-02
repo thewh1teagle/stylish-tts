@@ -94,6 +94,21 @@ def main(config_path, probe_batch):
 
     optimizer_params = Munch(config["optimizer_params"])
 
+    if not osp.exists(train_path):
+        print("Train data not found at {}".format(train_path))
+        exit(1)
+    if not osp.exists(val_path):
+        print("Validation data not found at {}".format(val_path))
+        exit(1)
+    if not osp.exists(root_path):
+        print("Root path not found at {}".format(root_path))
+        exit(1)
+
+    if "skip_downsamples" not in config["model_params"]:
+        config["model_params"]["skip_downsamples"] = False
+    model_params = recursive_munch(config["model_params"])
+    multispeaker = model_params.multispeaker
+
     device = accelerator.device
 
     # load data
@@ -108,6 +123,7 @@ def main(config_path, probe_batch):
         num_workers=0,
         device=device,
         dataset_config={},
+        multispeaker=multispeaker,
     )
 
     def log_print_function(s):
@@ -123,6 +139,7 @@ def main(config_path, probe_batch):
         device=device,
         accelerator=accelerator,
         log_print=log_print_function,
+        multispeaker=multispeaker,
     )
 
     # load pretrained ASR model
@@ -139,10 +156,6 @@ def main(config_path, probe_batch):
     plbert = load_plbert(BERT_path)
 
     # build model
-    if "skip_downsamples" not in config["model_params"]:
-        config["model_params"]["skip_downsamples"] = False
-    model_params = recursive_munch(config["model_params"])
-    multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
     _ = [model[key].to(device) for key in model]
 

@@ -66,7 +66,8 @@ mean, std = -4, 4
 
 
 def preprocess(wave):
-    wave_tensor = torch.from_numpy(wave).float()
+    # wave_tensor = torch.from_numpy(wave).float()
+    wave_tensor = wave
     mel_tensor = to_mel(wave_tensor)
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
@@ -82,6 +83,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         validation=False,
         OOD_data="Data/OOD_texts.txt",
         min_length=50,
+        multispeaker=False,
     ):
 
         spect_params = SPECT_PARAMS
@@ -107,6 +109,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.ptexts = [t.split("|")[idx] for t in tl]
 
         self.root_path = root_path
+        self.multispeaker = multispeaker
 
     def sample_lengths(self):
         print("Calculating sample lengths")
@@ -134,8 +137,14 @@ class FilePathDataset(torch.utils.data.Dataset):
         acoustic_feature = acoustic_feature[:, : (length_feature - length_feature % 2)]
 
         # get reference sample
-        ref_data = (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
-        ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
+        if self.multispeaker:
+            ref_data = (
+                (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
+            )
+            ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
+        else:
+            ref_data = []
+            ref_mel_tensor, ref_label = None, ""
 
         # get OOD text
 
@@ -182,6 +191,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         wave = np.concatenate(
             [np.zeros([pad_start]), wave, np.zeros([pad_end])], axis=0
         )
+        wave = torch.from_numpy(wave).float()
 
         text = self.text_cleaner(text)
 
@@ -222,11 +232,12 @@ class Collater(object):
       adaptive_batch_size (bool): if true, decrease batch size when long data comes.
     """
 
-    def __init__(self, return_wave=False):
+    def __init__(self, return_wave=False, multispeaker=False):
         self.text_pad_index = 0
         self.min_mel_length = 192
         self.max_mel_length = 192
         self.return_wave = return_wave
+        self.multispeaker = multispeaker
 
     def __call__(self, batch):
         # batch[0] = wave, mel, text, f0, speakerid
@@ -253,7 +264,9 @@ class Collater(object):
         ref_mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
         ref_labels = torch.zeros((batch_size)).long()
         paths = ["" for _ in range(batch_size)]
-        waves = [None for _ in range(batch_size)]
+        waves = torch.zeros(
+            (batch_size, batch[0][7].shape[-1])
+        ).float()  # [None for _ in range(batch_size)]
 
         for bid, (
             label,
@@ -276,10 +289,10 @@ class Collater(object):
             ref_lengths[bid] = rtext_size
             output_lengths[bid] = mel_size
             paths[bid] = path
-            ref_mel_size = ref_mel.size(1)
-            ref_mels[bid, :, :ref_mel_size] = ref_mel
-
-            ref_labels[bid] = ref_label
+            if self.multispeaker:
+                ref_mel_size = ref_mel.size(1)
+                ref_mels[bid, :, :ref_mel_size] = ref_mel
+                ref_labels[bid] = ref_label
             waves[bid] = wave
 
         return (
@@ -306,6 +319,8 @@ def build_dataloader(
     collate_config={},
     dataset_config={},
     probe_batch=False,
+    drop_last=True,
+    multispeaker=False,
 ):
 
     dataset = FilePathDataset(
@@ -314,8 +329,10 @@ def build_dataloader(
         OOD_data=OOD_data,
         min_length=min_length,
         validation=validation,
+        multispeaker=multispeaker,
         **dataset_config,
     )
+    collate_config["multispeaker"] = multispeaker
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch is not None
     data_loader = torch.utils.data.DataLoader(
@@ -456,6 +473,7 @@ class BatchManager:
         device="cpu",
         accelerator=None,
         log_print=None,
+        multispeaker=False,
     ):
         self.train_path = train_path
         self.probe_batch = probe_batch
@@ -478,11 +496,12 @@ class BatchManager:
             OOD_data=OOD_data,
             min_length=min_length,
             batch_size=self.batch_dict,
-            num_workers=16,
+            num_workers=32,
             dataset_config={},
             device=device,
             drop_last=True,
             probe_batch=probe_batch,
+            multispeaker=multispeaker,
         )
         if accelerator is not None:
             accelerator.even_batches = False

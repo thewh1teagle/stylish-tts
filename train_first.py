@@ -96,6 +96,11 @@ def main(config_path, probe_batch):
         print("Root path not found at {}".format(root_path))
         exit(1)
 
+    if "skip_downsamples" not in config["model_params"]:
+        config["model_params"]["skip_downsamples"] = False
+    model_params = recursive_munch(config["model_params"])
+    multispeaker = model_params.multispeaker
+
     # load data
     val_list = get_data_path_list(val_path)
     val_dataloader = build_dataloader(
@@ -108,6 +113,7 @@ def main(config_path, probe_batch):
         num_workers=0,
         device=device,
         dataset_config={},
+        multispeaker=multispeaker,
     )
 
     def log_print_function(s):
@@ -123,6 +129,7 @@ def main(config_path, probe_batch):
         device=device,
         accelerator=accelerator,
         log_print=log_print_function,
+        multispeaker=multispeaker,
     )
 
     with accelerator.main_process_first():
@@ -148,10 +155,6 @@ def main(config_path, probe_batch):
         "steps_per_epoch": batch_manager.get_step_count(),
     }
 
-    if "skip_downsamples" not in config["model_params"]:
-        config["model_params"]["skip_downsamples"] = False
-    model_params = recursive_munch(config["model_params"])
-    multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
     global best_loss
     best_loss = float("inf")  # best test loss

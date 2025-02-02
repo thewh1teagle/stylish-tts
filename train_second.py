@@ -91,6 +91,21 @@ def main(config_path, probe_batch):
 
     optimizer_params = Munch(config["optimizer_params"])
 
+    if not osp.exists(train_path):
+        print("Train data not found at {}".format(train_path))
+        exit(1)
+    if not osp.exists(val_path):
+        print("Validation data not found at {}".format(val_path))
+        exit(1)
+    if not osp.exists(root_path):
+        print("Root path not found at {}".format(root_path))
+        exit(1)
+
+    if "skip_downsamples" not in config["model_params"]:
+        config["model_params"]["skip_downsamples"] = False
+    model_params = recursive_munch(config["model_params"])
+    multispeaker = model_params.multispeaker
+
     device = "cuda"
 
     val_list = get_data_path_list(val_path)
@@ -104,6 +119,7 @@ def main(config_path, probe_batch):
         num_workers=0,
         device=device,
         dataset_config={},
+        multispeaker=multispeaker,
     )
 
     def log_print_function(s):
@@ -119,6 +135,7 @@ def main(config_path, probe_batch):
         device=device,
         accelerator=None,
         log_print=log_print_function,
+        multispeaker=multispeaker,
     )
 
     # load pretrained ASR model
@@ -135,10 +152,6 @@ def main(config_path, probe_batch):
     plbert = load_plbert(BERT_path)
 
     # build model
-    if "skip_downsamples" not in config["model_params"]:
-        config["model_params"]["skip_downsamples"] = False
-    model_params = recursive_munch(config["model_params"])
-    multispeaker = model_params.multispeaker
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
     _ = [model[key].to(device) for key in model]
 
@@ -295,7 +308,7 @@ def main(config_path, probe_batch):
 
         # for i, batch in enumerate(train_dataloader):
         def train_batch(i, batch, running_loss, iters):
-            waves = batch[0]
+            waves = batch[0].to(device)
             batch = [b.to(device) for b in batch[1:]]
             (
                 texts,
@@ -339,19 +352,8 @@ def main(config_path, probe_batch):
                     ref = torch.cat([ref_ss, ref_sp], dim=1)
 
             # compute the style of the entire utterance
-            # this operation cannot be done in batch because of the avgpool layer (may need to work on masked avgpool)
-            ss = []
-            gs = []
-            for bib in range(len(mel_input_length)):
-                mel_length = int(mel_input_length[bib].item())
-                mel = mels[bib, :, : mel_input_length[bib]]
-                s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
-                ss.append(s)
-                s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
-                gs.append(s)
-
-            s_dur = torch.stack(ss).squeeze(1)  # global prosodic styles
-            gs = torch.stack(gs).squeeze(1)  # global acoustic styles
+            s_dur = model.predictor_encoder(mels.unsqueeze(1))
+            gs = model.style_encoder(mels.unsqueeze(1))
             s_trg = torch.cat([gs, s_dur], dim=-1).detach()  # ground truth for denoiser
 
             bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
@@ -400,67 +402,33 @@ def main(config_path, probe_batch):
                 loss_sty = 0
                 loss_diff = 0
 
-            d, p = model.predictor(d_en, s_dur, input_lengths, s2s_attn_mono, text_mask)
+            d, p_en = model.predictor(
+                d_en, s_dur, input_lengths, s2s_attn_mono, text_mask
+            )
 
-            en = []
-            gt = []
-            st = []
-            p_en = []
-            wav = []
+            wav = waves
 
-            for bib in range(len(mel_input_length)):
-                en.append(asr[bib])
-                p_en.append(p[bib])
-                gt.append(mels[bib])
-
-                y = waves[bib]
-                wav.append(torch.from_numpy(y).to(device))
-
-                # style reference (better to be different from the GT)
-                st.append(mels[bib])
-
-            wav = torch.stack(wav).float().detach()
-
-            en = torch.stack(en)
-            p_en = torch.stack(p_en)
-            gt = torch.stack(gt).detach()
-            st = torch.stack(st).detach()
-
-            if gt.shape[-1] < 40 or (
-                gt.shape[-1] < 80 and not model_params.skip_downsamples
+            if mels.shape[-1] < 40 or (
+                mels.shape[-1] < 80 and not model_params.skip_downsamples
             ):
                 log_print("Skipping batch. TOO SHORT", logger)
                 return running_loss, iters
 
-            s_dur = model.predictor_encoder(
-                st.unsqueeze(1) if multispeaker else gt.unsqueeze(1)
-            )
-            s = model.style_encoder(
-                st.unsqueeze(1) if multispeaker else gt.unsqueeze(1)
-            )
-
             with torch.no_grad():
-                F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
-                F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1).squeeze(1)
+                F0_real, _, _ = model.pitch_extractor(mels.unsqueeze(1))
+                N_real = log_norm(mels.unsqueeze(1)).squeeze(1)
 
-                asr_real = model.text_aligner.get_feature(gt)
-
-                N_real = log_norm(gt.unsqueeze(1)).squeeze(1)
-
-                y_rec_gt = wav.unsqueeze(1)
-                y_rec_gt_pred, _, _ = model.decoder(en, F0_real, N_real, s)
+                wav = wav.unsqueeze(1)
+                y_rec_gt = wav
 
                 if epoch >= joint_epoch:
-                    # ground truth from recording
-                    wav = y_rec_gt  # use recording since decoder is tuned
-                else:
                     # ground truth from reconstruction
-                    wav = y_rec_gt_pred  # use reconstruction since decoder is fixed
+                    y_rec_gt_pred, _, _ = model.decoder(asr, F0_real, N_real, gs)
 
             F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
 
-            y_rec, mag_rec, phase_rec = model.decoder(en, F0_fake, N_fake, s)
-            loss_magphase = maphase_loss(mag_rec, phase_rec, wav.detach())
+            y_rec, mag_rec, phase_rec = model.decoder(asr, F0_fake, N_fake, gs)
+            loss_magphase = magphase_loss(mag_rec, phase_rec, wav.squeeze(1).detach())
 
             loss_F0_rec = (F.smooth_l1_loss(F0_real, F0_fake)) / 10
             loss_norm_rec = F.smooth_l1_loss(N_real, N_fake)
@@ -675,7 +643,7 @@ def main(config_path, probe_batch):
                 optimizer.zero_grad()
 
                 try:
-                    waves = batch[0]
+                    waves = batch[0].to(device)
                     batch = [b.to(device) for b in batch[1:]]
                     (
                         texts,
@@ -708,19 +676,21 @@ def main(config_path, probe_batch):
 
                         d_gt = s2s_attn_mono.sum(axis=-1).detach()
 
-                    ss = []
-                    gs = []
+                    # ss = []
+                    # gs = []
 
-                    for bib in range(len(mel_input_length)):
-                        mel_length = int(mel_input_length[bib].item())
-                        mel = mels[bib, :, : mel_input_length[bib]]
-                        s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
-                        ss.append(s)
-                        s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
-                        gs.append(s)
+                    # for bib in range(len(mel_input_length)):
+                    #    mel_length = int(mel_input_length[bib].item())
+                    #    mel = mels[bib, :, : mel_input_length[bib]]
+                    #    s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
+                    #    ss.append(s)
+                    #    s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
+                    #    gs.append(s)
 
-                    s = torch.stack(ss).squeeze(1)
-                    gs = torch.stack(gs).squeeze(1)
+                    # s = torch.stack(ss).squeeze(1)
+                    # gs = torch.stack(gs).squeeze(1)
+                    s = model.predictor_encoder(mels.unsqueeze(1))
+                    gs = model.style_encoder(mels.unsqueeze(1))
                     s_trg = torch.cat([s, gs], dim=-1).detach()
 
                     bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
@@ -729,39 +699,43 @@ def main(config_path, probe_batch):
                         d_en, s, input_lengths, s2s_attn_mono, text_mask
                     )
                     # get clips
-                    mel_len = int(mel_input_length.min().item() / 2 - 1)
-                    en = []
-                    gt = []
-                    p_en = []
-                    wav = []
+                    # mel_len = int(mel_input_length.min().item() / 2 - 1)
+                    # en = []
+                    # gt = []
+                    # p_en = []
+                    # wav = []
 
-                    for bib in range(len(mel_input_length)):
-                        mel_length = int(mel_input_length[bib].item() / 2)
+                    # for bib in range(len(mel_input_length)):
+                    #    mel_length = int(mel_input_length[bib].item() / 2)
 
-                        random_start = np.random.randint(0, mel_length - mel_len)
-                        en.append(asr[bib, :, random_start : random_start + mel_len])
-                        p_en.append(p[bib, :, random_start : random_start + mel_len])
+                    #    random_start = np.random.randint(0, mel_length - mel_len)
+                    #    en.append(asr[bib, :, random_start : random_start + mel_len])
+                    #    p_en.append(p[bib, :, random_start : random_start + mel_len])
 
-                        gt.append(
-                            mels[
-                                bib,
-                                :,
-                                (random_start * 2) : ((random_start + mel_len) * 2),
-                            ]
-                        )
+                    #    gt.append(
+                    #        mels[
+                    #            bib,
+                    #            :,
+                    #            (random_start * 2) : ((random_start + mel_len) * 2),
+                    #        ]
+                    #    )
 
-                        y = waves[bib][
-                            (random_start * 2)
-                            * 300 : ((random_start + mel_len) * 2)
-                            * 300
-                        ]
-                        wav.append(torch.from_numpy(y).to(device))
+                    #    y = waves[bib][
+                    #        (random_start * 2)
+                    #        * 300 : ((random_start + mel_len) * 2)
+                    #        * 300
+                    #    ]
+                    #    wav.append(torch.from_numpy(y).to(device))
 
-                    wav = torch.stack(wav).float().detach()
+                    # wav = torch.stack(wav).float().detach()
 
-                    en = torch.stack(en)
-                    p_en = torch.stack(p_en)
-                    gt = torch.stack(gt).detach()
+                    # en = torch.stack(en)
+                    # p_en = torch.stack(p_en)
+                    # gt = torch.stack(gt).detach()
+                    wav = waves
+                    en = asr
+                    p_en = p
+                    gt = mels.detach()
 
                     # clip too short to be used by the style encoder
                     if gt.shape[-1] < 40 or (
@@ -770,7 +744,7 @@ def main(config_path, probe_batch):
                         log_print("Skipping batch. TOO SHORT", logger)
                         continue
 
-                    s = model.predictor_encoder(gt.unsqueeze(1))
+                    # s = model.predictor_encoder(gt.unsqueeze(1))
 
                     F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s)
 
@@ -791,9 +765,9 @@ def main(config_path, probe_batch):
 
                     loss_dur /= texts.size(0)
 
-                    s = model.style_encoder(gt.unsqueeze(1))
+                    # s = model.style_encoder(gt.unsqueeze(1))
 
-                    y_rec, _, _ = model.decoder(en, F0_fake, N_fake, s)
+                    y_rec, _, _ = model.decoder(en, F0_fake, N_fake, gs)
                     loss_mel = stft_loss(y_rec.squeeze(1), wav.detach())
 
                     F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
