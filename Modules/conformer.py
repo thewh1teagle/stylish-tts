@@ -142,7 +142,7 @@ class ConformerBlock(nn.Module):
             dim_head=dim_head,
             heads=heads,
             causal=True,
-            auto_shard_seq=True,
+            auto_shard_seq=False,
             ring_attn=True,
             ring_seq_size=512,
         )

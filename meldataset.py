@@ -524,13 +524,13 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, epoch, train_batch, debug=False):
+    def epoch_loop(self, epoch, train_batch, debug=False, train=None):
         if self.probe_batch is not None:
-            self.probe_loop(train_batch)
+            self.probe_loop(train_batch, train)
         else:
-            self.train_loop(epoch, train_batch, debug)
+            self.train_loop(epoch, train_batch, debug, train=train)
 
-    def probe_loop(self, train_batch):
+    def probe_loop(self, train_batch, train):
         self.batch_dict = {}
         batch_size = self.probe_batch
         sampler = self.loader.batch_sampler
@@ -552,7 +552,7 @@ class BatchManager:
                         # sampler.set_epoch(0)
                         real_size = sampler.probe_batch(key, batch_size)
                         for _, batch in enumerate(self.loader):
-                            _, _ = train_batch(0, batch, 0, 0)
+                            _, _ = train_batch(0, batch, 0, 0, train, 1)
                             break
                         self.set_batch_size(key, real_size)
                     done = True
@@ -575,7 +575,7 @@ class BatchManager:
         self.save_batch_dict()
         quit()
 
-    def train_loop(self, epoch, train_batch, debug=False):
+    def train_loop(self, epoch, train_batch, debug=False, train=None):
         running_loss = 0
         iters = 0
         sampler = self.loader.batch_sampler
@@ -591,7 +591,9 @@ class BatchManager:
                         self.log_print(
                             f"train_batch(i={i}, batch={batch_size}, running_loss={running_loss}, iters={iters}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                         )
-                    running_loss, iters = train_batch(i, batch, running_loss, iters)
+                    running_loss, iters = train_batch(
+                        i, batch, running_loss, iters, train, epoch
+                    )
                     break
                 except Exception as e:
                     batch_size = self.get_batch_size(sampler.last_bin)
