@@ -64,19 +64,19 @@ def main(config_path, probe_batch, early_joint, stage):
     train.early_joint = early_joint
     train.stage = stage
 
+    train.log_dir = train.config["log_dir"]
+    if not osp.exists(train.log_dir):
+        os.makedirs(train.log_dir, exist_ok=True)
+    if not osp.exists(train.log_dir):
+        exit("Failed to create or find log directory.")
+    shutil.copy(config_path, osp.join(train.log_dir, osp.basename(config_path)))
+    train.writer = SummaryWriter(train.log_dir + "/tensorboard")
+
     train.logger = logging.getLogger(__name__)
     train.logger.setLevel(logging.DEBUG)
     handler = StreamHandler()
     handler.setLevel(logging.DEBUG)
     train.logger.addHandler(handler)
-
-    train.log_dir = train.config["log_dir"]
-    if not osp.exists(train.log_dir):
-        os.makedirs(train.log_dir, exist_ok=True)
-    shutil.copy(config_path, osp.join(train.log_dir, osp.basename(config_path)))
-    train.writer = SummaryWriter(train.log_dir + "/tensorboard")
-
-    # write logs
     file_handler = logging.FileHandler(osp.join(train.log_dir, "train.log"))
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
@@ -89,62 +89,58 @@ def main(config_path, probe_batch, early_joint, stage):
     train.log_interval = train.config.get("log_interval", 10)
     train.saving_epoch = train.config.get("save_freq", 2)
 
-    train.data_params = train.config.get("data_params", None)
     train.sr = train.config["preprocess_params"].get("sr", 24000)
-    train.train_path = train.data_params["train_data"]
-    train.val_path = train.data_params["val_data"]
-    train.root_path = train.data_params["root_path"]
-    train.min_length = train.data_params["min_length"]
-    train.OOD_data = train.data_params["OOD_data"]
 
     train.loss_params = Munch(train.config["loss_params"])
     train.diff_epoch = train.loss_params.diff_epoch
     train.joint_epoch = train.loss_params.joint_epoch
     train.TMA_epoch = train.loss_params.TMA_epoch
 
-    train.optimizer_params = Munch(train.config["optimizer_params"])
-
-    if not osp.exists(train.train_path):
-        print("Train data not found at {}".format(train.train_path))
-        exit(1)
-    if not osp.exists(train.val_path):
-        print("Validation data not found at {}".format(train.val_path))
-        exit(1)
-    if not osp.exists(train.root_path):
-        print("Root path not found at {}".format(train.root_path))
-        exit(1)
-
     if "skip_downsamples" not in train.config["model_params"]:
         train.config["model_params"]["skip_downsamples"] = False
     train.model_params = recursive_munch(train.config["model_params"])
     train.multispeaker = train.model_params.multispeaker
-
     train.device = "cuda"
 
-    train.val_list = get_data_path_list(train.val_path)
+    # Set up data loaders and batch manager
+    data_params = train.config.get("data_params", None)
+    train_path = data_params["train_data"]
+    val_path = data_params["val_data"]
+    root_path = data_params["root_path"]
+    min_length = data_params["min_length"]
+    OOD_data = data_params["OOD_data"]
+
+    if not osp.exists(train_path):
+        exit(f"Train data not found at {train_path}")
+    if not osp.exists(val_path):
+        exit(f"Validation data not found at {val_path}")
+    if not osp.exists(root_path):
+        exit("Root path not found at {root_path}")
+
+    val_list = get_data_path_list(val_path)
     train.val_dataloader = build_dataloader(
-        train.val_list,
-        train.root_path,
-        OOD_data=train.OOD_data,
-        min_length=train.min_length,
+        val_list,
+        root_path,
+        OOD_data=OOD_data,
+        min_length=min_length,
         batch_size={},
         validation=True,
-        num_workers=0,
+        num_workers=4,
         device=train.device,
         dataset_config={},
         multispeaker=train.multispeaker,
     )
 
     def log_print_function(s):
-        log_print(s, train.logger)
+        train.logger.info(s)
 
     train.batch_manager = BatchManager(
-        train.train_path,
+        train_path,
         train.log_dir,
         probe_batch=probe_batch,
-        root_path=train.root_path,
-        OOD_data=train.OOD_data,
-        min_length=train.min_length,
+        root_path=root_path,
+        OOD_data=OOD_data,
+        min_length=min_length,
         device=train.device,
         accelerator=None,
         log_print=log_print_function,
@@ -173,7 +169,7 @@ def main(config_path, probe_batch, early_joint, stage):
         if key != "mpd" and key != "msd" and key != "wd":
             train.model[key] = MyDataParallel(train.model[key])
 
-    train.start_epoch = 1
+    start_epoch = 1
     train.iters = 0
 
     load_pretrained = train.config.get(
@@ -186,7 +182,7 @@ def main(config_path, probe_batch, early_joint, stage):
                 train.log_dir, train.config.get("first_stage_path", "first_stage.pth")
             )
             print("Loading the first stage model at %s ..." % first_stage_path)
-            train.model, _, train.start_epoch, train.iters = load_checkpoint(
+            train.model, _, start_epoch, train.iters = load_checkpoint(
                 train.model,
                 None,
                 first_stage_path,
@@ -207,10 +203,10 @@ def main(config_path, probe_batch, early_joint, stage):
             # diff_epoch += start_epoch
             # joint_epoch += start_epoch
             # epochs += start_epoch
-            train.start_epoch = 1
+            start_epoch = 1
             train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
         else:
-            train.start_epoch = 1
+            start_epoch = 1
             train.iters = 0
             # raise ValueError("You need to specify the path to the first stage model.")
 
@@ -236,28 +232,29 @@ def main(config_path, probe_batch, early_joint, stage):
         clamp=False,
     )
 
+    optimizer_params = Munch(train.config["optimizer_params"])
     scheduler_params = {
-        "max_lr": train.optimizer_params.lr,
+        "max_lr": optimizer_params.lr,
         "pct_start": float(0),
         "epochs": train.epochs,
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
     scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
-    scheduler_params_dict["bert"]["max_lr"] = train.optimizer_params.bert_lr * 2
-    scheduler_params_dict["decoder"]["max_lr"] = train.optimizer_params.ft_lr * 2
-    scheduler_params_dict["style_encoder"]["max_lr"] = train.optimizer_params.ft_lr * 2
+    scheduler_params_dict["bert"]["max_lr"] = optimizer_params.bert_lr * 2
+    scheduler_params_dict["decoder"]["max_lr"] = optimizer_params.ft_lr * 2
+    scheduler_params_dict["style_encoder"]["max_lr"] = optimizer_params.ft_lr * 2
 
     train.optimizer = build_optimizer(
         {key: train.model[key].parameters() for key in train.model},
         scheduler_params_dict=scheduler_params_dict,
-        lr=train.optimizer_params.lr,
+        lr=optimizer_params.lr,
     )
 
     # adjust BERT learning rate
     for g in train.optimizer.optimizers["bert"].param_groups:
         g["betas"] = (0.9, 0.99)
-        g["lr"] = train.optimizer_params.bert_lr
-        g["initial_lr"] = train.optimizer_params.bert_lr
+        g["lr"] = optimizer_params.bert_lr
+        g["initial_lr"] = optimizer_params.bert_lr
         g["min_lr"] = 0
         g["weight_decay"] = 0.01
 
@@ -265,29 +262,25 @@ def main(config_path, probe_batch, early_joint, stage):
     for module in ["decoder", "style_encoder"]:
         for g in train.optimizer.optimizers[module].param_groups:
             g["betas"] = (0.0, 0.99)
-            g["lr"] = train.optimizer_params.ft_lr
-            g["initial_lr"] = train.optimizer_params.ft_lr
+            g["lr"] = optimizer_params.ft_lr
+            g["initial_lr"] = optimizer_params.ft_lr
             g["min_lr"] = 0
             g["weight_decay"] = 1e-4
 
     # load models if there is a model
     if load_pretrained:
-        train.model, train.optimizer, train.start_epoch, train.iters = load_checkpoint(
+        train.model, train.optimizer, start_epoch, train.iters = load_checkpoint(
             train.model,
             train.optimizer,
             train.config["pretrained_model"],
             load_only_params=train.config.get("load_only_params", True),
         )
-        train.start_epoch += 1
+        start_epoch += 1
 
     train.n_down = train.model.text_aligner.n_down
 
     train.best_loss = float("inf")  # best test loss
-    train.loss_train_record = list([])
-    train.loss_test_record = list([])
-    train.iters = 0
 
-    train.criterion = nn.L1Loss()  # F0 loss (regression)
     torch.cuda.empty_cache()
 
     train.stft_loss = MultiResolutionSTFTLoss().to(train.device)
@@ -297,6 +290,7 @@ def main(config_path, probe_batch, early_joint, stage):
 
     train.start_ds = False
 
+    # TODO: This value is calculated inconsistently based on whether checkpoints are loaded/saved
     train.running_std = []
 
     train.slmadv_params = Munch(train.config["slmadv_params"])
@@ -311,10 +305,10 @@ def main(config_path, probe_batch, early_joint, stage):
         sig=train.slmadv_params.sig,
     )
 
-    train_val_loop(train)
+    train_val_loop(train, start_epoch)
 
 
-def train_val_loop(train):
+def train_val_loop(train, start_epoch):
     if train.stage == "first":
         train_batch = train_first
         validate = validate_first
@@ -323,7 +317,7 @@ def train_val_loop(train):
         validate = validate_second
     else:
         exit("Invalid training stage. --stage must be 'first' or 'second'")
-    for epoch in range(train.start_epoch, train.epochs):
+    for epoch in range(start_epoch, train.epochs):
         train.running_loss = 0
         train.start_time = time.time()
 
