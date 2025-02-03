@@ -15,6 +15,9 @@ import traceback
 import warnings
 import logging
 from logging import StreamHandler
+from accelerate import Accelerator
+from accelerate import DistributedDataParallelKwargs
+
 
 warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
@@ -70,13 +73,13 @@ def main(config_path, probe_batch, early_joint, stage):
     if not osp.exists(train.log_dir):
         exit("Failed to create or find log directory.")
     shutil.copy(config_path, osp.join(train.log_dir, osp.basename(config_path)))
-    train.writer = SummaryWriter(train.log_dir + "/tensorboard")
 
     train.logger = logging.getLogger(__name__)
     train.logger.setLevel(logging.DEBUG)
     handler = StreamHandler()
     handler.setLevel(logging.DEBUG)
     train.logger.addHandler(handler)
+
     file_handler = logging.FileHandler(osp.join(train.log_dir, "train.log"))
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
@@ -89,6 +92,11 @@ def main(config_path, probe_batch, early_joint, stage):
     train.log_interval = train.config.get("log_interval", 10)
     train.saving_epoch = train.config.get("save_freq", 2)
 
+
+    train.val_interval = train.config.get("val_interval", 1)
+    train.save_interval = train.config.get("save_interval", 1)
+
+    train.data_params = train.config.get("data_params", None)
     train.sr = train.config["preprocess_params"].get("sr", 24000)
 
     train.loss_params = Munch(train.config["loss_params"])
@@ -96,11 +104,39 @@ def main(config_path, probe_batch, early_joint, stage):
     train.joint_epoch = train.loss_params.joint_epoch
     train.TMA_epoch = train.loss_params.TMA_epoch
 
+
+    train.precision = train.config.get("precision", "no")
+
+    train.optimizer_params = Munch(train.config["optimizer_params"])
+
+    if not osp.exists(train.train_path):
+        print("Train data not found at {}".format(train.train_path))
+        exit(1)
+    if not osp.exists(train.val_path):
+        print("Validation data not found at {}".format(train.val_path))
+        exit(1)
+    if not osp.exists(train.root_path):
+        print("Root path not found at {}".format(train.root_path))
+        exit(1)
+
     if "skip_downsamples" not in train.config["model_params"]:
         train.config["model_params"]["skip_downsamples"] = False
     train.model_params = recursive_munch(train.config["model_params"])
     train.multispeaker = train.model_params.multispeaker
-    train.device = "cuda"
+
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    train.accelerator = Accelerator(
+        project_dir=train.log_dir,
+        split_batches=True,
+        kwargs_handlers=[ddp_kwargs],
+        mixed_precision=train.precision,
+    )
+
+    if train.accelerator.is_main_process:
+        train.writer = SummaryWriter(train.log_dir + "/tensorboard")
+
+    train.device = train.config.get("device", "cuda")
+
 
     # Set up data loaders and batch manager
     data_params = train.config.get("data_params", None)
@@ -131,6 +167,8 @@ def main(config_path, probe_batch, early_joint, stage):
         multispeaker=train.multispeaker,
     )
 
+    train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
+
     def log_print_function(s):
         train.logger.info(s)
 
@@ -142,26 +180,31 @@ def main(config_path, probe_batch, early_joint, stage):
         OOD_data=OOD_data,
         min_length=min_length,
         device=train.device,
-        accelerator=None,
+        accelerator=train.accelerator,
         log_print=log_print_function,
         multispeaker=train.multispeaker,
     )
 
-    # load pretrained ASR model
-    ASR_config = train.config.get("ASR_config", False)
-    ASR_path = train.config.get("ASR_path", False)
-    text_aligner = load_ASR_models(ASR_path, ASR_config)
+    with train.accelerator.main_process_first():
+        # load pretrained ASR model
+        ASR_config = train.config.get("ASR_config", False)
+        ASR_path = train.config.get("ASR_path", False)
+        text_aligner = load_ASR_models(ASR_path, ASR_config)
 
-    # load pretrained F0 model
-    F0_path = train.config.get("F0_path", False)
-    pitch_extractor = load_F0_models(F0_path)
+        # load pretrained F0 model
+        F0_path = train.config.get("F0_path", False)
+        pitch_extractor = load_F0_models(F0_path)
 
-    # load PL-BERT model
-    BERT_path = train.config.get("PLBERT_dir", False)
-    plbert = load_plbert(BERT_path)
+        # load PL-BERT model
+        BERT_path = train.config.get("PLBERT_dir", False)
+        plbert = load_plbert(BERT_path)
 
     # build model
     train.model = build_model(train.model_params, text_aligner, pitch_extractor, plbert)
+
+    for k in train.model:
+        train.model[k] = train.accelerator.prepare(train.model[k])
+
     _ = [train.model[key].to(train.device) for key in train.model]
 
     # DP
@@ -172,43 +215,39 @@ def main(config_path, probe_batch, early_joint, stage):
     start_epoch = 1
     train.iters = 0
 
-    load_pretrained = train.config.get(
-        "pretrained_model", ""
-    ) != "" and train.config.get("second_stage_load_pretrained", False)
+    load_pretrained = train.config.get("pretrained_model", "")
 
-    if not load_pretrained:
-        if train.config.get("first_stage_path", "") != "":
-            first_stage_path = osp.join(
-                train.log_dir, train.config.get("first_stage_path", "first_stage.pth")
-            )
-            print("Loading the first stage model at %s ..." % first_stage_path)
-            train.model, _, start_epoch, train.iters = load_checkpoint(
-                train.model,
-                None,
-                first_stage_path,
-                load_only_params=True,
-                ignore_modules=[
-                    "bert",
-                    "bert_encoder",
-                    "predictor",
-                    "predictor_encoder",
-                    "msd",
-                    "mpd",
-                    "wd",
-                    "diffusion",
-                ],
-            )  # keep starting epoch for tensorboard log
+    # load an existing model for first stage
+    if (
+        load_pretrained
+        and osp.exists(load_pretrained)
+        and not train.config.get("second_stage_load_pretrained", False)
+    ):
+        print(f"Loading the first stage model at {load_pretrained} ...")
+        train.model, _, train.start_epoch, train.iters = load_checkpoint(
+            train.model,
+            None,
+            load_pretrained,
+            load_only_params=True,
+            ignore_modules=[
+                "bert",
+                "bert_encoder",
+                "predictor",
+                "predictor_encoder",
+                "msd",
+                "mpd",
+                "wd",
+                "diffusion",
+            ],
+        )  # keep starting epoch for tensorboard log
 
-            # these epochs should be counted from the start epoch
-            # diff_epoch += start_epoch
-            # joint_epoch += start_epoch
-            # epochs += start_epoch
-            start_epoch = 1
-            train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
-        else:
-            start_epoch = 1
-            train.iters = 0
-            # raise ValueError("You need to specify the path to the first stage model.")
+        # these epochs should be counted from the start epoch
+        # diff_epoch += start_epoch
+        # joint_epoch += start_epoch
+        # epochs += start_epoch
+        train.start_epoch = 1
+        train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
+
 
     train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(train.device)
     train.dl = DiscriminatorLoss(train.model.mpd, train.model.msd).to(train.device)
@@ -250,6 +289,14 @@ def main(config_path, probe_batch, early_joint, stage):
         lr=optimizer_params.lr,
     )
 
+    for k in train.optimizer.optimizers.keys():
+        train.optimizer.optimizers[k] = train.accelerator.prepare(
+            train.optimizer.optimizers[k]
+        )
+        train.optimizer.schedulers[k] = train.accelerator.prepare(
+            train.optimizer.schedulers[k]
+        )
+
     # adjust BERT learning rate
     for g in train.optimizer.optimizers["bert"].param_groups:
         g["betas"] = (0.9, 0.99)
@@ -267,15 +314,23 @@ def main(config_path, probe_batch, early_joint, stage):
             g["min_lr"] = 0
             g["weight_decay"] = 1e-4
 
-    # load models if there is a model
-    if load_pretrained:
-        train.model, train.optimizer, start_epoch, train.iters = load_checkpoint(
-            train.model,
-            train.optimizer,
-            train.config["pretrained_model"],
-            load_only_params=train.config.get("load_only_params", True),
-        )
-        start_epoch += 1
+
+    if train.accelerator.main_process_first():
+        # load models if there is a model for second stage
+        if (
+            load_pretrained
+            and osp.exists(load_pretrained)
+            and train.config.get("second_stage_load_pretrained", False)
+        ):
+            train.model, train.optimizer, train.start_epoch, train.iters = (
+                load_checkpoint(
+                    train.model,
+                    train.optimizer,
+                    load_pretrained,
+                    load_only_params=train.config.get("load_only_params", True),
+                )
+            )
+            train.start_epoch += 1
 
     train.n_down = train.model.text_aligner.n_down
 
@@ -310,11 +365,11 @@ def main(config_path, probe_batch, early_joint, stage):
 
 def train_val_loop(train, start_epoch):
     if train.stage == "first":
-        train_batch = train_first
-        validate = validate_first
+        train.train_batch = train_first
+        train.validate = validate_first
     elif train.stage == "second":
-        train_batch = train_second
-        validate = validate_second
+        train.train_batch = train_second
+        train.validate = validate_second
     else:
         exit("Invalid training stage. --stage must be 'first' or 'second'")
     for epoch in range(start_epoch, train.epochs):
@@ -325,9 +380,9 @@ def train_val_loop(train, start_epoch):
             train.start_ds = True
 
         _ = [train.model[key].train() for key in train.model]
-        train.batch_manager.epoch_loop(epoch, train_batch, train=train)
+        train.batch_manager.epoch_loop(epoch, train=train)
         _ = [train.model[key].eval() for key in train.model]
-        validate(epoch, 1, True, train)
+        train.validate(epoch, 1, True, train)
 
 
 if __name__ == "__main__":

@@ -524,13 +524,13 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, epoch, train_batch, debug=False, train=None):
+    def epoch_loop(self, epoch, train, debug=False):
         if self.probe_batch is not None:
-            self.probe_loop(train_batch, train)
+            self.probe_loop(train)
         else:
-            self.train_loop(epoch, train_batch, debug, train=train)
+            self.train_loop(epoch, train=train, debug=debug)
 
-    def probe_loop(self, train_batch, train):
+    def probe_loop(self, train):
         self.batch_dict = {}
         batch_size = self.probe_batch
         sampler = self.loader.batch_sampler
@@ -552,7 +552,7 @@ class BatchManager:
                         # sampler.set_epoch(0)
                         real_size = sampler.probe_batch(key, batch_size)
                         for _, batch in enumerate(self.loader):
-                            _, _ = train_batch(0, batch, 0, 0, train, 1)
+                            _, _ = train.train_batch(0, batch, 0, 0, train, 1)
                             break
                         self.set_batch_size(key, real_size)
                     done = True
@@ -565,6 +565,7 @@ class BatchManager:
                         print("Probe saw OOM -- backing off")
                         import gc
 
+                        train.optimizer.zero_grad()
                         gc.collect()
                         torch.cuda.empty_cache()
                         counting_up = False
@@ -575,7 +576,7 @@ class BatchManager:
         self.save_batch_dict()
         quit()
 
-    def train_loop(self, epoch, train_batch, debug=False, train=None):
+    def train_loop(self, epoch, train, debug=False):
         running_loss = 0
         iters = 0
         sampler = self.loader.batch_sampler
@@ -591,7 +592,7 @@ class BatchManager:
                         self.log_print(
                             f"train_batch(i={i}, batch={batch_size}, running_loss={running_loss}, iters={iters}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                         )
-                    running_loss, iters = train_batch(
+                    running_loss, iters = train.train_batch(
                         i, batch, running_loss, iters, train, epoch
                     )
                     break
@@ -604,6 +605,7 @@ class BatchManager:
                             f"TRAIN_BATCH OOM ({sampler.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
                         self.log_print(e)
+                        train.optimizer.zero_grad()
                         if last_oom != sampler.last_bin:
                             last_oom = sampler.last_bin
                             if batch_size > 1:

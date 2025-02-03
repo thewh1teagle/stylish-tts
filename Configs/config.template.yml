@@ -8,11 +8,11 @@ device: "cuda"
 epochs_1st: 200 # number of epochs for first stage training (pre-training)
 epochs_2nd: 100 # number of peochs for second stage training (joint training)
 max_len: 6400 # maximum number of frames * max batch size
-pretrained_model: ""
+pretrained_model: "" # path to an existing model to continue training
 second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
 load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
 debug: false # will add extra debug logging during training
-precision: "fp32" # set to "fp16" or "bf16" for mixed precision training
+precision: "no" # set to "fp16" or "bf16" for mixed precision training "no" for full precision training
 
 F0_path: "Utils/JDC/bst.t7"
 ASR_config: "Utils/ASR/config.yml"
