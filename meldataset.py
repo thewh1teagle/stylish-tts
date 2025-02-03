@@ -524,11 +524,11 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, epoch, train_batch, debug=False, train=None):
+    def epoch_loop(self, epoch, train_batch, train, debug=False):
         if self.probe_batch is not None:
             self.probe_loop(train_batch, train)
         else:
-            self.train_loop(epoch, train_batch, debug, train=train)
+            self.train_loop(epoch, train_batch, train=train, debug=debug)
 
     def probe_loop(self, train_batch, train):
         self.batch_dict = {}
@@ -576,7 +576,7 @@ class BatchManager:
         self.save_batch_dict()
         quit()
 
-    def train_loop(self, epoch, train_batch, debug=False, train=None):
+    def train_loop(self, epoch, train_batch, train, debug=False):
         running_loss = 0
         iters = 0
         sampler = self.loader.batch_sampler

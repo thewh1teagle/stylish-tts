@@ -116,7 +116,7 @@ def compute_alignment(
         else:
             asr = t_en @ s2s_attn_mono
 
-    return s2s_attn, s2s_attn_mono, asr, text_mask, mask
+    return s2s_attn, s2s_attn_mono, s2s_pred, asr, text_mask, mask
 
 
 def compute_duration_ce_loss(
@@ -208,6 +208,9 @@ def log_and_save_checkpoint(
 ###############################################
 
 
+# ... (the rest of your helper functions remain unchanged)
+
+
 def train_first(
     i: int, batch, running_loss: float, iters: int, train, epoch: int
 ) -> Tuple[float, int]:
@@ -220,7 +223,7 @@ def train_first(
     )
 
     # --- Alignment Computation ---
-    s2s_attn, s2s_attn_mono, asr, text_mask, _ = compute_alignment(
+    s2s_attn, s2s_attn_mono, s2s_pred, asr, _, _ = compute_alignment(
         train,
         mels,
         texts,
@@ -271,10 +274,13 @@ def train_first(
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
         if epoch >= train.TMA_epoch:
-            loss_s2s = sum(
-                F.cross_entropy(pred[:length], text[:length])
-                for pred, text, length in zip(s2s_attn, texts, input_lengths)
-            )
+            loss_s2s = 0
+            for _s2s_pred, _text_input, _text_length in zip(
+                s2s_pred, texts, input_lengths
+            ):
+                loss_s2s += F.cross_entropy(
+                    _s2s_pred[:_text_length], _text_input[:_text_length]
+                )
             loss_s2s /= texts.size(0)
             loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
             loss_gen_all = train.gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
@@ -359,7 +365,7 @@ def train_second(
     with torch.no_grad():
         mel_mask = length_to_mask(mel_input_length).to(train.device)
     try:
-        s2s_attn, s2s_attn_mono, asr, text_mask, _ = compute_alignment(
+        _, s2s_attn_mono, _, asr, text_mask, _ = compute_alignment(
             train,
             mels,
             texts,
