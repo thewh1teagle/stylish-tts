@@ -60,7 +60,7 @@ train = TrainContext()
 @click.option("-p", "--config_path", default="Configs/config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="first", type=str)
+@click.option("--stage", default="second", type=str)
 def main(config_path, probe_batch, early_joint, stage):
     train.config_path = config_path
     train.config = yaml.safe_load(open(config_path))
@@ -89,6 +89,9 @@ def main(config_path, probe_batch, early_joint, stage):
     train.save_freq = train.config.get("save_freq", 2)
     train.log_interval = train.config.get("log_interval", 10)
     train.saving_epoch = train.config.get("save_freq", 2)
+
+    train.val_interval = train.config.get("val_interval", 1)
+    train.save_interval = train.config.get("save_interval", 1)
 
     train.data_params = train.config.get("data_params", None)
     train.sr = train.config["preprocess_params"].get("sr", 24000)
@@ -298,7 +301,7 @@ def main(config_path, probe_batch, early_joint, stage):
         # load models if there is a model for second stage
         if (
             load_pretrained
-            and osp(load_pretrained)
+            and osp.exists(load_pretrained)
             and train.config.get("second_stage_load_pretrained", False)
         ):
             train.model, train.optimizer, train.start_epoch, train.iters = (
@@ -347,11 +350,11 @@ def main(config_path, probe_batch, early_joint, stage):
 
 def train_val_loop(train):
     if train.stage == "first":
-        train_batch = train_first
-        validate = validate_first
+        train.train_batch = train_first
+        train.validate = validate_first
     elif train.stage == "second":
-        train_batch = train_second
-        validate = validate_second
+        train.train_batch = train_second
+        train.validate = validate_second
     else:
         exit("Invalid training stage. --stage must be 'first' or 'second'")
     for epoch in range(train.start_epoch, train.epochs):
@@ -362,9 +365,9 @@ def train_val_loop(train):
             train.start_ds = True
 
         _ = [train.model[key].train() for key in train.model]
-        train.batch_manager.epoch_loop(epoch, train_batch, train=train)
+        train.batch_manager.epoch_loop(epoch, train=train)
         _ = [train.model[key].eval() for key in train.model]
-        validate(epoch, 1, True, train)
+        train.validate(epoch, 1, True, train)
 
 
 if __name__ == "__main__":

@@ -208,9 +208,6 @@ def log_and_save_checkpoint(
 ###############################################
 
 
-# ... (the rest of your helper functions remain unchanged)
-
-
 def train_first(
     i: int, batch, running_loss: float, iters: int, train, epoch: int
 ) -> Tuple[float, int]:
@@ -324,6 +321,10 @@ def train_first(
             train.writer.add_scalar(f"train/{key}", value, train.iters)
         running_loss = 0
         print("Time elapsed:", time.time() - train.start_time)
+
+    if (i + 1) % train.val_interval == 0 or (i + 1) % train.save_interval == 0:
+        save = (i + 1) % train.save_interval == 0
+        train.validate(current_epoch=epoch, current_step=i + 1, save=save, train=train)
 
     return running_loss, iters
 
@@ -562,6 +563,10 @@ def train_second(
         running_loss = 0
         print("Time elapsed:", time.time() - train.start_time)
 
+    if (i + 1) % train.val_interval == 0 or (i + 1) % train.save_interval == 0:
+        save = (i + 1) % train.save_interval == 0
+        train.validate(current_epoch=epoch, current_step=i + 1, save=save, train=train)
+
     return running_loss, iters
 
 
@@ -790,11 +795,11 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
         if avg_loss < train.best_loss:
             train.best_loss = avg_loss
         print("Saving..")
-        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
+        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
     if save and current_step != -1:
         if avg_loss < train.best_loss:
             train.best_loss = avg_loss
         print("Saving..")
-        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
+        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
     for key in train.model:
         train.model[key].train()
