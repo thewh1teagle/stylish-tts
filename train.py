@@ -60,7 +60,7 @@ train = TrainContext()
 @click.option("-p", "--config_path", default="Configs/config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="second", type=str)
+@click.option("--stage", default="auto", type=str)
 def main(config_path, probe_batch, early_joint, stage):
     train.config_path = config_path
     train.config = yaml.safe_load(open(config_path))

@@ -133,7 +133,7 @@ class ConformerBlock(nn.Module):
         attn_dropout=0.0,
         ff_dropout=0.0,
         conv_dropout=0.0,
-        conv_causal=False
+        conv_causal=False,
     ):
         super().__init__()
         self.ff1 = FeedForward(dim=dim, mult=ff_mult, dropout=ff_dropout)
@@ -190,7 +190,7 @@ class Conformer(nn.Module):
         attn_dropout=0.0,
         ff_dropout=0.0,
         conv_dropout=0.0,
-        conv_causal=False
+        conv_causal=False,
     ):
         super().__init__()
         self.dim = dim
