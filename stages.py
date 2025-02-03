@@ -173,6 +173,14 @@ def scale_gradients(model: dict, thresh: float, scale: float) -> None:
             p.grad *= scale
 
 
+def optimizer_step(train, keys: List[str]) -> None:
+    """
+    Steps the optimizer for each module key in keys.
+    """
+    for key in keys:
+        train.optimizer.step(key)
+
+
 def log_and_save_checkpoint(
     train, epoch: int, current_step: int, prefix: str = "epoch_1st"
 ) -> None:
@@ -192,7 +200,7 @@ def log_and_save_checkpoint(
         filename = f"{prefix}_{epoch:05d}_step_{current_step:09d}.pth"
     save_path = osp.join(train.log_dir, filename)
     torch.save(state, save_path)
-    print("Saving checkpoint to", save_path)
+    print(f"Saving checkpoint to {save_path}")
 
 
 ###############################################
@@ -203,11 +211,15 @@ def log_and_save_checkpoint(
 def train_first(
     i: int, batch, running_loss: float, iters: int, train, epoch: int
 ) -> Tuple[float, int]:
-    # Batch preparation.
+    """
+    Training function for the first stage.
+    """
+    # --- Batch Preparation ---
     texts, input_lengths, mels, mel_input_length = prepare_batch(
         batch, train.device, ["texts", "input_lengths", "mels", "mel_input_length"]
     )
-    # Compute alignment using the shared helper.
+
+    # --- Alignment Computation ---
     s2s_attn, s2s_attn_mono, asr, text_mask, _ = compute_alignment(
         train,
         mels,
@@ -217,21 +229,20 @@ def train_first(
         apply_attention_mask=True,
         use_random_choice=True,
     )
-    mel_gt = mels  # Ground truth mel spectrogram.
+    mel_gt = mels  # Ground truth mel spectrogram
 
-    # Check minimum length.
     if mel_gt.shape[-1] < 40 or (
         mel_gt.shape[-1] < 80 and not train.model_params.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
         return running_loss, iters
 
-    # Pitch extraction.
+    # --- Pitch Extraction ---
     with torch.no_grad():
         real_norm = log_norm(mel_gt.unsqueeze(1)).squeeze(1)
         F0_real, _, _ = train.model.pitch_extractor(mel_gt.unsqueeze(1))
 
-    # Style encoding & decoding.
+    # --- Style Encoding & Decoding ---
     with train.accelerator.autocast():
         style_emb = train.model.style_encoder(
             mels.unsqueeze(1) if train.multispeaker else mel_gt.unsqueeze(1)
@@ -240,7 +251,7 @@ def train_first(
             asr, F0_real, real_norm, style_emb
         )
 
-    # Waveform preparation.
+    # --- Waveform Preparation ---
     wav = prepare_batch(batch, train.device, ["waves"])[0]
     wav.requires_grad_(False)
 
@@ -250,8 +261,7 @@ def train_first(
         with train.accelerator.autocast():
             d_loss = train.dl(wav.detach().unsqueeze(1).float(), y_rec.detach()).mean()
         train.accelerator.backward(d_loss)
-        train.optimizer.step("msd")
-        train.optimizer.step("mpd")
+        optimizer_step(train, ["msd", "mpd"])
     else:
         d_loss = 0
 
@@ -261,9 +271,10 @@ def train_first(
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
         if epoch >= train.TMA_epoch:
-            loss_s2s = 0
-            for pred, text, length in zip(s2s_attn, texts, input_lengths):
-                loss_s2s += F.cross_entropy(pred[:length], text[:length])
+            loss_s2s = sum(
+                F.cross_entropy(pred[:length], text[:length])
+                for pred, text, length in zip(s2s_attn, texts, input_lengths)
+            )
             loss_s2s /= texts.size(0)
             loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
             loss_gen_all = train.gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
@@ -282,12 +293,9 @@ def train_first(
     train.accelerator.backward(g_loss)
 
     # --- Optimizer Steps ---
-    train.optimizer.step("text_encoder")
-    train.optimizer.step("style_encoder")
-    train.optimizer.step("decoder")
+    optimizer_step(train, ["text_encoder", "style_encoder", "decoder"])
     if epoch >= train.TMA_epoch:
-        train.optimizer.step("text_aligner")
-        train.optimizer.step("pitch_extractor")
+        optimizer_step(train, ["text_aligner", "pitch_extractor"])
     train.iters += 1
 
     # --- Logging ---
@@ -322,6 +330,9 @@ def train_first(
 def train_second(
     i: int, batch, running_loss: float, iters: int, train, epoch: int
 ) -> Tuple[float, int]:
+    """
+    Training function for the second stage.
+    """
     (
         waves,
         texts,
@@ -358,7 +369,7 @@ def train_second(
             use_random_choice=False,
         )
     except Exception as e:
-        print("s2s_attn computation failed:", e)
+        print(f"s2s_attn computation failed: {e}")
         return running_loss, iters
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
@@ -421,7 +432,7 @@ def train_second(
             d_en, s_dur, input_lengths, s2s_attn_mono, text_mask
         )
 
-    wav = waves  # Assume waves is already on train.device
+    wav = waves  # Assume already on train.device
     if mels.shape[-1] < 40 or (
         mels.shape[-1] < 80 and not train.model_params.skip_downsamples
     ):
@@ -449,8 +460,7 @@ def train_second(
         train.optimizer.zero_grad()
         d_loss = train.dl(wav.detach(), y_rec.detach()).mean()
         d_loss.backward()
-        train.optimizer.step("msd")
-        train.optimizer.step("mpd")
+        optimizer_step(train, ["msd", "mpd"])
     else:
         d_loss = 0
 
@@ -476,17 +486,13 @@ def train_second(
     )
 
     running_loss += loss_mel.item()
-    g_loss.backward()
+    train.accelerator.backward(g_loss)
 
-    train.optimizer.step("bert_encoder")
-    train.optimizer.step("bert")
-    train.optimizer.step("predictor")
-    train.optimizer.step("predictor_encoder")
+    optimizer_step(train, ["bert_encoder", "bert", "predictor", "predictor_encoder"])
     if epoch >= train.diff_epoch:
-        train.optimizer.step("diffusion")
+        optimizer_step(train, ["diffusion"])
     if epoch >= train.joint_epoch or train.early_joint:
-        train.optimizer.step("style_encoder")
-        train.optimizer.step("decoder")
+        optimizer_step(train, ["style_encoder", "decoder"])
 
     if epoch >= train.joint_epoch:
         use_ind = np.random.rand() < 0.5
@@ -510,19 +516,12 @@ def train_second(
             return running_loss, iters
 
         d_loss_slm, loss_gen_lm, y_pred = slm_out
-
         train.optimizer.zero_grad()
         loss_gen_lm.backward()
-
         scale_gradients(
             train.model, train.slmadv_params.thresh, train.slmadv_params.scale
         )
-
-        train.optimizer.step("bert_encoder")
-        train.optimizer.step("bert")
-        train.optimizer.step("predictor")
-        train.optimizer.step("diffusion")
-
+        optimizer_step(train, ["bert_encoder", "bert", "predictor", "diffusion"])
         if d_loss_slm != 0:
             train.optimizer.zero_grad()
             d_loss_slm.backward(retain_graph=True)
@@ -549,14 +548,8 @@ def train_second(
             "mp_loss": loss_magphase,
         }
         train.logger.info(
-            "Epoch [%d/%d], Step [%d/%d], %s"
-            % (
-                epoch,
-                train.epochs,
-                i + 1,
-                train.batch_manager.get_step_count(),
-                ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items()),
-            )
+            f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+            + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
         )
         for key, value in metrics.items():
             train.writer.add_scalar(f"train/{key}", value, train.iters)
@@ -572,62 +565,61 @@ def train_second(
 
 
 def validate_first(current_epoch: int, current_step: int, save: bool, train) -> None:
+    """
+    Validation function for the first stage.
+    """
     loss_test = 0
-    _ = [train.model[key].eval() for key in train.model]
+    # Set models to evaluation mode.
+    for key in train.model:
+        train.model[key].eval()
 
     with torch.no_grad():
         iters_test = 0
-        for batch_idx, batch in enumerate(train.val_dataloader):
-            train.optimizer.zero_grad()
+        for batch in train.val_dataloader:
             waves, texts, input_lengths, mels, mel_input_length = prepare_batch(
                 batch,
                 train.device,
                 ["waves", "texts", "input_lengths", "mels", "mel_input_length"],
             )
-            with torch.no_grad():
-                mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
-                    train.device
-                )
-                text_mask = length_to_mask(input_lengths).to(train.device)
-                _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
-                s2s_attn = s2s_attn.transpose(-1, -2)
-                s2s_attn = s2s_attn[..., 1:]
-                s2s_attn = s2s_attn.transpose(-1, -2)
-            with torch.no_grad():
-                mask_ST = mask_from_lens(
-                    s2s_attn, input_lengths, mel_input_length // (2**train.n_down)
-                )
-                s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
-                t_en = train.model.text_encoder(texts, input_lengths, text_mask)
-                asr = t_en @ s2s_attn_mono
-                # d_gt is not used in validate_first, but could be logged.
-            en = asr
-            gt = mels
-            wav = waves
-            if gt.shape[-1] < 40 or (
-                gt.shape[-1] < 80 and not train.model_params.skip_downsamples
+            mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
+                train.device
+            )
+            text_mask = length_to_mask(input_lengths).to(train.device)
+            _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
+            s2s_attn = s2s_attn.transpose(-1, -2)
+            s2s_attn = s2s_attn[..., 1:]
+            s2s_attn = s2s_attn.transpose(-1, -2)
+            mask_ST = mask_from_lens(
+                s2s_attn, input_lengths, mel_input_length // (2**train.n_down)
+            )
+            s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
+            t_en = train.model.text_encoder(texts, input_lengths, text_mask)
+            asr = t_en @ s2s_attn_mono
+
+            if mels.shape[-1] < 40 or (
+                mels.shape[-1] < 80 and not train.model_params.skip_downsamples
             ):
                 log_print("Skipping batch. TOO SHORT", train.logger)
                 continue
-            F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
-            s = train.model.style_encoder(gt.unsqueeze(1))
-            real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-            y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
-            loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
+
+            F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
+            s = train.model.style_encoder(mels.unsqueeze(1))
+            real_norm = log_norm(mels.unsqueeze(1)).squeeze(1)
+            y_rec, _, _ = train.model.decoder(asr, F0_real, real_norm, s)
+            loss_mel = train.stft_loss(y_rec.squeeze(), waves.detach())
             loss_test += loss_mel.item()
             iters_test += 1
 
+    avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
     print(
-        f"Epochs:{current_epoch} Steps:{current_step} Loss:{loss_test / iters_test} Best_Loss:{train.best_loss}"
+        f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}"
     )
     log_print(
-        f"Epochs:{current_epoch} Steps:{current_step} Loss:{loss_test / iters_test} Best_Loss:{train.best_loss}",
+        f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}",
         train.logger,
     )
-    log_print(
-        "Validation loss: %.3f" % (loss_test / iters_test) + "\n\n\n\n", train.logger
-    )
-    train.writer.add_scalar("eval/mel_loss", loss_test / iters_test, current_epoch)
+    log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
+    train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
     attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
     train.writer.add_figure("eval/attn", attn_image, current_epoch)
 
@@ -641,30 +633,32 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
             real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
             y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
             train.writer.add_audio(
-                "eval/y" + str(bib),
+                f"eval/y{bib}",
                 y_rec.cpu().numpy().squeeze(),
                 current_epoch,
                 sample_rate=train.sr,
             )
             if current_epoch == 0:
                 train.writer.add_audio(
-                    "gt/y" + str(bib),
+                    f"gt/y{bib}",
                     waves[bib].squeeze(),
                     current_epoch,
                     sample_rate=train.sr,
                 )
 
     if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
-        if (loss_test / iters_test) < train.best_loss:
-            train.best_loss = loss_test / iters_test
+        if avg_loss < train.best_loss:
+            train.best_loss = avg_loss
         print("Saving..")
         log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
     if save and current_step != -1:
-        if (loss_test / iters_test) < train.best_loss:
-            train.best_loss = loss_test / iters_test
+        if avg_loss < train.best_loss:
+            train.best_loss = avg_loss
         print("Saving..")
         log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
-    _ = [train.model[key].train() for key in train.model]
+
+    for key in train.model:
+        train.model[key].train()
 
 
 ###############################################
@@ -673,15 +667,18 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
 
 
 def validate_second(current_epoch: int, current_step: int, save: bool, train) -> None:
+    """
+    Validation function for the second stage.
+    """
     loss_test = 0
     loss_align = 0
     loss_f = 0
-    _ = [train.model[key].eval() for key in train.model]
+    for key in train.model:
+        train.model[key].eval()
 
     with torch.no_grad():
         iters_test = 0
-        for batch_idx, batch in enumerate(train.val_dataloader):
-            train.optimizer.zero_grad()
+        for batch in train.val_dataloader:
             try:
                 waves, texts, input_lengths, mels, mel_input_length, ref_mels = (
                     prepare_batch(
@@ -697,23 +694,22 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                         ],
                     )
                 )
-                with torch.no_grad():
-                    mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
-                        train.device
-                    )
-                    text_mask = length_to_mask(input_lengths).to(texts.device)
-                    _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
-                    s2s_attn = s2s_attn.transpose(-1, -2)
-                    s2s_attn = s2s_attn[..., 1:]
-                    s2s_attn = s2s_attn.transpose(-1, -2)
-                with torch.no_grad():
-                    mask_ST = mask_from_lens(
-                        s2s_attn, input_lengths, mel_input_length // (2**train.n_down)
-                    )
-                    s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
-                    t_en = train.model.text_encoder(texts, input_lengths, text_mask)
-                    asr = t_en @ s2s_attn_mono
-                    d_gt = s2s_attn_mono.sum(axis=-1).detach()
+                mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
+                    train.device
+                )
+                text_mask = length_to_mask(input_lengths).to(train.device)
+                _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
+                s2s_attn = s2s_attn.transpose(-1, -2)
+                s2s_attn = s2s_attn[..., 1:]
+                s2s_attn = s2s_attn.transpose(-1, -2)
+                mask_ST = mask_from_lens(
+                    s2s_attn, input_lengths, mel_input_length // (2**train.n_down)
+                )
+                s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
+                t_en = train.model.text_encoder(texts, input_lengths, text_mask)
+                asr = t_en @ s2s_attn_mono
+                # d_gt is computed here but not used further.
+                d_gt = s2s_attn_mono.sum(axis=-1).detach()
                 if mels.shape[-1] < 40 or (
                     mels.shape[-1] < 80 and not train.model_params.skip_downsamples
                 ):
@@ -727,46 +723,38 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 d, p = train.model.predictor(
                     d_en, s, input_lengths, s2s_attn_mono, text_mask
                 )
-                wav = waves
-                en = asr
-                p_en = p
-                gt = mels.detach()
-                F0_fake, N_fake = train.model.predictor.F0Ntrain(p_en, s)
+                F0_fake, N_fake = train.model.predictor.F0Ntrain(p, s)
                 loss_dur = 0
-                for _s2s_pred, _text_input, _text_length in zip(d, d_gt, input_lengths):
-                    _s2s_pred = _s2s_pred[:_text_length, :]
-                    _text_input = _text_input[:_text_length].long()
-                    _s2s_trg = torch.zeros_like(_s2s_pred)
-                    for bib in range(_s2s_trg.shape[0]):
-                        _s2s_trg[bib, : _text_input[bib]] = 1
-                    _dur_pred = torch.sigmoid(_s2s_pred).sum(axis=1)
-                    loss_dur += F.l1_loss(
-                        _dur_pred[1 : _text_length - 1],
-                        _text_input[1 : _text_length - 1],
-                    )
+                for pred, inp, length in zip(d, d_gt, input_lengths):
+                    pred = pred[:length, :]
+                    inp = inp[:length].long()
+                    target = torch.zeros_like(pred)
+                    for i in range(target.shape[0]):
+                        target[i, : inp[i]] = 1
+                    dur_pred = torch.sigmoid(pred).sum(dim=1)
+                    loss_dur += F.l1_loss(dur_pred[1 : length - 1], inp[1 : length - 1])
                 loss_dur /= texts.size(0)
-                y_rec, _, _ = train.model.decoder(en, F0_fake, N_fake, gs)
-                loss_mel = train.stft_loss(y_rec.squeeze(1), wav.detach())
-                F0_real, _, F0 = train.model.pitch_extractor(gt.unsqueeze(1))
+                y_rec, _, _ = train.model.decoder(asr, F0_fake, N_fake, gs)
+                loss_mel = train.stft_loss(y_rec.squeeze(1), waves.detach())
+                F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
                 loss_F0 = F.l1_loss(F0_real, F0_fake) / 10
                 loss_test += loss_mel.mean()
                 loss_align += loss_dur.mean()
                 loss_f += loss_F0.mean()
                 iters_test += 1
             except Exception as e:
-                print("Encountered exception:", e)
+                print(f"Encountered exception: {e}")
                 traceback.print_exc()
                 continue
 
-    print("Epochs:", current_epoch)
-    train.logger.info(
-        "Validation loss: %.3f, Dur loss: %.3f, F0 loss: %.3f"
-        % (loss_test / iters_test, loss_align / iters_test, loss_f / iters_test)
-        + "\n\n\n"
+    avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
+    print(
+        f"Epochs: {current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.best_loss}"
     )
-    train.writer.add_scalar("eval/mel_loss", loss_test / iters_test, current_epoch)
-    train.writer.add_scalar("eval/dur_loss", loss_align / iters_test, current_epoch)
-    train.writer.add_scalar("eval/F0_loss", loss_f / iters_test, current_epoch)
+    train.logger.info(
+        f"Validation loss: {avg_loss:.3f}, Dur loss: {loss_align / iters_test:.3f}, F0 loss: {loss_f / iters_test:.3f}\n\n\n"
+    )
+    train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
     attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
     train.writer.add_figure("eval/attn", attn_image, current_epoch)
 
@@ -780,29 +768,27 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
             real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
             y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
             train.writer.add_audio(
-                "eval/y" + str(bib),
+                f"eval/y{bib}",
                 y_rec.cpu().numpy().squeeze(),
                 current_epoch,
                 sample_rate=train.sr,
             )
             if current_epoch == 0:
                 train.writer.add_audio(
-                    "gt/y" + str(bib),
+                    f"gt/y{bib}",
                     waves[bib].squeeze(),
                     current_epoch,
                     sample_rate=train.sr,
                 )
-            if bib >= 5:
-                break
-
     if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
-        if (loss_test / iters_test) < train.best_loss:
-            train.best_loss = loss_test / iters_test
+        if avg_loss < train.best_loss:
+            train.best_loss = avg_loss
         print("Saving..")
         log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
     if save and current_step != -1:
-        if (loss_test / iters_test) < train.best_loss:
-            train.best_loss = loss_test / iters_test
+        if avg_loss < train.best_loss:
+            train.best_loss = avg_loss
         print("Saving..")
         log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
-    _ = [train.model[key].train() for key in train.model]
+    for key in train.model:
+        train.model[key].train()
