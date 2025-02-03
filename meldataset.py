@@ -565,6 +565,7 @@ class BatchManager:
                         print("Probe saw OOM -- backing off")
                         import gc
 
+                        train.optimizer.zero_grad()
                         gc.collect()
                         torch.cuda.empty_cache()
                         counting_up = False
@@ -604,6 +605,7 @@ class BatchManager:
                             f"TRAIN_BATCH OOM ({sampler.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
                         self.log_print(e)
+                        train.optimizer.zero_grad()
                         if last_oom != sampler.last_bin:
                             last_oom = sampler.last_bin
                             if batch_size > 1:

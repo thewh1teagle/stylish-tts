@@ -12,6 +12,7 @@ pretrained_model: ""
 second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
 load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
 debug: false # will add extra debug logging during training
+precision: "fp32" # set to "fp16" or "bf16" for mixed precision training
 
 F0_path: "Utils/JDC/bst.t7"
 ASR_config: "Utils/ASR/config.yml"
