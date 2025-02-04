@@ -592,51 +592,53 @@ class ProsodyPredictor(nn.Module):
         self.F0_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
         self.N_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
 
-    def forward(self, texts, style, text_lengths, alignment, m):
-        d = self.text_encoder(texts, style, text_lengths, m)
+    def forward(self, values, predict_F0N=False):
+        if predict_F0N:
+            (x, s) = values
+            x, _ = self.shared(x.transpose(-1, -2))
 
-        batch_size = d.shape[0]
-        text_size = d.shape[1]
+            F0 = x.transpose(-1, -2)
+            for block in self.F0:
+                F0 = block(F0, s)
+            F0 = self.F0_proj(F0)
 
-        # predict duration
-        input_lengths = text_lengths.cpu().numpy()
-        x = nn.utils.rnn.pack_padded_sequence(
-            d, input_lengths, batch_first=True, enforce_sorted=False
-        )
+            N = x.transpose(-1, -2)
+            for block in self.N:
+                N = block(N, s)
+            N = self.N_proj(N)
 
-        m = m.to(text_lengths.device).unsqueeze(1)
+            return F0.squeeze(1), N.squeeze(1)
+        else:
+            (texts, style, text_lengths, alignment, m) = values
+            d = self.text_encoder(texts, style, text_lengths, m)
 
-        self.lstm.flatten_parameters()
-        x, _ = self.lstm(x)
-        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+            batch_size = d.shape[0]
+            text_size = d.shape[1]
 
-        x_pad = torch.zeros([x.shape[0], m.shape[-1], x.shape[-1]])
+            # predict duration
+            input_lengths = text_lengths.cpu().numpy()
+            x = nn.utils.rnn.pack_padded_sequence(
+                d, input_lengths, batch_first=True, enforce_sorted=False
+            )
 
-        x_pad[:, : x.shape[1], :] = x
-        x = x_pad.to(x.device)
+            m = m.to(text_lengths.device).unsqueeze(1)
 
-        duration = self.duration_proj(
-            nn.functional.dropout(x, 0.5, training=self.training)
-        )
+            self.lstm.flatten_parameters()
+            x, _ = self.lstm(x)
+            x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
 
-        en = d.transpose(-1, -2) @ alignment
+            x_pad = torch.zeros([x.shape[0], m.shape[-1], x.shape[-1]])
 
-        return duration.squeeze(-1), en
+            x_pad[:, : x.shape[1], :] = x
+            x = x_pad.to(x.device)
 
-    def F0Ntrain(self, x, s):
-        x, _ = self.shared(x.transpose(-1, -2))
+            duration = self.duration_proj(
+                nn.functional.dropout(x, 0.5, training=self.training)
+            )
 
-        F0 = x.transpose(-1, -2)
-        for block in self.F0:
-            F0 = block(F0, s)
-        F0 = self.F0_proj(F0)
+            en = d.transpose(-1, -2) @ alignment
 
-        N = x.transpose(-1, -2)
-        for block in self.N:
-            N = block(N, s)
-        N = self.N_proj(N)
-
-        return F0.squeeze(1), N.squeeze(1)
+            return duration.squeeze(-1), en
 
     def length_to_mask(self, lengths):
         mask = (
@@ -883,6 +885,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     )
     diffusion.diffusion.net = transformer
     diffusion.unet = transformer
+    kdiffusion = diffusion.diffusion
 
     nets = Munch(
         bert=bert,
@@ -903,7 +906,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         ),
     )
 
-    return nets
+    return nets, kdiffusion
 
 
 def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):

@@ -71,11 +71,12 @@ class SLMAdversarialLoss(torch.nn.Module):
         s = s_preds[:, :128]
 
         d, _ = self.model.predictor(
-            d_en,
+            (d_en,
             s_dur,
             ref_lengths,
             torch.randn(ref_lengths.shape[0], ref_lengths.max(), 2).to(ref_text.device),
-            text_mask,
+            text_mask),
+            predict_F0N=False,
         )
 
         bib = 0
@@ -129,7 +130,7 @@ class SLMAdversarialLoss(torch.nn.Module):
 
         asr_pred = t_en @ s2s_attn
 
-        _, p_pred = self.model.predictor(d_en, s_dur, ref_lengths, s2s_attn, text_mask)
+        _, p_pred = self.model.predictor((d_en, s_dur, ref_lengths, s2s_attn, text_mask), predict_F0N=False)
 
         mel_len = max(int(min(output_lengths) / 2 - 1), self.min_len // 2)
         mel_len = min(mel_len, self.max_len // 2)
@@ -178,7 +179,7 @@ class SLMAdversarialLoss(torch.nn.Module):
         en = torch.stack(en)
         p_en = torch.stack(p_en)
 
-        F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
+        F0_fake, N_fake = self.model.predictor((p_en, sp[:, 128:]), predict_F0N=True)
         y_pred, _, _ = self.model.decoder(en, F0_fake, N_fake, sp[:, :128])
 
         # discriminator loss

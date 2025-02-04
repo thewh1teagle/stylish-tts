@@ -190,7 +190,7 @@ def main(config_path, probe_batch, early_joint, stage):
         plbert = load_plbert(BERT_path)
 
     # build model
-    train.model = build_model(train.model_params, text_aligner, pitch_extractor, plbert)
+    train.model, kdiffusion = build_model(train.model_params, text_aligner, pitch_extractor, plbert)
 
     for k in train.model:
         train.model[k] = train.accelerator.prepare(train.model[k])
@@ -253,15 +253,14 @@ def main(config_path, probe_batch, early_joint, stage):
     #train.wl = MyDataParallel(train.wl)
 
     # TODO: How to access model diffusion?
-    train.sampler = None
-    #train.sampler = DiffusionSampler(
-    #    train.model.diffusion.diffusion,
-    #    sampler=ADPM2Sampler(),
-    #    sigma_schedule=KarrasSchedule(
-    #        sigma_min=0.0001, sigma_max=3.0, rho=9.0
-    #    ),  # empirical parameters
-    #    clamp=False,
-    #)
+    train.sampler = DiffusionSampler(
+        kdiffusion,
+        sampler=ADPM2Sampler(),
+        sigma_schedule=KarrasSchedule(
+            sigma_min=0.0001, sigma_max=3.0, rho=9.0
+        ),  # empirical parameters
+        clamp=False,
+    )
 
     optimizer_params = Munch(train.config["optimizer_params"])
     scheduler_params = {

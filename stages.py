@@ -437,7 +437,8 @@ def train_second(
 
     with train.accelerator.autocast():
         d, p_en = train.model.predictor(
-            d_en, s_dur, input_lengths, s2s_attn_mono, text_mask
+            (d_en, s_dur, input_lengths, s2s_attn_mono, text_mask),
+            predict_F0N=False
         )
 
     wav = waves  # Assume already on train.device
@@ -457,7 +458,7 @@ def train_second(
                 y_rec_gt_pred, _, _ = train.model.decoder(asr, F0_real, N_real, gs)
 
     with train.accelerator.autocast():
-        F0_fake, N_fake = train.model.predictor.F0Ntrain(p_en, s_dur)
+        F0_fake, N_fake = train.model.predictor((p_en, s_dur), predict_F0N=True)
         y_rec, mag_rec, phase_rec = train.model.decoder(asr, F0_fake, N_fake, gs)
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.squeeze(1).detach())
 
@@ -734,9 +735,10 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 bert_dur = train.model.bert(texts, attention_mask=(~text_mask).int())
                 d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)
                 d, p = train.model.predictor(
-                    d_en, s, input_lengths, s2s_attn_mono, text_mask
+                    (d_en, s, input_lengths, s2s_attn_mono, text_mask),
+                    predict_F0N=False
                 )
-                F0_fake, N_fake = train.model.predictor.F0Ntrain(p, s)
+                F0_fake, N_fake = train.model.predictor((p, s), predict_F0N=True)
                 loss_dur = 0
                 for pred, inp, length in zip(d, d_gt, input_lengths):
                     pred = pred[:length, :]
