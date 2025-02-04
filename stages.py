@@ -302,25 +302,26 @@ def train_first(
     train.iters += 1
 
     # --- Logging ---
-    if (i + 1) % train.log_interval == 0:
-        metrics = {
-            "mel_loss": running_loss / train.log_interval,
-            "gen_loss": loss_gen_all if epoch >= train.TMA_epoch else loss_mel,
-            "d_loss": d_loss,
-            "mono_loss": loss_mono if epoch >= train.TMA_epoch else 0,
-            "s2s_loss": loss_s2s if epoch >= train.TMA_epoch else 0,
-            "slm_loss": loss_slm if epoch >= train.TMA_epoch else 0,
-            "mp_loss": loss_magphase,
-        }
-        log_print(
-            f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
-            + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items()),
-            train.logger,
-        )
-        for key, value in metrics.items():
-            train.writer.add_scalar(f"train/{key}", value, train.iters)
-        running_loss = 0
-        print("Time elapsed:", time.time() - train.start_time)
+    if train.accelerator.is_main_process:
+        if (i + 1) % train.log_interval == 0:
+            metrics = {
+                "mel_loss": running_loss / train.log_interval,
+                "gen_loss": loss_gen_all if epoch >= train.TMA_epoch else loss_mel,
+                "d_loss": d_loss,
+                "mono_loss": loss_mono if epoch >= train.TMA_epoch else 0,
+                "s2s_loss": loss_s2s if epoch >= train.TMA_epoch else 0,
+                "slm_loss": loss_slm if epoch >= train.TMA_epoch else 0,
+                "mp_loss": loss_magphase,
+            }
+            log_print(
+                f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items()),
+                train.logger,
+            )
+            for key, value in metrics.items():
+                train.writer.add_scalar(f"train/{key}", value, train.iters)
+            running_loss = 0
+            print("Time elapsed:", time.time() - train.start_time)
 
     if (i + 1) % train.val_interval == 0 or (i + 1) % train.save_interval == 0:
         save = (i + 1) % train.save_interval == 0
@@ -537,31 +538,31 @@ def train_second(
         d_loss_slm, loss_gen_lm = 0, 0
 
     train.iters += 1
-
-    if (i + 1) % train.log_interval == 0:
-        metrics = {
-            "mel_loss": running_loss / train.log_interval,
-            "d_loss": d_loss,
-            "ce_loss": loss_ce,
-            "dur_loss": loss_dur,
-            "norm_loss": loss_norm_rec,
-            "F0_loss": loss_F0_rec,
-            "lm_loss": loss_lm,
-            "gen_loss": loss_gen_all,
-            "sty_loss": loss_sty,
-            "diff_loss": loss_diff,
-            "d_loss_slm": d_loss_slm,
-            "gen_loss_slm": loss_gen_lm,
-            "mp_loss": loss_magphase,
-        }
-        train.logger.info(
-            f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
-            + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
-        )
-        for key, value in metrics.items():
-            train.writer.add_scalar(f"train/{key}", value, train.iters)
-        running_loss = 0
-        print("Time elapsed:", time.time() - train.start_time)
+    if train.accelerator.is_main_process:
+        if (i + 1) % train.log_interval == 0:
+            metrics = {
+                "mel_loss": running_loss / train.log_interval,
+                "d_loss": d_loss,
+                "ce_loss": loss_ce,
+                "dur_loss": loss_dur,
+                "norm_loss": loss_norm_rec,
+                "F0_loss": loss_F0_rec,
+                "lm_loss": loss_lm,
+                "gen_loss": loss_gen_all,
+                "sty_loss": loss_sty,
+                "diff_loss": loss_diff,
+                "d_loss_slm": d_loss_slm,
+                "gen_loss_slm": loss_gen_lm,
+                "mp_loss": loss_magphase,
+            }
+            train.logger.info(
+                f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
+            )
+            for key, value in metrics.items():
+                train.writer.add_scalar(f"train/{key}", value, train.iters)
+            running_loss = 0
+            print("Time elapsed:", time.time() - train.start_time)
 
     if (i + 1) % train.val_interval == 0 or (i + 1) % train.save_interval == 0:
         save = (i + 1) % train.save_interval == 0
@@ -621,52 +622,53 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
             loss_test += loss_mel.item()
             iters_test += 1
 
-    avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
-    print(
-        f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}"
-    )
-    log_print(
-        f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}",
-        train.logger,
-    )
-    log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
-    train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
-    attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
-    train.writer.add_figure("eval/attn", attn_image, current_epoch)
+    if train.accelerator.is_main_process:
+        avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
+        print(
+            f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}"
+        )
+        log_print(
+            f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}",
+            train.logger,
+        )
+        log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
+        train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
+        attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
+        train.writer.add_figure("eval/attn", attn_image, current_epoch)
 
-    with torch.no_grad():
-        for bib in range(min(len(asr), 6)):
-            mel_length = int(mel_input_length[bib].item())
-            gt = mels[bib, :, :mel_length].unsqueeze(0)
-            en = asr[bib, :, : mel_length // 2].unsqueeze(0)
-            F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
-            s = train.model.style_encoder(gt.unsqueeze(1))
-            real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-            y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
-            train.writer.add_audio(
-                f"eval/y{bib}",
-                y_rec.cpu().numpy().squeeze(),
-                current_epoch,
-                sample_rate=train.sr,
-            )
-            if current_epoch == 0:
+        with torch.no_grad():
+            for bib in range(min(len(asr), 6)):
+                mel_length = int(mel_input_length[bib].item())
+                gt = mels[bib, :, :mel_length].unsqueeze(0)
+                en = asr[bib, :, : mel_length // 2].unsqueeze(0)
+                F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
+                s = train.model.style_encoder(gt.unsqueeze(1))
+                real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
+                y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
                 train.writer.add_audio(
-                    f"gt/y{bib}",
-                    waves[bib].squeeze(),
+                    f"eval/y{bib}",
+                    y_rec.cpu().numpy().squeeze(),
                     current_epoch,
                     sample_rate=train.sr,
                 )
+                if current_epoch == 0:
+                    train.writer.add_audio(
+                        f"gt/y{bib}",
+                        waves[bib].squeeze(),
+                        current_epoch,
+                        sample_rate=train.sr,
+                    )
 
-    if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
-        if avg_loss < train.best_loss:
-            train.best_loss = avg_loss
-        print("Saving..")
-        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
-    if save and current_step != -1:
-        if avg_loss < train.best_loss:
-            train.best_loss = avg_loss
-        print("Saving..")
-        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
+        if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
+            if avg_loss < train.best_loss:
+                train.best_loss = avg_loss
+            print("Saving..")
+            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
+        if save and current_step != -1:
+            if avg_loss < train.best_loss:
+                train.best_loss = avg_loss
+            print("Saving..")
+            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
 
     for key in train.model:
         train.model[key].train()
@@ -758,48 +760,49 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 traceback.print_exc()
                 continue
 
-    avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
-    print(
-        f"Epochs: {current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.best_loss}"
-    )
-    train.logger.info(
-        f"Validation loss: {avg_loss:.3f}, Dur loss: {loss_align / iters_test:.3f}, F0 loss: {loss_f / iters_test:.3f}\n\n\n"
-    )
-    train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
-    attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
-    train.writer.add_figure("eval/attn", attn_image, current_epoch)
+    if train.accelerator.is_main_process:
+        avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
+        print(
+            f"Epochs: {current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.best_loss}"
+        )
+        train.logger.info(
+            f"Validation loss: {avg_loss:.3f}, Dur loss: {loss_align / iters_test:.3f}, F0 loss: {loss_f / iters_test:.3f}\n\n\n"
+        )
+        train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
+        attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
+        train.writer.add_figure("eval/attn", attn_image, current_epoch)
 
-    with torch.no_grad():
-        for bib in range(min(len(asr), 6)):
-            mel_length = int(mel_input_length[bib].item())
-            gt = mels[bib, :, :mel_length].unsqueeze(0)
-            en = asr[bib, :, : mel_length // 2].unsqueeze(0)
-            F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
-            s = train.model.style_encoder(gt.unsqueeze(1))
-            real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-            y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
-            train.writer.add_audio(
-                f"eval/y{bib}",
-                y_rec.cpu().numpy().squeeze(),
-                current_epoch,
-                sample_rate=train.sr,
-            )
-            if current_epoch == 0:
+        with torch.no_grad():
+            for bib in range(min(len(asr), 6)):
+                mel_length = int(mel_input_length[bib].item())
+                gt = mels[bib, :, :mel_length].unsqueeze(0)
+                en = asr[bib, :, : mel_length // 2].unsqueeze(0)
+                F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
+                s = train.model.style_encoder(gt.unsqueeze(1))
+                real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
+                y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
                 train.writer.add_audio(
-                    f"gt/y{bib}",
-                    waves[bib].squeeze(),
+                    f"eval/y{bib}",
+                    y_rec.cpu().numpy().squeeze(),
                     current_epoch,
                     sample_rate=train.sr,
                 )
-    if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
-        if avg_loss < train.best_loss:
-            train.best_loss = avg_loss
-        print("Saving..")
-        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
-    if save and current_step != -1:
-        if avg_loss < train.best_loss:
-            train.best_loss = avg_loss
-        print("Saving..")
-        log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
+                if current_epoch == 0:
+                    train.writer.add_audio(
+                        f"gt/y{bib}",
+                        waves[bib].squeeze(),
+                        current_epoch,
+                        sample_rate=train.sr,
+                    )
+        if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
+            if avg_loss < train.best_loss:
+                train.best_loss = avg_loss
+            print("Saving..")
+            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
+        if save and current_step != -1:
+            if avg_loss < train.best_loss:
+                train.best_loss = avg_loss
+            print("Saving..")
+            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
     for key in train.model:
         train.model[key].train()

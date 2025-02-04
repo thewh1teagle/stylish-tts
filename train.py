@@ -40,12 +40,12 @@ from stages import train_first, validate_first, train_second, validate_second
 
 
 # simple fix for dataparallel that allows access to class attributes
-class MyDataParallel(torch.nn.DataParallel):
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.module, name)
+#class MyDataParallel(torch.nn.DataParallel):
+#    def __getattr__(self, name):
+#        try:
+#            return super().__getattr__(name)
+#        except AttributeError:
+#            return getattr(self.module, name)
 
 
 class TrainContext:
@@ -120,7 +120,8 @@ def main(config_path, probe_batch, early_joint, stage):
         kwargs_handlers=[ddp_kwargs],
         mixed_precision=train.precision,
     )
-
+    train.accelerator.even_batches=False
+    
     if train.accelerator.is_main_process:
         train.writer = SummaryWriter(train.log_dir + "/tensorboard")
 
@@ -197,9 +198,9 @@ def main(config_path, probe_batch, early_joint, stage):
     _ = [train.model[key].to(train.device) for key in train.model]
 
     # DP
-    for key in train.model:
-        if key != "mpd" and key != "msd" and key != "wd":
-            train.model[key] = MyDataParallel(train.model[key])
+    #for key in train.model:
+    #    if key != "mpd" and key != "msd" and key != "wd":
+    #        train.model[key] = MyDataParallel(train.model[key])
 
     start_epoch = 1
     train.iters = 0
@@ -247,18 +248,20 @@ def main(config_path, probe_batch, early_joint, stage):
         train.model_params.slm.sr,
     ).to(train.device)
 
-    train.gl = MyDataParallel(train.gl)
-    train.dl = MyDataParallel(train.dl)
-    train.wl = MyDataParallel(train.wl)
+    #train.gl = MyDataParallel(train.gl)
+    #train.dl = MyDataParallel(train.dl)
+    #train.wl = MyDataParallel(train.wl)
 
-    train.sampler = DiffusionSampler(
-        train.model.diffusion.diffusion,
-        sampler=ADPM2Sampler(),
-        sigma_schedule=KarrasSchedule(
-            sigma_min=0.0001, sigma_max=3.0, rho=9.0
-        ),  # empirical parameters
-        clamp=False,
-    )
+    # TODO: How to access model diffusion?
+    train.sampler = None
+    #train.sampler = DiffusionSampler(
+    #    train.model.diffusion.diffusion,
+    #    sampler=ADPM2Sampler(),
+    #    sigma_schedule=KarrasSchedule(
+    #        sigma_min=0.0001, sigma_max=3.0, rho=9.0
+    #    ),  # empirical parameters
+    #    clamp=False,
+    #)
 
     optimizer_params = Munch(train.config["optimizer_params"])
     scheduler_params = {
@@ -321,7 +324,7 @@ def main(config_path, probe_batch, early_joint, stage):
             )
             train.start_epoch += 1
 
-    train.n_down = train.model.text_aligner.n_down
+    train.n_down = 1 #TODO: Use train.model.text_aligner.n_down
 
     train.best_loss = float("inf")  # best test loss
 
