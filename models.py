@@ -840,15 +840,13 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         dim_in=args.dim_in,
         style_dim=args.style_dim,
         max_conv_dim=args.hidden_dim,
-        # TODO: uncomment?
-        # skip_downsamples=args.skip_downsamples,
+        skip_downsamples=args.get('skip_downsamples'),
     )  # acoustic style encoder
     predictor_encoder = StyleEncoder(
         dim_in=args.dim_in,
         style_dim=args.style_dim,
         max_conv_dim=args.hidden_dim,
-        # TODO: uncomment?
-        # skip_downsamples=args.skip_downsamples,
+        skip_downsamples=args.get('skip_downsamples'),
     )  # prosodic style encoder
 
     # define diffusion model
