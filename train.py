@@ -96,7 +96,6 @@ def main(config_path, probe_batch, early_joint, stage):
     train.val_interval = train.config.get("val_interval", 1)
     train.save_interval = train.config.get("save_interval", 1)
 
-    train.data_params = train.config.get("data_params", None)
     train.sr = train.config["preprocess_params"].get("sr", 24000)
 
     train.loss_params = Munch(train.config["loss_params"])
@@ -108,16 +107,6 @@ def main(config_path, probe_batch, early_joint, stage):
     train.precision = train.config.get("precision", "no")
 
     train.optimizer_params = Munch(train.config["optimizer_params"])
-
-    if not osp.exists(train.train_path):
-        print("Train data not found at {}".format(train.train_path))
-        exit(1)
-    if not osp.exists(train.val_path):
-        print("Validation data not found at {}".format(train.val_path))
-        exit(1)
-    if not osp.exists(train.root_path):
-        print("Root path not found at {}".format(train.root_path))
-        exit(1)
 
     if "skip_downsamples" not in train.config["model_params"]:
         train.config["model_params"]["skip_downsamples"] = False
@@ -151,7 +140,7 @@ def main(config_path, probe_batch, early_joint, stage):
     if not osp.exists(val_path):
         exit(f"Validation data not found at {val_path}")
     if not osp.exists(root_path):
-        exit("Root path not found at {root_path}")
+        exit(f"Root path not found at {root_path}")
 
     val_list = get_data_path_list(val_path)
     train.val_dataloader = build_dataloader(
