@@ -53,7 +53,7 @@ from stages import train_first, validate_first, train_second, validate_second
 @click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="first_tma", type=str)
+@click.option("--stage", default="first_tma", type=str) # "first", "first_tma", "second", "second_style", "second_joint"
 @click.option("--pretrained_model", default="", type=str)
 def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train = TrainContext()
@@ -357,10 +357,7 @@ def train_val_loop(train: TrainContext):
         train.start_time = time.time()
 
         # TODO: fix this logic if we plan on running a single file with multiple stages
-        if (
-            train.manifest.current_epoch >= train.config.training_plan.second_style
-            or train.early_joint
-        ):
+        if train.manifest.stage == "second_style" or train.early_joint:
             train.start_ds = True
 
         _ = [train.model[key].train() for key in train.model]

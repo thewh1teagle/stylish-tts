@@ -396,10 +396,7 @@ def train_second(
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
     # TODO: we should check for train.manifest.stage instead of epoch
-    if (
-        train.config.model.multispeaker
-        and train.manifest.current_epoch >= train.config.training_plan.second_style
-    ):
+    if train.config.model.multispeaker and train.manifest.stage == "second_style":
         with train.accelerator.autocast():
             ref_ss = train.model.style_encoder(ref_mels.unsqueeze(1))
             ref_sp = train.model.predictor_encoder(ref_mels.unsqueeze(1))
@@ -415,7 +412,7 @@ def train_second(
         d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)
 
     # TODO: we should check for train.manifest.stage instead of epoch
-    if train.manifest.current_epoch >= train.config.training_plan.second_style:
+    if train.manifest.stage == "second_style":
         num_steps = np.random.randint(3, 5)
         with torch.no_grad():
             if train.config.diffusion.dist.estimate_sigma_data:
@@ -472,8 +469,7 @@ def train_second(
         N_real = log_norm(mels.unsqueeze(1)).squeeze(1)
         wav = wav.unsqueeze(1)
         y_rec_gt = wav
-        # TODO: we should check for train.manifest.stage instead of epoch
-        if train.manifest.current_epoch >= train.config.training_plan.second_joint:
+        if train.manifest.stage == "second_joint":
             with train.accelerator.autocast():
                 y_rec_gt_pred, _, _ = train.model.decoder(asr, F0_real, N_real, gs)
 
@@ -518,18 +514,12 @@ def train_second(
     train.accelerator.backward(g_loss)
 
     optimizer_step(train, ["bert_encoder", "bert", "predictor", "predictor_encoder"])
-    # TODO: we should check for train.manifest.stage instead of epoch
-    if train.manifest.current_epoch >= train.config.training_plan.second_style:
+    if train.manifest.stage == "second_style":
         optimizer_step(train, ["diffusion"])
-    # TODO: we should check for train.manifest.stage instead of epoch
-    if (
-        train.manifest.current_epoch >= train.config.training_plan.second_joint
-        or train.early_joint
-    ):
+    if train.manifest.stage == "second_joint" or train.early_joint:
         optimizer_step(train, ["style_encoder", "decoder"])
 
-    # TODO: we should check for train.manifest.stage instead of epoch
-    if train.manifest.current_epoch >= train.config.training_plan.second_joint:
+    if train.manifest.stage == "second_joint":
         use_ind = np.random.rand() < 0.5
         if use_ind:
             ref_lengths = input_lengths
@@ -537,12 +527,7 @@ def train_second(
         slm_out = train.slmadv(
             i,
             y_rec_gt,
-            (
-                y_rec_gt_pred
-                if train.manifest.current_epoch
-                >= train.config.training_plan.second_joint
-                else None
-            ),
+            (y_rec_gt_pred if train.manifest.stage == "second_joint" else None),
             waves,
             mel_input_length,
             ref_texts,
