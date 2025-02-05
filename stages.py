@@ -9,6 +9,7 @@ from typing import List, Tuple, Any
 from utils import length_to_mask, maximum_path, log_norm, log_print, get_image
 from monotonic_align import mask_from_lens
 from losses import magphase_loss
+from config_loader import TrainContext
 
 ###############################################
 # Helper Functions
@@ -53,7 +54,7 @@ def prepare_batch(
 
 
 def compute_alignment(
-    train,
+    train: TrainContext,
     mels: torch.Tensor,
     texts: torch.Tensor,
     input_lengths: torch.Tensor,
@@ -71,8 +72,10 @@ def compute_alignment(
       - mask: Mel mask used for the aligner.
     """
     # Create masks.
-    mask = length_to_mask(mel_input_length // (2**train.n_down)).to(train.device)
-    text_mask = length_to_mask(input_lengths).to(train.device)
+    mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
+        train.config.training.device
+    )
+    text_mask = length_to_mask(input_lengths).to(train.config.training.device)
 
     # --- Text Aligner Forward Pass ---
     with train.accelerator.autocast():
@@ -173,7 +176,7 @@ def scale_gradients(model: dict, thresh: float, scale: float) -> None:
             p.grad *= scale
 
 
-def optimizer_step(train, keys: List[str]) -> None:
+def optimizer_step(train: TrainContext, keys: List[str]) -> None:
     """
     Steps the optimizer for each module key in keys.
     """
@@ -182,7 +185,7 @@ def optimizer_step(train, keys: List[str]) -> None:
 
 
 def log_and_save_checkpoint(
-    train, epoch: int, current_step: int, prefix: str = "epoch_1st"
+    train: TrainContext, current_step: int, prefix: str = "epoch_1st"
 ) -> None:
     """
     Logs metrics and saves a checkpoint.
@@ -190,15 +193,17 @@ def log_and_save_checkpoint(
     state = {
         "net": {key: train.model[key].state_dict() for key in train.model},
         "optimizer": train.optimizer.state_dict(),
-        "iters": train.iters,
+        "iters": train.manifest.iters,
         "val_loss": train.best_loss,
-        "epoch": epoch,
+        "epoch": train.manifest.current_epoch,
     }
     if current_step == -1:
-        filename = f"{prefix}_{epoch:05d}.pth"
+        filename = f"{prefix}_{train.manifest.current_epoch:05d}.pth"
     else:
-        filename = f"{prefix}_{epoch:05d}_step_{current_step:09d}.pth"
-    save_path = osp.join(train.log_dir, filename)
+        filename = (
+            f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}.pth"
+        )
+    save_path = osp.join(train.config.training.out_dir, filename)
     torch.save(state, save_path)
     print(f"Saving checkpoint to {save_path}")
 
@@ -209,14 +214,16 @@ def log_and_save_checkpoint(
 
 
 def train_first(
-    i: int, batch, running_loss: float, iters: int, train, epoch: int
+    i: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     """
     Training function for the first stage.
     """
     # --- Batch Preparation ---
     texts, input_lengths, mels, mel_input_length = prepare_batch(
-        batch, train.device, ["texts", "input_lengths", "mels", "mel_input_length"]
+        batch,
+        train.config.training.device,
+        ["texts", "input_lengths", "mels", "mel_input_length"],
     )
 
     # --- Alignment Computation ---
@@ -232,7 +239,7 @@ def train_first(
     mel_gt = mels  # Ground truth mel spectrogram
 
     if mel_gt.shape[-1] < 40 or (
-        mel_gt.shape[-1] < 80 and not train.model_params.skip_downsamples
+        mel_gt.shape[-1] < 80 and not train.config.embedding_encoder.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
         return running_loss, iters
@@ -245,18 +252,20 @@ def train_first(
     # --- Style Encoding & Decoding ---
     with train.accelerator.autocast():
         style_emb = train.model.style_encoder(
-            mels.unsqueeze(1) if train.multispeaker else mel_gt.unsqueeze(1)
+            mels.unsqueeze(1)
+            if train.config.model.multispeaker
+            else mel_gt.unsqueeze(1)
         )
         y_rec, mag_rec, phase_rec = train.model.decoder(
             asr, F0_real, real_norm, style_emb
         )
 
     # --- Waveform Preparation ---
-    wav = prepare_batch(batch, train.device, ["waves"])[0]
+    wav = prepare_batch(batch, train.config.training.device, ["waves"])[0]
     wav.requires_grad_(False)
 
     # --- Discriminator Loss ---
-    if epoch >= train.TMA_epoch:
+    if train.manifest.stage == "first_tma":
         train.optimizer.zero_grad()
         with train.accelerator.autocast():
             d_loss = train.dl(wav.detach().unsqueeze(1).float(), y_rec.detach()).mean()
@@ -270,7 +279,7 @@ def train_first(
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
-        if epoch >= train.TMA_epoch:
+        if train.manifest.stage == "first_tma":
             loss_s2s = 0
             for _s2s_pred, _text_input, _text_length in zip(
                 s2s_pred, texts, input_lengths
@@ -283,11 +292,11 @@ def train_first(
             loss_gen_all = train.gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
             loss_slm = train.wl(wav.detach(), y_rec).mean()
             g_loss = (
-                train.loss_params.lambda_mel * loss_mel
-                + train.loss_params.lambda_mono * loss_mono
-                + train.loss_params.lambda_s2s * loss_s2s
-                + train.loss_params.lambda_gen * loss_gen_all
-                + train.loss_params.lambda_slm * loss_slm
+                train.config.loss_weight.mel * loss_mel
+                + train.config.loss_weight.mono * loss_mono
+                + train.config.loss_weight.s2s * loss_s2s
+                + train.config.loss_weight.gen * loss_gen_all
+                + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
             )
         else:
@@ -297,34 +306,41 @@ def train_first(
 
     # --- Optimizer Steps ---
     optimizer_step(train, ["text_encoder", "style_encoder", "decoder"])
-    if epoch >= train.TMA_epoch:
+
+    if train.manifest.stage == "first_tma":
         optimizer_step(train, ["text_aligner", "pitch_extractor"])
-    train.iters += 1
+    train.manifest.iters += 1
 
     # --- Logging ---
+    # TODO: maybe we should only print what we need based on the stage
     if train.accelerator.is_main_process:
-        if (i + 1) % train.log_interval == 0:
+        if (i + 1) % train.config.training.log_interval == 0:
             metrics = {
-                "mel_loss": running_loss / train.log_interval,
-                "gen_loss": loss_gen_all if epoch >= train.TMA_epoch else loss_mel,
+                "mel_loss": running_loss / train.config.training.log_interval,
+                "gen_loss": (
+                    loss_gen_all if train.manifest.stage == "first_tma" else loss_mel
+                ),
                 "d_loss": d_loss,
-                "mono_loss": loss_mono if epoch >= train.TMA_epoch else 0,
-                "s2s_loss": loss_s2s if epoch >= train.TMA_epoch else 0,
-                "slm_loss": loss_slm if epoch >= train.TMA_epoch else 0,
+                "mono_loss": (loss_mono if train.manifest.stage == "first_tma" else 0),
+                "s2s_loss": (loss_s2s if train.manifest.stage == "first_tma" else 0),
+                "slm_loss": (loss_slm if train.manifest.stage == "first_tma" else 0),
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
-                train.writer.add_scalar(f"train/{key}", value, train.iters)
+                train.writer.add_scalar(f"train/{key}", value, train.manifest.iters)
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
-    if (i + 1) % train.val_interval == 0 or (i + 1) % train.save_interval == 0:
-        save = (i + 1) % train.save_interval == 0
-        train.validate(current_epoch=epoch, current_step=i + 1, save=save, train=train)
+    if (i + 1) % train.config.training.val_interval == 0 or (
+        i + 1
+    ) % train.config.training.save_interval == 0:
+        save = (i + 1) % train.config.training.save_interval == 0
+        train.validate(current_step=i + 1, save=save, train=train)
 
     return running_loss, iters
 
@@ -335,7 +351,7 @@ def train_first(
 
 
 def train_second(
-    i: int, batch, running_loss: float, iters: int, train, epoch: int
+    i: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     """
     Training function for the second stage.
@@ -351,7 +367,7 @@ def train_second(
         ref_mels,
     ) = prepare_batch(
         batch,
-        train.device,
+        train.config.training.device,
         [
             "waves",
             "texts",
@@ -364,7 +380,7 @@ def train_second(
         ],
     )
     with torch.no_grad():
-        mel_mask = length_to_mask(mel_input_length).to(train.device)
+        mel_mask = length_to_mask(mel_input_length).to(train.config.training.device)
     try:
         _, s2s_attn_mono, _, asr, text_mask, _ = compute_alignment(
             train,
@@ -380,8 +396,7 @@ def train_second(
         return running_loss, iters
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
-
-    if train.multispeaker and epoch >= train.diff_epoch:
+    if train.config.model.multispeaker and train.manifest.stage == "second_style":
         with train.accelerator.autocast():
             ref_ss = train.model.style_encoder(ref_mels.unsqueeze(1))
             ref_sp = train.model.predictor_encoder(ref_mels.unsqueeze(1))
@@ -396,16 +411,18 @@ def train_second(
         bert_dur = train.model.bert(texts, attention_mask=(~text_mask).int())
         d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)
 
-    if epoch >= train.diff_epoch:
+    if train.manifest.stage == "second_style":
         num_steps = np.random.randint(3, 5)
         with torch.no_grad():
-            if train.model_params.diffusion.dist.estimate_sigma_data:
+            if train.config.diffusion.dist.estimate_sigma_data:
                 sigma_data = s_trg.std(axis=-1).mean().item()
                 train.model.diffusion.module.diffusion.sigma_data = sigma_data
                 train.running_std.append(sigma_data)
         with train.accelerator.autocast():
-            noise = torch.randn_like(s_trg).unsqueeze(1).to(train.device)
-            if train.multispeaker:
+            noise = (
+                torch.randn_like(s_trg).unsqueeze(1).to(train.config.training.device)
+            )
+            if train.config.model.multispeaker:
                 s_preds = train.sampler(
                     noise=noise,
                     embedding=bert_dur,
@@ -436,13 +453,12 @@ def train_second(
 
     with train.accelerator.autocast():
         d, p_en = train.model.predictor(
-            (d_en, s_dur, input_lengths, s2s_attn_mono, text_mask),
-            predict_F0N=False
+            (d_en, s_dur, input_lengths, s2s_attn_mono, text_mask), predict_F0N=False
         )
 
-    wav = waves  # Assume already on train.device
+    wav = waves  # Assume already on train.config.training.device
     if mels.shape[-1] < 40 or (
-        mels.shape[-1] < 80 and not train.model_params.skip_downsamples
+        mels.shape[-1] < 80 and not train.config.embedding_encoder.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
         return running_loss, iters
@@ -452,7 +468,7 @@ def train_second(
         N_real = log_norm(mels.unsqueeze(1)).squeeze(1)
         wav = wav.unsqueeze(1)
         y_rec_gt = wav
-        if epoch >= train.joint_epoch:
+        if train.manifest.stage == "second_joint":
             with train.accelerator.autocast():
                 y_rec_gt_pred, _, _ = train.model.decoder(asr, F0_real, N_real, gs)
 
@@ -481,15 +497,15 @@ def train_second(
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
 
     g_loss = (
-        train.loss_params.lambda_mel * loss_mel
-        + train.loss_params.lambda_F0 * loss_F0_rec
-        + train.loss_params.lambda_ce * loss_ce
-        + train.loss_params.lambda_norm * loss_norm_rec
-        + train.loss_params.lambda_dur * loss_dur
-        + train.loss_params.lambda_gen * loss_gen_all
-        + train.loss_params.lambda_slm * loss_lm
-        + train.loss_params.lambda_sty * loss_sty
-        + train.loss_params.lambda_diff * loss_diff
+        train.config.loss_weight.mel * loss_mel
+        + train.config.loss_weight.F0 * loss_F0_rec
+        + train.config.loss_weight.ce * loss_ce
+        + train.config.loss_weight.norm * loss_norm_rec
+        + train.config.loss_weight.dur * loss_dur
+        + train.config.loss_weight.gen * loss_gen_all
+        + train.config.loss_weight.slm * loss_lm
+        + train.config.loss_weight.sty * loss_sty
+        + train.config.loss_weight.diff * loss_diff
         + loss_magphase
     )
 
@@ -497,12 +513,12 @@ def train_second(
     train.accelerator.backward(g_loss)
 
     optimizer_step(train, ["bert_encoder", "bert", "predictor", "predictor_encoder"])
-    if epoch >= train.diff_epoch:
+    if train.manifest.stage == "second_style":
         optimizer_step(train, ["diffusion"])
-    if epoch >= train.joint_epoch or train.early_joint:
+    if train.manifest.stage == "second_joint" or train.early_joint:
         optimizer_step(train, ["style_encoder", "decoder"])
 
-    if epoch >= train.joint_epoch:
+    if train.manifest.stage == "second_joint":
         use_ind = np.random.rand() < 0.5
         if use_ind:
             ref_lengths = input_lengths
@@ -510,14 +526,14 @@ def train_second(
         slm_out = train.slmadv(
             i,
             y_rec_gt,
-            y_rec_gt_pred if epoch >= train.joint_epoch else None,
+            (y_rec_gt_pred if train.manifest.stage == "second_joint" else None),
             waves,
             mel_input_length,
             ref_texts,
             ref_lengths,
             use_ind,
             s_trg.detach(),
-            ref if train.multispeaker else None,
+            ref if train.config.model.multispeaker else None,
         )
         if slm_out is None:
             print("slm_out none")
@@ -527,7 +543,9 @@ def train_second(
         train.optimizer.zero_grad()
         loss_gen_lm.backward()
         scale_gradients(
-            train.model, train.slmadv_params.thresh, train.slmadv_params.scale
+            train.model,
+            train.config.slmadv_params.thresh,
+            train.config.slmadv_params.scale,
         )
         optimizer_step(train, ["bert_encoder", "bert", "predictor", "diffusion"])
         if d_loss_slm != 0:
@@ -537,11 +555,11 @@ def train_second(
     else:
         d_loss_slm, loss_gen_lm = 0, 0
 
-    train.iters += 1
+    train.manifest.iters += 1
     if train.accelerator.is_main_process:
-        if (i + 1) % train.log_interval == 0:
+        if (i + 1) % train.config.training.log_interval == 0:
             metrics = {
-                "mel_loss": running_loss / train.log_interval,
+                "mel_loss": running_loss / train.config.training.log_interval,
                 "d_loss": d_loss,
                 "ce_loss": loss_ce,
                 "dur_loss": loss_dur,
@@ -556,17 +574,19 @@ def train_second(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
-                train.writer.add_scalar(f"train/{key}", value, train.iters)
+                train.writer.add_scalar(f"train/{key}", value, train.manifest.iters)
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
-    if (i + 1) % train.val_interval == 0 or (i + 1) % train.save_interval == 0:
-        save = (i + 1) % train.save_interval == 0
-        train.validate(current_epoch=epoch, current_step=i + 1, save=save, train=train)
+    if (i + 1) % train.config.training.gival_interval == 0 or (
+        i + 1
+    ) % train.config.training.save_interval == 0:
+        save = (i + 1) % train.config.training.save_interval == 0
+        train.validate(current_step=i + 1, save=save, train=train)
 
     return running_loss, iters
 
@@ -576,7 +596,7 @@ def train_second(
 ###############################################
 
 
-def validate_first(current_epoch: int, current_step: int, save: bool, train) -> None:
+def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
     """
     Validation function for the first stage.
     """
@@ -590,13 +610,13 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
         for batch in train.val_dataloader:
             waves, texts, input_lengths, mels, mel_input_length = prepare_batch(
                 batch,
-                train.device,
+                train.config.training.device,
                 ["waves", "texts", "input_lengths", "mels", "mel_input_length"],
             )
             mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
-                train.device
+                train.config.training.device
             )
-            text_mask = length_to_mask(input_lengths).to(train.device)
+            text_mask = length_to_mask(input_lengths).to(train.config.training.device)
             _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
             s2s_attn = s2s_attn.transpose(-1, -2)
             s2s_attn = s2s_attn[..., 1:]
@@ -609,7 +629,8 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
             asr = t_en @ s2s_attn_mono
 
             if mels.shape[-1] < 40 or (
-                mels.shape[-1] < 80 and not train.model_params.skip_downsamples
+                mels.shape[-1] < 80
+                and not train.config.embedding_encoder.skip_downsamples
             ):
                 log_print("Skipping batch. TOO SHORT", train.logger)
                 continue
@@ -625,16 +646,16 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
     if train.accelerator.is_main_process:
         avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
         print(
-            f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}"
+            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}"
         )
         log_print(
-            f"Epochs:{current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}",
+            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}",
             train.logger,
         )
         log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
-        train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
+        train.writer.add_scalar("eval/mel_loss", avg_loss, train.manifest.current_epoch)
         attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
-        train.writer.add_figure("eval/attn", attn_image, current_epoch)
+        train.writer.add_figure("eval/attn", attn_image, train.manifest.current_epoch)
 
         with torch.no_grad():
             for bib in range(min(len(asr), 6)):
@@ -648,27 +669,32 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
                 train.writer.add_audio(
                     f"eval/y{bib}",
                     y_rec.cpu().numpy().squeeze(),
-                    current_epoch,
-                    sample_rate=train.sr,
+                    train.manifest.current_epoch,
+                    sample_rate=train.config.preprocess.sample_rate,
                 )
-                if current_epoch == 0:
+                if train.manifest.current_epoch == 0:
                     train.writer.add_audio(
                         f"gt/y{bib}",
                         waves[bib].squeeze(),
-                        current_epoch,
-                        sample_rate=train.sr,
+                        train.manifest.current_epoch,
+                        sample_rate=train.config.preprocess.sample_rate,
                     )
 
-        if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
+        if (
+            train.manifest.current_epoch % train.config.training.save_epoch_interval
+            == 0
+            and save
+            and current_step == -1
+        ):
             if avg_loss < train.best_loss:
                 train.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
+            log_and_save_checkpoint(train, current_step, prefix="epoch_1st")
         if save and current_step != -1:
             if avg_loss < train.best_loss:
                 train.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_1st")
+            log_and_save_checkpoint(train, current_step, prefix="epoch_1st")
 
     for key in train.model:
         train.model[key].train()
@@ -679,7 +705,7 @@ def validate_first(current_epoch: int, current_step: int, save: bool, train) -> 
 ###############################################
 
 
-def validate_second(current_epoch: int, current_step: int, save: bool, train) -> None:
+def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
     """
     Validation function for the second stage.
     """
@@ -696,7 +722,7 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 waves, texts, input_lengths, mels, mel_input_length, ref_mels = (
                     prepare_batch(
                         batch,
-                        train.device,
+                        train.config.training.device,
                         [
                             "waves",
                             "texts",
@@ -708,9 +734,11 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                     )
                 )
                 mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
-                    train.device
+                    train.config.training.device
                 )
-                text_mask = length_to_mask(input_lengths).to(train.device)
+                text_mask = length_to_mask(input_lengths).to(
+                    train.config.training.device
+                )
                 _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
                 s2s_attn = s2s_attn.transpose(-1, -2)
                 s2s_attn = s2s_attn[..., 1:]
@@ -724,7 +752,8 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 # d_gt is computed here but not used further.
                 d_gt = s2s_attn_mono.sum(axis=-1).detach()
                 if mels.shape[-1] < 40 or (
-                    mels.shape[-1] < 80 and not train.model_params.skip_downsamples
+                    mels.shape[-1] < 80
+                    and not train.config.embedding_encoder.skip_downsamples
                 ):
                     log_print("Skipping batch. TOO SHORT", train.logger)
                     continue
@@ -735,7 +764,7 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)
                 d, p = train.model.predictor(
                     (d_en, s, input_lengths, s2s_attn_mono, text_mask),
-                    predict_F0N=False
+                    predict_F0N=False,
                 )
                 F0_fake, N_fake = train.model.predictor((p, s), predict_F0N=True)
                 loss_dur = 0
@@ -764,14 +793,14 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
     if train.accelerator.is_main_process:
         avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
         print(
-            f"Epochs: {current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.best_loss}"
+            f"Epochs: {train.manifest.current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.best_loss}"
         )
         train.logger.info(
             f"Validation loss: {avg_loss:.3f}, Dur loss: {loss_align / iters_test:.3f}, F0 loss: {loss_f / iters_test:.3f}\n\n\n"
         )
-        train.writer.add_scalar("eval/mel_loss", avg_loss, current_epoch)
+        train.writer.add_scalar("eval/mel_loss", avg_loss, train.manifest.current_epoch)
         attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
-        train.writer.add_figure("eval/attn", attn_image, current_epoch)
+        train.writer.add_figure("eval/attn", attn_image, train.manifest.current_epoch)
 
         with torch.no_grad():
             for bib in range(min(len(asr), 6)):
@@ -785,25 +814,30 @@ def validate_second(current_epoch: int, current_step: int, save: bool, train) ->
                 train.writer.add_audio(
                     f"eval/y{bib}",
                     y_rec.cpu().numpy().squeeze(),
-                    current_epoch,
-                    sample_rate=train.sr,
+                    train.manifest.current_epoch,
+                    sample_rate=train.config.preprocess.sample_rate,
                 )
-                if current_epoch == 0:
+                if train.manifest.current_epoch == 0:
                     train.writer.add_audio(
                         f"gt/y{bib}",
                         waves[bib].squeeze(),
-                        current_epoch,
-                        sample_rate=train.sr,
+                        train.manifest.current_epoch,
+                        sample_rate=train.config.preprocess.sample_rate,
                     )
-        if current_epoch % train.saving_epoch == 0 and save and current_step == -1:
+        if (
+            train.manifest.current_epoch % train.config.training.save_epoch_interval
+            == 0
+            and save
+            and current_step == -1
+        ):
             if avg_loss < train.best_loss:
                 train.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
+            log_and_save_checkpoint(train, current_step, prefix="epoch_2nd")
         if save and current_step != -1:
             if avg_loss < train.best_loss:
                 train.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_epoch, current_step, prefix="epoch_2nd")
+            log_and_save_checkpoint(train, current_step, prefix="epoch_2nd")
     for key in train.model:
         train.model[key].train()

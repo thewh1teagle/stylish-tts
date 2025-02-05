@@ -12,16 +12,16 @@ import sentence_transformers
 from sentence_transformers.training_args import BatchSamplers
 
 
-#variant = "prosody"
+# variant = "prosody"
 
-#import torch._dynamo
-#torch._dynamo.config.suppress_errors = True
+# import torch._dynamo
+# torch._dynamo.config.suppress_errors = True
 
 model = SentenceTransformer("microsoft/mpnet-base")
-#model = SentenceTransformer("nomic-ai/modernbert-embed-base")
+# model = SentenceTransformer("nomic-ai/modernbert-embed-base")
 dense = sentence_transformers.models.Dense(
     in_features=model.get_sentence_embedding_dimension(),
-    #out_features=128,
+    # out_features=128,
     out_features=256,
     bias=False,
     activation_function=torch.nn.Identity(),
@@ -33,11 +33,12 @@ model = model.to("cuda")
 
 exdict = {}
 
+
 def make_dataset(exemplars, textpath, letter):
     dict = {}
-    #exdict[letter] = exemplars
-    #keylist = [ letter + str(i) for i in range(exemplars.shape[0])]
-    dict["label"] = exemplars.tolist()#keylist
+    # exdict[letter] = exemplars
+    # keylist = [ letter + str(i) for i in range(exemplars.shape[0])]
+    dict["label"] = exemplars.tolist()  # keylist
     with open(textpath) as f:
         lines = []
         for line in f:
@@ -47,13 +48,15 @@ def make_dataset(exemplars, textpath, letter):
 
     return datasets.Dataset.from_dict(dict)
 
+
 alldata = numpy.load("sentence-data.npz", allow_pickle=False)
 train_set = make_dataset(alldata["style_train"], "sentence-train.txt", "t")
-#print(train_set[0])
-#quit()
+# print(train_set[0])
+# quit()
 val_set = make_dataset(alldata["style_val"], "sentence-val.txt", "v")
 
 # LOSS
+
 
 class StyleLoss(torch.nn.Module):
     def __init__(self, model):
@@ -61,22 +64,22 @@ class StyleLoss(torch.nn.Module):
         self.model = model
 
     def forward(self, sentence_features, labels):
-        #print(sentence_features)
+        # print(sentence_features)
         prediction = self.model(sentence_features[0])
         gt = labels
-        #gt = None
-        #if variant == "style":
+        # gt = None
+        # if variant == "style":
         #    gt = labels[:, :128]
-        #else:
+        # else:
         #    gt = labels[:, 128:]
-        return torch.nn.functional.l1_loss(
-            prediction["sentence_embedding"], gt)
-    
+        return torch.nn.functional.l1_loss(prediction["sentence_embedding"], gt)
+
+
 loss = StyleLoss(model)
 
 args = SentenceTransformerTrainingArguments(
     # Required parameter:
-    #output_dir="sbert-" + variant,
+    # output_dir="sbert-" + variant,
     output_dir="sbert",
     # Optional training parameters:
     num_train_epochs=20,
@@ -98,13 +101,9 @@ args = SentenceTransformerTrainingArguments(
 
 
 trainer = SentenceTransformerTrainer(
-    model=model,
-    args=args,
-    train_dataset=train_set,
-    eval_dataset=val_set,
-    loss=loss
+    model=model, args=args, train_dataset=train_set, eval_dataset=val_set, loss=loss
 )
 trainer.train()
 
-#model.save_pretrained("sbert-" + variant + "/final")
+# model.save_pretrained("sbert-" + variant + "/final")
 model.save_pretrained("sbert/final")

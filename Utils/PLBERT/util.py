@@ -13,27 +13,13 @@ class CustomAlbert(AlbertModel):
         return outputs.last_hidden_state
 
 
-def load_plbert(log_dir):
-    config_path = os.path.join(log_dir, "config.yml")
+def load_plbert(checkpoint_path, config_path):
     plbert_config = yaml.safe_load(open(config_path))
 
     albert_base_configuration = AlbertConfig(**plbert_config["model_params"])
     bert = CustomAlbert(albert_base_configuration)
 
-    files = os.listdir(log_dir)
-    ckpts = []
-    for f in os.listdir(log_dir):
-        if f.startswith("step_"):
-            ckpts.append(f)
-
-    iters = [
-        int(f.split("_")[-1].split(".")[0])
-        for f in ckpts
-        if os.path.isfile(os.path.join(log_dir, f))
-    ]
-    iters = sorted(iters)[-1]
-
-    checkpoint = torch.load(log_dir + "/step_" + str(iters) + ".t7", map_location="cpu")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
     state_dict = checkpoint["net"]
     from collections import OrderedDict
 
