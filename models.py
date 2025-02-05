@@ -759,109 +759,109 @@ def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
     return asr_model
 
 
-def build_model(args, text_aligner, pitch_extractor, bert):
-    assert args.decoder.type in [
+def build_model(config, text_aligner, pitch_extractor, bert):
+    assert config.decoder.type in [
         "istftnet",
         "hifigan",
         "ringformer",
         "vocos",
     ], "Decoder type unknown"
 
-    if args.decoder.type == "istftnet":
+    if config.decoder.type == "istftnet":
         from Modules.istftnet import Decoder
 
         decoder = Decoder(
-            dim_in=args.hidden_dim,
-            style_dim=args.style_dim,
-            dim_out=args.n_mels,
-            resblock_kernel_sizes=args.decoder.resblock_kernel_sizes,
-            upsample_rates=args.decoder.upsample_rates,
-            upsample_initial_channel=args.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=args.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=args.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=args.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=args.decoder.gen_istft_hop_size,
+            dim_in=config.decoder.hidden_dim,
+            style_dim=config.model.style_dim,
+            dim_out=config.model.n_mels,
+            resblock_kernel_sizes=config.decoder.resblock_kernel_sizes,
+            upsample_rates=config.decoder.upsample_rates,
+            upsample_initial_channel=config.decoder.upsample_initial_channel,
+            resblock_dilation_sizes=config.decoder.resblock_dilation_sizes,
+            upsample_kernel_sizes=config.decoder.upsample_kernel_sizes,
+            gen_istft_n_fft=config.decoder.gen_istft_n_fft,
+            gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
-    elif args.decoder.type == "ringformer":
+    elif config.decoder.type == "ringformer":
         from Modules.ringformer import Decoder
 
         decoder = Decoder(
-            dim_in=args.hidden_dim,
-            style_dim=args.style_dim,
-            dim_out=args.n_mels,
-            resblock_kernel_sizes=args.decoder.resblock_kernel_sizes,
-            upsample_rates=args.decoder.upsample_rates,
-            upsample_initial_channel=args.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=args.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=args.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=args.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=args.decoder.gen_istft_hop_size,
+            dim_in=config.decoder.hidden_dim,
+            style_dim=config.model.style_dim,
+            dim_out=config.model.n_mels,
+            resblock_kernel_sizes=config.decoder.resblock_kernel_sizes,
+            upsample_rates=config.decoder.upsample_rates,
+            upsample_initial_channel=config.decoder.upsample_initial_channel,
+            resblock_dilation_sizes=config.decoder.resblock_dilation_sizes,
+            upsample_kernel_sizes=config.decoder.upsample_kernel_sizes,
+            gen_istft_n_fft=config.decoder.gen_istft_n_fft,
+            gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
-    elif args.decoder.type == "vocos":
+    elif config.decoder.type == "vocos":
         from Modules.vocos import Decoder
 
         decoder = Decoder(
-            dim_in=args.hidden_dim,
-            style_dim=args.style_dim,
-            dim_out=args.n_mels,
-            intermediate_dim=args.decoder.intermediate_dim,
-            num_layers=args.decoder.num_layers,
-            gen_istft_n_fft=args.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=args.decoder.gen_istft_hop_size,
+            dim_in=config.decoder.hidden_dim,
+            style_dim=config.model.style_dim,
+            dim_out=config.model.n_mels,
+            intermediate_dim=config.decoder.intermediate_dim,
+            num_layers=config.decoder.num_layers,
+            gen_istft_n_fft=config.decoder.gen_istft_n_fft,
+            gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     else:
         from Modules.hifigan import Decoder
 
         decoder = Decoder(
-            dim_in=args.hidden_dim,
-            style_dim=args.style_dim,
-            dim_out=args.n_mels,
-            resblock_kernel_sizes=args.decoder.resblock_kernel_sizes,
-            upsample_rates=args.decoder.upsample_rates,
-            upsample_initial_channel=args.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=args.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=args.decoder.upsample_kernel_sizes,
+            dim_in=config.decoder.hidden_dim,
+            style_dim=config.model.style_dim,
+            dim_out=config.model.n_mels,
+            resblock_kernel_sizes=config.decoder.resblock_kernel_sizes,
+            upsample_rates=config.decoder.upsample_rates,
+            upsample_initial_channel=config.decoder.upsample_initial_channel,
+            resblock_dilation_sizes=config.decoder.resblock_dilation_sizes,
+            upsample_kernel_sizes=config.decoder.upsample_kernel_sizes,
         )
 
     text_encoder = TextEncoder(
-        channels=args.hidden_dim,
-        kernel_size=5,
-        depth=args.n_layer,
-        n_symbols=args.n_token,
+        channels=config.text_encoder.hidden_dim,
+        kernel_size=config.text_encoder.kernel_size,
+        depth=config.text_encoder.n_layer,
+        n_symbols=config.text_encoder.n_token,
     )
 
     predictor = ProsodyPredictor(
-        style_dim=args.style_dim,
-        d_hid=args.hidden_dim,
-        nlayers=args.n_layer,
-        max_dur=args.max_dur,
-        dropout=args.dropout,
+        style_dim=config.model.style_dim,
+        d_hid=config.prosody_predictor.hidden_dim,
+        nlayers=config.prosody_predictor.n_layer,
+        max_dur=config.prosody_predictor.max_dur,
+        dropout=config.prosody_predictor.dropout,
     )
 
     style_encoder = StyleEncoder(
-        dim_in=args.dim_in,
-        style_dim=args.style_dim,
-        max_conv_dim=args.hidden_dim,
-        skip_downsamples=args.get('skip_downsamples'),
+        dim_in=config.embedding_encoder.dim_in,
+        style_dim=config.model.style_dim,
+        max_conv_dim=config.embedding_encoder.hidden_dim,
+        skip_downsamples=config.embedding_encoder.skip_downsamples,
     )  # acoustic style encoder
     predictor_encoder = StyleEncoder(
-        dim_in=args.dim_in,
-        style_dim=args.style_dim,
-        max_conv_dim=args.hidden_dim,
-        skip_downsamples=args.get('skip_downsamples'),
+        dim_in=config.embedding_encoder.dim_in,
+        style_dim=config.model.style_dim,
+        max_conv_dim=config.embedding_encoder.hidden_dim,
+        skip_downsamples=config.embedding_encoder.skip_downsamples,
     )  # prosodic style encoder
 
     # define diffusion model
-    if args.multispeaker:
+    if config.model.multispeaker:
         transformer = StyleTransformer1d(
-            channels=args.style_dim * 2,
+            channels=config.model.style_dim * 2,
             context_embedding_features=bert.config.hidden_size,
-            context_features=args.style_dim * 2,
-            **args.diffusion.transformer,
+            context_features=config.model.style_dim * 2,
+            **config.diffusion.transformer,
         )
     else:
         transformer = Transformer1d(
-            channels=args.style_dim * 2,
+            channels=config.model.style_dim * 2,
             context_embedding_features=bert.config.hidden_size,
             **args.diffusion.transformer,
         )
@@ -870,17 +870,17 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         in_channels=1,
         embedding_max_length=bert.config.max_position_embeddings,
         embedding_features=bert.config.hidden_size,
-        embedding_mask_proba=args.diffusion.embedding_mask_proba,  # Conditional dropout of batch elements,
-        channels=args.style_dim * 2,
-        context_features=args.style_dim * 2,
+        embedding_mask_proba=config.diffusion.embedding_mask_proba,  # Conditional dropout of batch elements,
+        channels=config.model.style_dim * 2,
+        context_features=config.model.style_dim * 2,
     )
 
     diffusion.diffusion = KDiffusion(
         net=diffusion.unet,
         sigma_distribution=LogNormalDistribution(
-            mean=args.diffusion.dist.mean, std=args.diffusion.dist.std
+            mean=config.diffusion.dist.mean, std=config.diffusion.dist.std
         ),
-        sigma_data=args.diffusion.dist.sigma_data,  # a placeholder, will be changed dynamically when start training diffusion model
+        sigma_data=config.diffusion.dist.sigma_data,  # a placeholder, will be changed dynamically when start training diffusion model
         dynamic_threshold=0.0,
     )
     diffusion.diffusion.net = transformer
@@ -889,7 +889,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
 
     nets = Munch(
         bert=bert,
-        bert_encoder=nn.Linear(bert.config.hidden_size, args.hidden_dim),
+        bert_encoder=nn.Linear(bert.config.hidden_size, config.prosody_predictor.hidden_dim),
         predictor=predictor,
         decoder=decoder,
         text_encoder=text_encoder,
@@ -902,7 +902,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         msd=MultiScaleSubbandCQTDiscriminator(),
         # slm discriminator head
         wd=WavLMDiscriminator(
-            args.slm.hidden, args.slm.nlayers, args.slm.initial_channel
+            config.slm.hidden, config.slm.nlayers, config.slm.initial_channel
         ),
     )
 
