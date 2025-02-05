@@ -1,0 +1,33 @@
+name: test inference libritts
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-14"
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: test
+        run: |
+          wget --progress=bar:force:noscroll -nc https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/reference_audio.zip
+          wget --progress=bar:force:noscroll -nc https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth -O Models/LibriTTS/epochs_2nd_00020.pth
+          unzip reference_audio.zip
+          mv reference_audio Demo/
+          rm -rf reference_audio.zip
+
+          uv run Demo/inference_libritts.py
+          uv run examples/save.py
+        shell: bash
