@@ -106,7 +106,7 @@ plbert = load_plbert(BERT_path)
 
 
 model_params = recursive_munch(config['model_params'])
-model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+model = build_model(model_params, text_aligner, pitch_extractor, plbert)[0]
 _ = [model[key].eval() for key in model]
 _ = [model[key].to(device) for key in model]
 
@@ -199,7 +199,7 @@ def inference(text, ref_s, alpha = 0.3, beta = 0.7, diffusion_steps=5, embedding
             asr_new[:, :, 1:] = en[:, :, 0:-1]
             en = asr_new
 
-        F0_pred, N_pred = model.predictor.F0Ntrain(en, s)
+        F0_pred, N_pred = model.predictor((en, s), predict_F0N=True)
 
         asr = (t_en @ pred_aln_trg.unsqueeze(0).to(device))
         if model_params.decoder.type == "hifigan":
