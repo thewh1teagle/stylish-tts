@@ -265,8 +265,7 @@ def train_first(
     wav.requires_grad_(False)
 
     # --- Discriminator Loss ---
-    # TODO: we should check for train.manifest.stage instead of epoch
-    if train.manifest.current_epoch >= train.config.training_plan.first_tma:
+    if train.manifest.stage == "first_tma":
         train.optimizer.zero_grad()
         with train.accelerator.autocast():
             d_loss = train.dl(wav.detach().unsqueeze(1).float(), y_rec.detach()).mean()
@@ -280,8 +279,7 @@ def train_first(
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
-        # TODO: we should check for train.manifest.stage instead of epoch
-        if train.manifest.current_epoch >= train.config.training_plan.first_tma:
+        if train.manifest.stage == "first_tma":
             loss_s2s = 0
             for _s2s_pred, _text_input, _text_length in zip(
                 s2s_pred, texts, input_lengths
@@ -308,43 +306,24 @@ def train_first(
 
     # --- Optimizer Steps ---
     optimizer_step(train, ["text_encoder", "style_encoder", "decoder"])
-    # TODO: we should check for train.manifest.stage instead of epoch
-    if train.manifest.current_epoch >= train.config.training_plan.first_tma:
+
+    if train.manifest.stage == "first_tma":
         optimizer_step(train, ["text_aligner", "pitch_extractor"])
     train.manifest.iters += 1
 
     # --- Logging ---
-    # TODO: We should check for train.manifest.stage instead of epoch
     # TODO: maybe we should only print what we need based on the stage
     if train.accelerator.is_main_process:
         if (i + 1) % train.config.training.log_interval == 0:
             metrics = {
                 "mel_loss": running_loss / train.config.training.log_interval,
                 "gen_loss": (
-                    loss_gen_all
-                    if train.manifest.current_epoch
-                    >= train.config.training_plan.first_tma
-                    else loss_mel
+                    loss_gen_all if train.manifest.stage == "first_tma" else loss_mel
                 ),
                 "d_loss": d_loss,
-                "mono_loss": (
-                    loss_mono
-                    if train.manifest.current_epoch
-                    >= train.config.training_plan.first_tma
-                    else 0
-                ),
-                "s2s_loss": (
-                    loss_s2s
-                    if train.manifest.current_epoch
-                    >= train.config.training_plan.first_tma
-                    else 0
-                ),
-                "slm_loss": (
-                    loss_slm
-                    if train.manifest.current_epoch
-                    >= train.config.training_plan.first_tma
-                    else 0
-                ),
+                "mono_loss": (loss_mono if train.manifest.stage == "first_tma" else 0),
+                "s2s_loss": (loss_s2s if train.manifest.stage == "first_tma" else 0),
+                "slm_loss": (loss_slm if train.manifest.stage == "first_tma" else 0),
                 "mp_loss": loss_magphase,
             }
             train.logger.info(

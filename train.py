@@ -53,7 +53,7 @@ from stages import train_first, validate_first, train_second, validate_second
 @click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="first", type=str)
+@click.option("--stage", default="first_tma", type=str)
 @click.option("--pretrained_model", default="", type=str)
 def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train = TrainContext()
