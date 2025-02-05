@@ -31,5 +31,4 @@ jobs:
           rm -rf reference_audio.zip
 
           uv run Demo/inference_libritts.py
-          uv run examples/save.py
         shell: bash
