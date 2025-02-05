@@ -13,8 +13,7 @@ class CustomAlbert(AlbertModel):
         return outputs.last_hidden_state
 
 
-def load_plbert(log_dir):
-    config_path = os.path.join(log_dir, "config.yml")
+def load_plbert(log_dir, config_path):
     plbert_config = yaml.safe_load(open(config_path))
 
     albert_base_configuration = AlbertConfig(**plbert_config["model_params"])

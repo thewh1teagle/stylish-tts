@@ -17,6 +17,7 @@ import logging
 from logging import StreamHandler
 from accelerate import Accelerator
 from accelerate import DistributedDataParallelKwargs
+from config_loader import load_config_yaml, Config, TrainContext
 
 
 warnings.simplefilter("ignore")
@@ -40,7 +41,7 @@ from stages import train_first, validate_first, train_second, validate_second
 
 
 # simple fix for dataparallel that allows access to class attributes
-#class MyDataParallel(torch.nn.DataParallel):
+# class MyDataParallel(torch.nn.DataParallel):
 #    def __getattr__(self, name):
 #        try:
 #            return super().__getattr__(name)
@@ -48,31 +49,32 @@ from stages import train_first, validate_first, train_second, validate_second
 #            return getattr(self.module, name)
 
 
-class TrainContext:
-    def __init__(self):
-        pass
-
-
-train = TrainContext()
-
-
 @click.command()
 @click.option("-p", "--config_path", default="Configs/config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="auto", type=str)
+@click.option("--stage", default="second", type=str)
 def main(config_path, probe_batch, early_joint, stage):
+    train = TrainContext()
+
+    if osp.exists(config_path):
+        train.config = load_config_yaml(config_path)
+    else:
+        # TODO: we may be able to pull it out of the model if a model is passed in instead
+        exit(f"Config file not found at {config_path}")
+
     train.config_path = config_path
-    train.config = yaml.safe_load(open(config_path))
     train.early_joint = early_joint
     train.stage = stage
 
-    train.log_dir = train.config["log_dir"]
-    if not osp.exists(train.log_dir):
-        os.makedirs(train.log_dir, exist_ok=True)
-    if not osp.exists(train.log_dir):
+    train.config.training.out_dir
+    if not osp.exists(train.config.training.out_dir):
+        os.makedirs(train.config.training.out_dir, exist_ok=True)
+    if not osp.exists(train.config.training.out_dir):
         exit("Failed to create or find log directory.")
-    shutil.copy(config_path, osp.join(train.log_dir, osp.basename(config_path)))
+    shutil.copy(
+        config_path, osp.join(train.config.training.out_dir, osp.basename(config_path))
+    )
 
     train.logger = logging.getLogger(__name__)
     train.logger.setLevel(logging.DEBUG)
@@ -80,81 +82,57 @@ def main(config_path, probe_batch, early_joint, stage):
     handler.setLevel(logging.DEBUG)
     train.logger.addHandler(handler)
 
-    file_handler = logging.FileHandler(osp.join(train.log_dir, "train.log"))
+    file_handler = logging.FileHandler(
+        osp.join(train.config.training.out_dir, "train.log")
+    )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
         logging.Formatter("%(levelname)s:%(asctime)s: %(message)s")
     )
     train.logger.addHandler(file_handler)
 
-    train.epochs = train.config.get("epochs_2nd", 200)
-    train.save_freq = train.config.get("save_freq", 2)
-    train.log_interval = train.config.get("log_interval", 10)
-    train.saving_epoch = train.config.get("save_freq", 2)
-
-
-    train.val_interval = train.config.get("val_interval", 1)
-    train.save_interval = train.config.get("save_interval", 1)
-
-    train.sr = train.config["preprocess_params"].get("sr", 24000)
-
-    train.loss_params = Munch(train.config["loss_params"])
-    train.diff_epoch = train.loss_params.diff_epoch
-    train.joint_epoch = train.loss_params.joint_epoch
-    train.TMA_epoch = train.loss_params.TMA_epoch
-
-
-    train.precision = train.config.get("precision", "no")
-
-    train.optimizer_params = Munch(train.config["optimizer_params"])
-
-    if "skip_downsamples" not in train.config["model_params"]:
-        train.config["model_params"]["skip_downsamples"] = False
-    train.model_params = recursive_munch(train.config["model_params"])
-    train.multispeaker = train.model_params.multispeaker
+    train.epochs = sum(
+        [
+            train.config.training_plan.first,
+            train.config.training_plan.first_tma,
+            train.config.training_plan.second,
+            train.config.training_plan.second_style,
+            train.config.training_plan.second_joint,
+        ]
+    )
 
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     train.accelerator = Accelerator(
-        project_dir=train.log_dir,
+        project_dir=train.config.training.out_dir,
         split_batches=True,
         kwargs_handlers=[ddp_kwargs],
-        mixed_precision=train.precision,
+        mixed_precision=train.config.model.mixed_precision,
     )
-    train.accelerator.even_batches=False
-    
+    train.accelerator.even_batches = False
+
     if train.accelerator.is_main_process:
-        train.writer = SummaryWriter(train.log_dir + "/tensorboard")
-
-    train.device = train.config.get("device", "cuda")
-
+        train.writer = SummaryWriter(train.config.training.out_dir + "/tensorboard")
 
     # Set up data loaders and batch manager
-    data_params = train.config.get("data_params", None)
-    train_path = data_params["train_data"]
-    val_path = data_params["val_data"]
-    root_path = data_params["root_path"]
-    min_length = data_params["min_length"]
-    OOD_data = data_params["OOD_data"]
+    if not osp.exists(train.config.dataset.train_data):
+        exit(f"Train data not found at {train.config.dataset.train_data}")
+    if not osp.exists(train.config.dataset.val_path):
+        exit(f"Validation data not found at {train.config.dataset.val_path}")
+    if not osp.exists(train.config.dataset.wav_path):
+        exit(f"Root path not found at {train.config.dataset.wav_path}")
 
-    if not osp.exists(train_path):
-        exit(f"Train data not found at {train_path}")
-    if not osp.exists(val_path):
-        exit(f"Validation data not found at {val_path}")
-    if not osp.exists(root_path):
-        exit(f"Root path not found at {root_path}")
-
-    val_list = get_data_path_list(val_path)
+    val_list = get_data_path_list(train.config.dataset.val_path)
     train.val_dataloader = build_dataloader(
         val_list,
-        root_path,
-        OOD_data=OOD_data,
-        min_length=min_length,
+        train.config.dataset.wav_path,
+        OOD_data=train.config.dataset.min_length,
+        min_length=train.config.dataset.min_length,
         batch_size={},
         validation=True,
         num_workers=4,
-        device=train.device,
+        device=train.config.training.device,
         dataset_config={},
-        multispeaker=train.multispeaker,
+        multispeaker=train.config.model.multispeaker,
     )
 
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
@@ -163,42 +141,44 @@ def main(config_path, probe_batch, early_joint, stage):
         train.logger.info(s)
 
     train.batch_manager = BatchManager(
-        train_path,
-        train.log_dir,
+        train.config.dataset.train_data,
+        train.config.training.out_dir,
         probe_batch=probe_batch,
-        root_path=root_path,
-        OOD_data=OOD_data,
-        min_length=min_length,
-        device=train.device,
+        root_path=train.config.dataset.wav_path,
+        OOD_data=train.config.dataset.min_length,
+        min_length=train.config.dataset.min_length,
+        device=train.config.training.device,
         accelerator=train.accelerator,
         log_print=log_print_function,
-        multispeaker=train.multispeaker,
+        multispeaker=train.config.model.multispeaker,
     )
 
     with train.accelerator.main_process_first():
         # load pretrained ASR model
-        ASR_config = train.config.get("ASR_config", False)
-        ASR_path = train.config.get("ASR_path", False)
-        text_aligner = load_ASR_models(ASR_path, ASR_config)
+        text_aligner = load_ASR_models(
+            train.config.pretrained.ASR_path, train.config.pretrained.ASR_config
+        )
 
         # load pretrained F0 model
-        F0_path = train.config.get("F0_path", False)
-        pitch_extractor = load_F0_models(F0_path)
+        pitch_extractor = load_F0_models(train.config.pretrained.F0_path)
 
         # load PL-BERT model
-        BERT_path = train.config.get("PLBERT_dir", False)
-        plbert = load_plbert(BERT_path)
+        plbert = load_plbert(
+            train.config.pretrained.PLBERT_path, train.config.pretrained.PLBERT_config
+        )
 
     # build model
-    train.model, kdiffusion = build_model(train.model_params, text_aligner, pitch_extractor, plbert)
+    train.model, kdiffusion = build_model(
+        train.config, text_aligner, pitch_extractor, plbert
+    )
 
     for k in train.model:
         train.model[k] = train.accelerator.prepare(train.model[k])
 
-    _ = [train.model[key].to(train.device) for key in train.model]
+    _ = [train.model[key].to(train.config.training.device) for key in train.model]
 
     # DP
-    #for key in train.model:
+    # for key in train.model:
     #    if key != "mpd" and key != "msd" and key != "wd":
     #        train.model[key] = MyDataParallel(train.model[key])
 
@@ -238,19 +218,22 @@ def main(config_path, probe_batch, early_joint, stage):
         train.start_epoch = 1
         train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
 
-
-    train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(train.device)
-    train.dl = DiscriminatorLoss(train.model.mpd, train.model.msd).to(train.device)
+    train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
+        train.config.training.device
+    )
+    train.dl = DiscriminatorLoss(train.model.mpd, train.model.msd).to(
+        train.config.training.device
+    )
     train.wl = WavLMLoss(
-        train.model_params.slm.model,
+        train.config.slm.model,
         train.model.wd,
-        train.sr,
-        train.model_params.slm.sr,
-    ).to(train.device)
+        train.config.preprocess.sample_rate,
+        train.config.slm.sr,
+    ).to(train.config.training.device)
 
-    #train.gl = MyDataParallel(train.gl)
-    #train.dl = MyDataParallel(train.dl)
-    #train.wl = MyDataParallel(train.wl)
+    # train.gl = MyDataParallel(train.gl)
+    # train.dl = MyDataParallel(train.dl)
+    # train.wl = MyDataParallel(train.wl)
 
     # TODO: How to access model diffusion?
     train.sampler = DiffusionSampler(
@@ -305,7 +288,6 @@ def main(config_path, probe_batch, early_joint, stage):
             g["min_lr"] = 0
             g["weight_decay"] = 1e-4
 
-
     if train.accelerator.main_process_first():
         # load models if there is a model for second stage
         if (
@@ -323,13 +305,13 @@ def main(config_path, probe_batch, early_joint, stage):
             )
             train.start_epoch += 1
 
-    train.n_down = 1 #TODO: Use train.model.text_aligner.n_down
+    train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
     train.best_loss = float("inf")  # best test loss
 
     torch.cuda.empty_cache()
 
-    train.stft_loss = MultiResolutionSTFTLoss().to(train.device)
+    train.stft_loss = MultiResolutionSTFTLoss().to(train.config.training.device)
 
     # print("BERT", optimizer.optimizers["bert"])
     # print("decoder", optimizer.optimizers["decoder"])
@@ -367,7 +349,7 @@ def train_val_loop(train, start_epoch):
         train.running_loss = 0
         train.start_time = time.time()
 
-        if epoch >= train.diff_epoch or train.early_joint:
+        if epoch >= train.config.training_plan.second_style or train.early_joint:
             train.start_ds = True
 
         _ = [train.model[key].train() for key in train.model]
