@@ -66,7 +66,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
 
     train.config_path = config_path
     train.early_joint = early_joint
-    train.stage = stage
+    train.manifest.stage = stage
 
     if not osp.exists(train.config.training.out_dir):
         os.makedirs(train.config.training.out_dir, exist_ok=True)
@@ -91,7 +91,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     )
     train.logger.addHandler(file_handler)
 
-    train.epochs = sum(
+    train.manifest.epochs = sum(
         [
             train.config.training_plan.first,
             train.config.training_plan.first_tma,
@@ -187,8 +187,8 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     #        train.model[key] = MyDataParallel(train.model[key])
 
     # TODO: I think we want to start with epoch 0 or fix the tensorboard logging because it only writes gt sample when epoch 0
-    start_epoch = 1
-    train.iters = 0
+    train.manifest.current_epoch = 1
+    train.manifest.iters = 0
 
     # load an existing model for first stage
     if (
@@ -197,21 +197,23 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         and stage in {"first", "first_tma"}
     ):
         print(f"Loading the first stage model at {pretrained_model} ...")
-        train.model, _, train.start_epoch, train.iters = load_checkpoint(
-            train.model,
-            None,
-            pretrained_model,
-            load_only_params=True,
-            ignore_modules=[
-                "bert",
-                "bert_encoder",
-                "predictor",
-                "predictor_encoder",
-                "msd",
-                "mpd",
-                "wd",
-                "diffusion",
-            ],
+        train.model, _, train.manifest.current_epoch, train.manifest.iters = (
+            load_checkpoint(
+                train.model,
+                None,
+                pretrained_model,
+                load_only_params=True,
+                ignore_modules=[
+                    "bert",
+                    "bert_encoder",
+                    "predictor",
+                    "predictor_encoder",
+                    "msd",
+                    "mpd",
+                    "wd",
+                    "diffusion",
+                ],
+            )
         )  # keep starting epoch for tensorboard log
 
         # TODO: what epoch are we on?
@@ -219,7 +221,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         # diff_epoch += start_epoch
         # joint_epoch += start_epoch
         # epochs += start_epoch
-        train.start_epoch = 1
+        train.manifest.current_epoch = 1
         train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
 
     train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
@@ -252,7 +254,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     scheduler_params = {
         "max_lr": train.config.optimizer.lr,
         "pct_start": float(0),
-        "epochs": train.epochs,
+        "epochs": train.manifest.epochs,
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
     scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
@@ -298,15 +300,18 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
             and osp.exists(pretrained_model)
             and stage in {"second", "second_style", "second_joint"}
         ):
-            train.model, train.optimizer, train.start_epoch, train.iters = (
-                load_checkpoint(
-                    train.model,
-                    train.optimizer,
-                    pretrained_model,
-                    load_only_params=train.config.get("load_only_params", True),
-                )
+            (
+                train.model,
+                train.optimizer,
+                train.manifest.current_epoch,
+                train.manifest.iters,
+            ) = load_checkpoint(
+                train.model,
+                train.optimizer,
+                pretrained_model,
+                load_only_params=train.config.get("load_only_params", True),
             )
-            train.start_epoch += 1
+            train.manifest.current_epoch += 1
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
@@ -335,29 +340,38 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         sig=train.config.slmadv_params.sig,
     )
 
-    train_val_loop(train, start_epoch)
+    train_val_loop(train)
 
 
-def train_val_loop(train, start_epoch):
-    if train.stage == "first":
+def train_val_loop(train: TrainContext):
+    if train.manifest.stage in {"first", "first_tma"}:
         train.train_batch = train_first
         train.validate = validate_first
-    elif train.stage == "second":
+    elif train.manifest.stage in {"second", "second_style", "second_joint"}:
         train.train_batch = train_second
         train.validate = validate_second
     else:
         exit("Invalid training stage. --stage must be 'first' or 'second'")
-    for epoch in range(start_epoch, train.epochs):
+    while train.manifest.current_epoch <= train.manifest.epochs:
         train.running_loss = 0
         train.start_time = time.time()
 
-        if epoch >= train.config.training_plan.second_style or train.early_joint:
+        # TODO: fix this logic if we plan on running a single file with multiple stages
+        if (
+            train.manifest.current_epoch >= train.config.training_plan.second_style
+            or train.early_joint
+        ):
             train.start_ds = True
 
         _ = [train.model[key].train() for key in train.model]
-        train.batch_manager.epoch_loop(epoch, train=train)
+        train.batch_manager.epoch_loop(train=train)
         _ = [train.model[key].eval() for key in train.model]
-        train.validate(epoch, 1, True, train)
+        train.validate(1, True, train)
+        train.manifest.current_epoch += 1
+        # TODO: change stages based on current epoch?
+        train.manifest.training_log.append(
+            f"Completed 1 epoch of {train.manifest.stage} training"
+        )
 
 
 if __name__ == "__main__":

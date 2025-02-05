@@ -28,7 +28,7 @@ import pandas as pd
 _pad = "$"
 _punctuation = ';:,.!?¡¿—…"()“” '
 _letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-_letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀᵊǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+_letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
 
 # Export all symbols:
 symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
@@ -326,7 +326,7 @@ def build_dataloader(
     probe_batch_size=None,
     drop_last=True,
     multispeaker=False,
-    epoch=1
+    epoch=1,
 ):
 
     collate_config["multispeaker"] = multispeaker
@@ -532,15 +532,17 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, epoch, train, debug=False):
+    def epoch_loop(self, train, debug=False):
         if self.probe_batch is not None:
             self.probe_loop(train)
         else:
-            self.train_loop(epoch, train=train, debug=debug)
-    
+            self.train_loop(train=train, debug=debug)
+
     def probe_loop(self, train):
         if self.process_count > 1:
-            exit("--probe_batch must be run with accelerator num_processes set to 1. After running it, distribute the batch_sizes.json files to the log directories and run in DDP")
+            exit(
+                "--probe_batch must be run with accelerator num_processes set to 1. After running it, distribute the batch_sizes.json files to the log directories and run in DDP"
+            )
         self.batch_dict = {}
         batch_size = self.probe_batch
         time_keys = sorted(list(self.time_bins.keys()))
@@ -559,17 +561,19 @@ class BatchManager:
                             "Attempting %d/%d @ %d"
                             % (frame_count, max_frame_size, batch_size)
                         )
-                        train.iters = 0
+                        # TODO: this is the epochs itteration not total itterations maybe we should change the name
+                        train.manifest.iters = 0
                         loader = build_dataloader(
-                                    self.dataset,
-                                    self.time_bins,
-                                    batch_size=self.batch_dict,
-                                    num_workers=1,
-                                    device=self.device,
-                                    drop_last=True,
-                                    multispeaker=self.multispeaker,
-                                    probe_bin=key,
-                                    probe_batch_size=batch_size)
+                            self.dataset,
+                            self.time_bins,
+                            batch_size=self.batch_dict,
+                            num_workers=1,
+                            device=self.device,
+                            drop_last=True,
+                            multispeaker=self.multispeaker,
+                            probe_bin=key,
+                            probe_batch_size=batch_size,
+                        )
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _, _ = train.train_batch(0, batch, 0, 0, train, 1)
@@ -596,7 +600,7 @@ class BatchManager:
         self.save_batch_dict()
         quit()
 
-    def train_loop(self, epoch, train, debug=False):
+    def train_loop(self, train, debug=False):
         running_loss = 0
         iters = 0
         last_oom = -1
@@ -609,7 +613,7 @@ class BatchManager:
             device=self.device,
             drop_last=True,
             multispeaker=self.multispeaker,
-            epoch=epoch,
+            epoch=train.manifest.current_epoch,
         )
         self.epoch_step_count = len(loader.batch_sampler)
         loader = train.accelerator.prepare(loader)
@@ -624,7 +628,7 @@ class BatchManager:
                             f"train_batch(i={i}, batch={batch_size}, running_loss={running_loss}, iters={iters}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                         )
                     running_loss, iters = train.train_batch(
-                        i, batch, running_loss, iters, train, epoch
+                        i, batch, running_loss, iters, train
                     )
                     break
                 except Exception as e:
