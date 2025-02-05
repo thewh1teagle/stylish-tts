@@ -543,6 +543,7 @@ class BatchManager:
             exit(
                 "--probe_batch must be run with accelerator num_processes set to 1. After running it, distribute the batch_sizes.json files to the log directories and run in DDP"
             )
+
         self.batch_dict = {}
         batch_size = self.probe_batch
         time_keys = sorted(list(self.time_bins.keys()))
@@ -574,6 +575,7 @@ class BatchManager:
                             probe_bin=key,
                             probe_batch_size=batch_size,
                         )
+
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _, _ = train.train_batch(0, batch, 0, 0, train, 1)
@@ -614,6 +616,7 @@ class BatchManager:
             drop_last=True,
             multispeaker=self.multispeaker,
             epoch=train.manifest.current_epoch,
+
         )
         self.epoch_step_count = len(loader.batch_sampler)
         loader = train.accelerator.prepare(loader)

@@ -129,6 +129,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         min_length=train.config.dataset.min_length,
         validation=True,
         multispeaker=train.config.model.multispeaker,
+
     )
     train.val_dataloader = build_dataloader(
         val_dataset,
@@ -137,6 +138,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         num_workers=4,
         device=train.config.training.device,
         multispeaker=train.config.model.multispeaker,
+
     )
 
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)

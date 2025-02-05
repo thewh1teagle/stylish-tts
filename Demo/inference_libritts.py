@@ -14,6 +14,9 @@ torch.manual_seed(0)
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
+import nltk
+nltk.download('punkt_tab')
+
 import random
 
 random.seed(0)
@@ -120,9 +123,9 @@ from Utils.PLBERT.util import load_plbert
 BERT_path = config.get("PLBERT_dir", False)
 plbert = load_plbert(BERT_path, os.path.join(BERT_path, "config.yml"))
 
-
 model_params = recursive_munch(config["model_params"])
 model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+
 _ = [model[key].eval() for key in model]
 _ = [model[key].to(device) for key in model]
 
@@ -217,7 +220,7 @@ def inference(text, ref_s, alpha=0.3, beta=0.7, diffusion_steps=5, embedding_sca
             asr_new[:, :, 1:] = en[:, :, 0:-1]
             en = asr_new
 
-        F0_pred, N_pred = model.predictor.F0Ntrain(en, s)
+        F0_pred, N_pred = model.predictor((en, s), predict_F0N=True)
 
         asr = t_en @ pred_aln_trg.unsqueeze(0).to(device)
         if model_params.decoder.type == "hifigan":
