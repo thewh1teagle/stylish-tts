@@ -1,20 +1,20 @@
-ASR_config: utils/asr/config.yml
-ASR_path: utils/asr/epoch_00080.pth
-F0_path: utils/jdc/bst.t7
-PLBERT_dir: utils/plbert/
+ASR_config: Utils/ASR/config.yml
+ASR_path: Utils/ASR/epoch_00080.pth
+F0_path: Utils/JDC/bst.t7
+PLBERT_dir: Utils/PLBERT/
 batch_size: 8
 data_params:
   OOD_data: Data/OOD_texts.txt
   min_length: 50
   root_path: ''
-  train_data: data/train_list.txt
-  val_data: data/val_list.txt
+  train_data: Data/train_list.txt
+  val_data: Data/val_list.txt
 device: cuda
 epochs_1st: 40
 epochs_2nd: 25
 first_stage_path: first_stage.pth
 load_only_params: false
-log_dir: models/LibriTTS
+log_dir: Models/LibriTTS
 log_interval: 10
 loss_params:
   TMA_epoch: 4
@@ -98,7 +98,7 @@ preprocess_params:
     n_fft: 2048
     win_length: 1200
   sr: 24000
-pretrained_model: models/LibriTTS/epoch_2nd_00002.pth
+pretrained_model: Models/LibriTTS/epoch_2nd_00002.pth
 save_freq: 1
 second_stage_load_pretrained: true
 slmadv_params:
