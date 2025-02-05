@@ -104,6 +104,7 @@ class HiFiGANDecoderConfig(BaseModel):
     """
 
     type: Literal["hifigan"] = "hifigan"
+    hidden_dim: int = Field(..., description="Hidden dimension for HiFiGAN.")
     resblock_kernel_sizes: List[int] = Field(
         ..., description="Kernel sizes for residual blocks."
     )
@@ -127,6 +128,7 @@ class ISTFTNetDecoderConfig(BaseModel):
     """
 
     type: Literal["istftnet"] = "istftnet"
+    hidden_dim: int = Field(..., description="Hidden dimension for iSTFTNet.")
     resblock_kernel_sizes: List[int] = Field(
         ..., description="Kernel sizes for residual blocks."
     )
@@ -152,6 +154,7 @@ class RingformerDecoderConfig(BaseModel):
     """
 
     type: Literal["ringformer"] = "ringformer"
+    hidden_dim: int = Field(..., description="Hidden dimension for Ringformer.")
     resblock_kernel_sizes: List[int] = Field(
         ..., description="Kernel sizes for residual blocks."
     )
@@ -177,6 +180,7 @@ class VocosDecoderConfig(BaseModel):
     """
 
     type: Literal["vocos"] = "vocos"
+    hidden_dim: int = Field(..., description="Hidden dimension for Vocos.")
     intermediate_dim: int = Field(
         ..., description="Intermediate dimension size for Vocos."
     )
