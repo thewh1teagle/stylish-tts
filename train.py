@@ -23,7 +23,7 @@ from config_loader import load_config_yaml, Config, TrainContext
 warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
 
-from meldataset import build_dataloader, BatchManager
+from meldataset import build_dataloader, BatchManager, FilePathDataset
 
 from Utils.ASR.models import ASRCNN
 from Utils.JDC.model import JDCNet
@@ -129,6 +129,12 @@ def main(config_path, probe_batch, early_joint, stage):
         min_length=train.config.dataset.min_length,
         batch_size={},
         validation=True,
+        multispeaker=train.multispeaker,
+    )
+    train.val_dataloader = build_dataloader(
+        val_dataset,
+        val_dataset.time_bins(),
+        batch_size={},
         num_workers=4,
         device=train.config.training.device,
         dataset_config={},

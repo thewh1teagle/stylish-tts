@@ -330,10 +330,9 @@ def train_first(
                 ),
                 "mp_loss": loss_magphase,
             }
-            log_print(
+            train.logger.info(
                 f"Epoch [{epoch}/{train.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
-                + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items()),
-                train.logger,
+                + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
                 train.writer.add_scalar(f"train/{key}", value, train.iters)
