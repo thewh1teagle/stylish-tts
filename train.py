@@ -50,11 +50,12 @@ from stages import train_first, validate_first, train_second, validate_second
 
 
 @click.command()
-@click.option("-p", "--config_path", default="Configs/config.yml", type=str)
+@click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
 @click.option("--stage", default="second", type=str)
-def main(config_path, probe_batch, early_joint, stage):
+@click.option("--pretrained_model", default="", type=str)
+def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train = TrainContext()
 
     if osp.exists(config_path):
@@ -67,7 +68,6 @@ def main(config_path, probe_batch, early_joint, stage):
     train.early_joint = early_joint
     train.stage = stage
 
-    train.config.training.out_dir
     if not osp.exists(train.config.training.out_dir):
         os.makedirs(train.config.training.out_dir, exist_ok=True)
     if not osp.exists(train.config.training.out_dir):
@@ -188,22 +188,21 @@ def main(config_path, probe_batch, early_joint, stage):
     #    if key != "mpd" and key != "msd" and key != "wd":
     #        train.model[key] = MyDataParallel(train.model[key])
 
+    # TODO: I think we want to start with epoch 0 or fix the tensorboard logging because it only writes gt sample when epoch 0
     start_epoch = 1
     train.iters = 0
 
-    load_pretrained = train.config.get("pretrained_model", "")
-
     # load an existing model for first stage
     if (
-        load_pretrained
-        and osp.exists(load_pretrained)
-        and not train.config.get("second_stage_load_pretrained", False)
+        pretrained_model
+        and osp.exists(pretrained_model)
+        and stage in {"first", "first_tma"}
     ):
-        print(f"Loading the first stage model at {load_pretrained} ...")
+        print(f"Loading the first stage model at {pretrained_model} ...")
         train.model, _, train.start_epoch, train.iters = load_checkpoint(
             train.model,
             None,
-            load_pretrained,
+            pretrained_model,
             load_only_params=True,
             ignore_modules=[
                 "bert",
@@ -217,6 +216,7 @@ def main(config_path, probe_batch, early_joint, stage):
             ],
         )  # keep starting epoch for tensorboard log
 
+        # TODO: what epoch are we on?
         # these epochs should be counted from the start epoch
         # diff_epoch += start_epoch
         # joint_epoch += start_epoch
@@ -251,22 +251,22 @@ def main(config_path, probe_batch, early_joint, stage):
         clamp=False,
     )
 
-    optimizer_params = Munch(train.config["optimizer_params"])
+    
     scheduler_params = {
-        "max_lr": optimizer_params.lr,
+        "max_lr": train.config.optimizer.lr,
         "pct_start": float(0),
         "epochs": train.epochs,
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
     scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
-    scheduler_params_dict["bert"]["max_lr"] = optimizer_params.bert_lr * 2
-    scheduler_params_dict["decoder"]["max_lr"] = optimizer_params.ft_lr * 2
-    scheduler_params_dict["style_encoder"]["max_lr"] = optimizer_params.ft_lr * 2
+    scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
+    scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+    scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
 
     train.optimizer = build_optimizer(
         {key: train.model[key].parameters() for key in train.model},
         scheduler_params_dict=scheduler_params_dict,
-        lr=optimizer_params.lr,
+        lr=train.config.optimizer.lr,
     )
 
     for k in train.optimizer.optimizers.keys():
@@ -280,8 +280,8 @@ def main(config_path, probe_batch, early_joint, stage):
     # adjust BERT learning rate
     for g in train.optimizer.optimizers["bert"].param_groups:
         g["betas"] = (0.9, 0.99)
-        g["lr"] = optimizer_params.bert_lr
-        g["initial_lr"] = optimizer_params.bert_lr
+        g["lr"] = train.config.optimizer.bert_lr
+        g["initial_lr"] = train.config.optimizer.bert_lr
         g["min_lr"] = 0
         g["weight_decay"] = 0.01
 
@@ -289,23 +289,23 @@ def main(config_path, probe_batch, early_joint, stage):
     for module in ["decoder", "style_encoder"]:
         for g in train.optimizer.optimizers[module].param_groups:
             g["betas"] = (0.0, 0.99)
-            g["lr"] = optimizer_params.ft_lr
-            g["initial_lr"] = optimizer_params.ft_lr
+            g["lr"] = train.config.optimizer.ft_lr
+            g["initial_lr"] = train.config.optimizer.ft_lr
             g["min_lr"] = 0
             g["weight_decay"] = 1e-4
 
     if train.accelerator.main_process_first():
         # load models if there is a model for second stage
         if (
-            load_pretrained
-            and osp.exists(load_pretrained)
-            and train.config.get("second_stage_load_pretrained", False)
+            pretrained_model
+            and osp.exists(pretrained_model)
+            and stage in {"second", "second_style", "second_joint"}
         ):
             train.model, train.optimizer, train.start_epoch, train.iters = (
                 load_checkpoint(
                     train.model,
                     train.optimizer,
-                    load_pretrained,
+                    pretrained_model,
                     load_only_params=train.config.get("load_only_params", True),
                 )
             )
@@ -332,11 +332,11 @@ def main(config_path, probe_batch, early_joint, stage):
         train.model,
         train.wl,
         train.sampler,
-        train.slmadv_params.min_len,
-        train.slmadv_params.max_len,
-        batch_percentage=train.slmadv_params.batch_percentage,
-        skip_update=train.slmadv_params.iter,
-        sig=train.slmadv_params.sig,
+        train.config.slmadv_params.min_len,
+        train.config.slmadv_params.max_len,
+        batch_percentage=train.config.slmadv_params.batch_percentage,
+        skip_update=train.config.slmadv_params.iter,
+        sig=train.config.slmadv_params.sig,
     )
 
     train_val_loop(train, start_epoch)

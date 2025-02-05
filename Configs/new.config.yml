@@ -5,6 +5,7 @@ training:
   val_interval: 1000
   save_epoch_interval: 1
   device: "cuda"
+  mixed_precision: "bf16" # "bf16", "fp16", or "no" for no mixed precision
 
 training_plan:
   first: 10
@@ -43,11 +44,12 @@ pretrained:
 # The decoder/vocoder converts mel spectograms + style to pcm
   # config for decoder
 decoder:
-    type: 'vocos'
-    intermediate_dim: 1536
-    num_layers: 8
-    gen_istft_n_fft: 1200
-    gen_istft_hop_size: 300
+  type: 'vocos'
+  hidden_dim: 512
+  intermediate_dim: 1536
+  num_layers: 8
+  gen_istft_n_fft: 1200
+  gen_istft_hop_size: 300
 
 text_encoder:
   hidden_dim: 512
@@ -70,11 +72,11 @@ prosody_predictor:
       
 # speech language model config
 slm:
-    model: 'microsoft/wavlm-base-plus'
-    sr: 16000 # sampling rate of SLM
-    hidden: 768 # hidden size of SLM
-    nlayers: 13 # number of layers of SLM
-    initial_channel: 64 # initial channels of SLM discriminator head
+  model: 'microsoft/wavlm-base-plus'
+  sr: 16000 # sampling rate of SLM
+  hidden: 768 # hidden size of SLM
+  nlayers: 13 # number of layers of SLM
+  initial_channel: 64 # initial channels of SLM discriminator head
   
 # style diffusion model config
 diffusion:
