@@ -70,8 +70,13 @@ class PreNorm(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x, **kwargs):
-        x = self.norm(x)
-        return self.fn(x, **kwargs)
+        x = self.norm(x.to(x.device))
+        try:
+            result = self.fn(x.to(x.device), **kwargs)
+        except Exception as e:
+            print(e)
+            exit(str(e))
+        return result
 
 
 class FeedForward(nn.Module):
@@ -143,7 +148,7 @@ class ConformerBlock(nn.Module):
             heads=heads,
             causal=True,
             auto_shard_seq=False,
-            ring_attn=True,
+            ring_attn=False,
             ring_seq_size=512,
         )
         self.self_attn_dropout = torch.nn.Dropout(attn_dropout)

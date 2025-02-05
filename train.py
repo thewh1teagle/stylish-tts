@@ -22,7 +22,7 @@ from accelerate import DistributedDataParallelKwargs
 warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
 
-from meldataset import build_dataloader, BatchManager
+from meldataset import build_dataloader, BatchManager, FilePathDataset
 
 from Utils.ASR.models import ASRCNN
 from Utils.JDC.model import JDCNet
@@ -93,8 +93,8 @@ def main(config_path, probe_batch, early_joint, stage):
     train.saving_epoch = train.config.get("save_freq", 2)
 
 
-    train.val_interval = train.config.get("val_interval", 1)
-    train.save_interval = train.config.get("save_interval", 1)
+    train.val_interval = train.config.get("val_interval", 1000)
+    train.save_interval = train.config.get("save_interval", 1000)
 
     train.sr = train.config["preprocess_params"].get("sr", 24000)
 
@@ -144,16 +144,20 @@ def main(config_path, probe_batch, early_joint, stage):
         exit(f"Root path not found at {root_path}")
 
     val_list = get_data_path_list(val_path)
-    train.val_dataloader = build_dataloader(
+    val_dataset = FilePathDataset(
         val_list,
         root_path,
         OOD_data=OOD_data,
         min_length=min_length,
-        batch_size={},
         validation=True,
+        multispeaker=train.multispeaker,
+    )
+    train.val_dataloader = build_dataloader(
+        val_dataset,
+        val_dataset.time_bins(),
+        batch_size={},
         num_workers=4,
         device=train.device,
-        dataset_config={},
         multispeaker=train.multispeaker,
     )
 

@@ -111,18 +111,25 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.root_path = root_path
         self.multispeaker = multispeaker
 
-    def sample_lengths(self):
+    def time_bins(self):
         print("Calculating sample lengths")
-        result = []
+        sample_lengths = []
         for data in self.data_list:
             wave_path = data[0]
             wave, sr = sf.read(osp.join(self.root_path, wave_path))
             wave_len = wave.shape[0]
             if sr != 24000:
                 wave_len *= 24000 / sr
-            result.append(wave_len)
+            sample_lengths.append(wave_len)
+        time_bins = {}
+        for i in range(len(sample_lengths)):
+            bin_num = get_time_bin(sample_lengths[i])
+            if bin_num != -1:
+                if bin_num not in time_bins:
+                    time_bins[bin_num] = []
+                time_bins[bin_num].append(i)
         print("Finished sample lengths")
-        return result
+        return time_bins
 
     def __len__(self):
         return len(self.data_list)
@@ -308,45 +315,38 @@ class Collater(object):
 
 
 def build_dataloader(
-    path_list,
-    root_path,
+    dataset,
+    time_bins,
     validation=False,
-    OOD_data="Data/OOD_texts.txt",
-    min_length=50,
     batch_size={},
     num_workers=1,
     device="cpu",
     collate_config={},
-    dataset_config={},
-    probe_batch=False,
+    probe_bin=None,
+    probe_batch_size=None,
     drop_last=True,
     multispeaker=False,
+    epoch=1
 ):
 
-    dataset = FilePathDataset(
-        path_list,
-        root_path,
-        OOD_data=OOD_data,
-        min_length=min_length,
-        validation=validation,
-        multispeaker=multispeaker,
-        **dataset_config,
-    )
     collate_config["multispeaker"] = multispeaker
     collate_fn = Collater(**collate_config)
-    drop_last = not validation and probe_batch is not None
+    drop_last = not validation and probe_batch_size is not None
     data_loader = torch.utils.data.DataLoader(
         dataset,
         # batch_size=min(batch_size, len(dataset)),
         # shuffle=(not validation),
         num_workers=num_workers,
         batch_sampler=DynamicBatchSampler(
-            dataset.sample_lengths(),
+            time_bins,
             batch_size,
             shuffle=(not validation),
             drop_last=drop_last,
             num_replicas=1,
             rank=0,
+            force_bin=probe_bin,
+            force_batch_size=probe_batch_size,
+            epoch=epoch,
         ),
         # drop_last=(not validation),
         collate_fn=collate_fn,
@@ -359,14 +359,18 @@ def build_dataloader(
 class DynamicBatchSampler(torch.utils.data.Sampler):
     def __init__(
         self,
-        sample_lengths,
+        time_bins,
         batch_sizes,
         num_replicas=None,
         rank=None,
         shuffle=True,
         seed=0,
         drop_last=False,
+        epoch=1,
+        force_bin=None,
+        force_batch_size=None,
     ):
+        self.time_bins = time_bins
         self.batch_sizes = batch_sizes
         if num_replicas is None:
             self.num_replicas = dist.get_world_size()
@@ -380,19 +384,14 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         self.seed = seed
         self.drop_last = drop_last
 
-        self.time_bins = {}
-        self.epoch = 0
+        self.epoch = epoch
         self.total_len = 0
         self.last_bin = None
-        self.force_bin = None
-        self.force_batch_size = None
 
-        for i in range(len(sample_lengths)):
-            bin_num = get_time_bin(sample_lengths[i])
-            if bin_num != -1:
-                if bin_num not in self.time_bins:
-                    self.time_bins[bin_num] = []
-                self.time_bins[bin_num].append(i)
+        self.force_bin = force_bin
+        self.force_batch_size = force_batch_size
+        if force_bin is not None and force_batch_size is not None:
+            self.drop_last = False
 
         total = 0
         for key in self.time_bins.keys():
@@ -479,6 +478,8 @@ class BatchManager:
         self.probe_batch = probe_batch
         self.log_dir = log_dir
         self.log_print = log_print
+        self.device = device
+        self.multispeaker = multispeaker
 
         self.batch_dict = {}
         if self.probe_batch is None:
@@ -490,25 +491,32 @@ class BatchManager:
         if len(train_list) == 0:
             print("Could not open train_list", self.train_path)
             exit()
-        self.loader = build_dataloader(
+        self.dataset = FilePathDataset(
             train_list,
             root_path,
             OOD_data=OOD_data,
             min_length=min_length,
-            batch_size=self.batch_dict,
-            num_workers=32,
-            dataset_config={},
-            device=device,
-            drop_last=True,
-            probe_batch=probe_batch,
+            validation=False,
             multispeaker=multispeaker,
         )
+        self.time_bins = self.dataset.time_bins()
+        self.process_count = 1
         if accelerator is not None:
+            self.process_count = accelerator.num_processes
             accelerator.even_batches = False
-            self.loader = accelerator.prepare(self.loader)
+        loader = build_dataloader(
+            self.dataset,
+            self.time_bins,
+            batch_size=self.batch_dict,
+            num_workers=32,
+            device=device,
+            drop_last=True,
+            multispeaker=multispeaker,
+        )
+        self.epoch_step_count = len(loader.batch_sampler)
 
     def get_step_count(self):
-        return len(self.loader.batch_sampler)
+        return self.epoch_step_count // self.process_count
 
     def get_batch_size(self, i):
         batch_size = 1
@@ -529,15 +537,17 @@ class BatchManager:
             self.probe_loop(train)
         else:
             self.train_loop(epoch, train=train, debug=debug)
-
+    
     def probe_loop(self, train):
+        if self.process_count > 1:
+            exit("--probe_batch must be run with accelerator num_processes set to 1. After running it, distribute the batch_sizes.json files to the log directories and run in DDP")
         self.batch_dict = {}
         batch_size = self.probe_batch
-        sampler = self.loader.batch_sampler
-        time_keys = sorted(list(sampler.time_bins.keys()))
+        time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
         for key in time_keys:
             frame_count = get_frame_count(key)
+            last_bin = key
             done = False
             while not done:
                 try:
@@ -549,18 +559,28 @@ class BatchManager:
                             "Attempting %d/%d @ %d"
                             % (frame_count, max_frame_size, batch_size)
                         )
-                        # sampler.set_epoch(0)
-                        real_size = sampler.probe_batch(key, batch_size)
-                        for _, batch in enumerate(self.loader):
+                        train.iters = 0
+                        loader = build_dataloader(
+                                    self.dataset,
+                                    self.time_bins,
+                                    batch_size=self.batch_dict,
+                                    num_workers=1,
+                                    device=self.device,
+                                    drop_last=True,
+                                    multispeaker=self.multispeaker,
+                                    probe_bin=key,
+                                    probe_batch_size=batch_size)
+                        loader = train.accelerator.prepare(loader)
+                        for _, batch in enumerate(loader):
                             _, _ = train.train_batch(0, batch, 0, 0, train, 1)
                             break
-                        self.set_batch_size(key, real_size)
+                        self.set_batch_size(key, batch_size)
                     done = True
                 except Exception as e:
                     if "CUDA out of memory" in str(e):
-                        audio_length = (sampler.last_bin * 0.25) + 0.25
+                        audio_length = (last_bin * 0.25) + 0.25
                         self.log_print(
-                            f"TRAIN_BATCH OOM ({sampler.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                            f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
                         print("Probe saw OOM -- backing off")
                         import gc
@@ -579,16 +599,27 @@ class BatchManager:
     def train_loop(self, epoch, train, debug=False):
         running_loss = 0
         iters = 0
-        sampler = self.loader.batch_sampler
         last_oom = -1
         max_attempts = 3
-        # sampler.set_epoch(epoch)
-        for i, batch in enumerate(self.loader):
+        loader = build_dataloader(
+            self.dataset,
+            self.time_bins,
+            batch_size=self.batch_dict,
+            num_workers=32,
+            device=self.device,
+            drop_last=True,
+            multispeaker=self.multispeaker,
+            epoch=epoch,
+        )
+        self.epoch_step_count = len(loader.batch_sampler)
+        loader = train.accelerator.prepare(loader)
+        for i, batch in enumerate(loader):
+            last_bin = get_time_bin(batch[0].shape[-1])
             for attempt in range(1, max_attempts + 1):
                 try:
                     if debug:
-                        batch_size = self.get_batch_size(sampler.last_bin)
-                        audio_length = (sampler.last_bin * 0.25) + 0.25
+                        batch_size = self.get_batch_size(last_bin)
+                        audio_length = (last_bin * 0.25) + 0.25
                         self.log_print(
                             f"train_batch(i={i}, batch={batch_size}, running_loss={running_loss}, iters={iters}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                         )
@@ -597,20 +628,20 @@ class BatchManager:
                     )
                     break
                 except Exception as e:
-                    batch_size = self.get_batch_size(sampler.last_bin)
-                    audio_length = (sampler.last_bin * 0.25) + 0.25
+                    batch_size = self.get_batch_size(last_bin)
+                    audio_length = (last_bin * 0.25) + 0.25
                     if "CUDA out of memory" in str(e):
                         self.log_print(
                             f"{attempt * ('⚠️' if attempt < max_attempts else '❌')}\n"
-                            f"TRAIN_BATCH OOM ({sampler.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                            f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
                         self.log_print(e)
                         train.optimizer.zero_grad()
-                        if last_oom != sampler.last_bin:
-                            last_oom = sampler.last_bin
+                        if last_oom != last_bin:
+                            last_oom = last_bin
                             if batch_size > 1:
                                 batch_size -= 1
-                            self.set_batch_size(sampler.last_bin, batch_size)
+                            self.set_batch_size(last_bin, batch_size)
                             self.save_batch_dict()
                         gc.collect()
                         torch.cuda.empty_cache()
