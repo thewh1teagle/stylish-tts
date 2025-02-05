@@ -1,8 +1,8 @@
 training:
-  out_dir: "/your/output/dir"
+  out_dir: "logs/config_test"
   log_interval: 10
   save_interval: 2000
-  val_interval: 1000
+  val_interval: 2000
   save_epoch_interval: 1
   device: "cuda"
   mixed_precision: "bf16" # "bf16", "fp16", or "no" for no mixed precision
@@ -15,9 +15,9 @@ training_plan:
   second_joint: 10
 
 dataset:
-  train_data: "/your/train_list.txt"
-  val_data: "/your/val_list.txt"
-  wav_path: "/your/wav/dir"
+  train_data: "Data/train/train.txt"
+  val_data: "Data/train/validation.txt"
+  wav_path: "../segments/"
   OOD_data: "Data/OOD_texts.txt"
   min_length: 50 # sample until texts with this size are obtained for OOD texts
 

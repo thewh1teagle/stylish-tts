@@ -863,7 +863,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
         transformer = Transformer1d(
             channels=config.model.style_dim * 2,
             context_embedding_features=bert.config.hidden_size,
-            **args.diffusion.transformer,
+            **config.diffusion.transformer.dict(),
         )
 
     diffusion = AudioDiffusionConditional(
@@ -889,7 +889,9 @@ def build_model(config, text_aligner, pitch_extractor, bert):
 
     nets = Munch(
         bert=bert,
-        bert_encoder=nn.Linear(bert.config.hidden_size, config.prosody_predictor.hidden_dim),
+        bert_encoder=nn.Linear(
+            bert.config.hidden_size, config.prosody_predictor.hidden_dim
+        ),
         predictor=predictor,
         decoder=decoder,
         text_encoder=text_encoder,

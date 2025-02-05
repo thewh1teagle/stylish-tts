@@ -1,18 +1,18 @@
-log_dir: "/your/output/dir"
+log_dir: "logs/second_try_more"
 first_stage_path: "first_stage.pth"
-save_freq: 2
+save_freq: 1
 log_interval: 10
-val_interval: 2000 # validate model every this number of iterations
-save_interval: 2000 # validate and save model every this number of iterations
-device: "cuda"
-epochs_1st: 200 # number of epochs for first stage training (pre-training)
-epochs_2nd: 100 # number of peochs for second stage training (joint training)
-max_len: 6400 # maximum number of frames * max batch size
-pretrained_model: ""
+device: "cuda:0"
+val_interval: 50
+save_interval: 1000
+epochs_1st: 15 # number of epochs for first stage training (pre-training)
+epochs_2nd: 15 # number of epochs for second stage training (joint training)
+max_len: 4800 # maximum number of frames * max batch size
+pretrained_model: "logs/second_try/epoch_2nd_00008_step_000008000.pth"
 second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
 load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
-debug: false # will add extra debug logging during training
-precision: "fp32" # set to "fp16" or "bf16" for mixed precision training
+debug: false
+precision: "bf16"
 
 F0_path: "Utils/JDC/bst.t7"
 ASR_config: "Utils/ASR/config.yml"
@@ -20,10 +20,10 @@ ASR_path: "Utils/ASR/epoch_00080.pth"
 PLBERT_dir: 'Utils/PLBERT/'
 
 data_params:
-  train_data: "/your/train/dir"
-  train_bin_count: 76 # Assumes max segment length of 20 seconds
-  val_data: "/your/val_list.txt"
-  root_path: "/your/wav/dir"
+  train_data: "Data/train/train.txt"
+  train_bin_count: 76 # Assumes max clip size of 20 seconds
+  val_data: "Data/train/validation.txt"
+  root_path: "../segments/"
   OOD_data: "Data/OOD_texts.txt"
   min_length: 50 # sample until texts with this size are obtained for OOD texts
 
@@ -37,7 +37,7 @@ preprocess_params:
 model_params:
   multispeaker: false
 
-  # skip_downsamples: False # set to True if you want to skip downsampling to allow for shorter segments
+  # skip_downsamples: False # set to True if you want to skip downsampling to allow for shorter segment
 
   dim_in: 64 
   hidden_dim: 512
@@ -48,12 +48,12 @@ model_params:
   n_token: 178 # number of phoneme tokens
   max_dur: 50 # maximum duration of a single phoneme
   style_dim: 128 # style vector size
-  
+  skip_downsamples: True
   dropout: 0.2
 
   # config for decoder
-  decoder: 
-      type: 'istftnet' # either hifigan or istftnet
+  decoder:
+      type: 'ringformer' # either hifigan or istftnet
       resblock_kernel_sizes: [3,7,11]
       upsample_rates :  [10, 6]
       upsample_initial_channel: 512
@@ -94,7 +94,7 @@ loss_params:
     
     lambda_mono: 1. # monotonic alignment loss (1st stage, TMA)
     lambda_s2s: 1. # sequence-to-sequence loss (1st stage, TMA)
-    TMA_epoch: 50 # TMA starting epoch (1st stage)
+    TMA_epoch: 0 # TMA starting epoch (1st stage)
 
     lambda_F0: 1. # F0 reconstruction loss (2nd stage)
     lambda_norm: 1. # norm reconstruction loss (2nd stage)
@@ -103,8 +103,8 @@ loss_params:
     lambda_sty: 1. # style reconstruction loss (2nd stage)
     lambda_diff: 1. # score matching loss (2nd stage)
     
-    diff_epoch: 20 # style diffusion starting epoch (2nd stage)
-    joint_epoch: 50 # joint training starting epoch (2nd stage)
+    diff_epoch: 5000 # style diffusion starting epoch (2nd stage)
+    joint_epoch: 5000 # joint training starting epoch (2nd stage)
 
 optimizer_params:
   lr: 0.0001 # general learning rate
@@ -115,8 +115,7 @@ slmadv_params:
   min_len: 400 # minimum length of samples
   max_len: 500 # maximum length of samples
   batch_percentage: 0.5 # to prevent out of memory, only use half of the original batch size
-  iter: 10 # update the discriminator every this iterations of generator update
+  iter: 20 # update the discriminator every this iterations of generator update
   thresh: 5 # gradient norm above which the gradient is scaled
   scale: 0.01 # gradient scaling factor for predictors from SLM discriminators
   sig: 1.5 # sigma for differentiable duration modeling
-  

@@ -550,7 +550,9 @@ def train_second(
         train.optimizer.zero_grad()
         loss_gen_lm.backward()
         scale_gradients(
-            train.model, train.config.slmadv_params.thresh, train.config.slmadv_params.scale
+            train.model,
+            train.config.slmadv_params.thresh,
+            train.config.slmadv_params.scale,
         )
         optimizer_step(train, ["bert_encoder", "bert", "predictor", "diffusion"])
         if d_loss_slm != 0:

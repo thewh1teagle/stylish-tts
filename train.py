@@ -53,7 +53,7 @@ from stages import train_first, validate_first, train_second, validate_second
 @click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="second", type=str)
+@click.option("--stage", default="first", type=str)
 @click.option("--pretrained_model", default="", type=str)
 def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train = TrainContext()
@@ -106,7 +106,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         project_dir=train.config.training.out_dir,
         split_batches=True,
         kwargs_handlers=[ddp_kwargs],
-        mixed_precision=train.config.model.mixed_precision,
+        mixed_precision=train.config.training.mixed_precision,
     )
     train.accelerator.even_batches = False
 
@@ -116,20 +116,19 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     # Set up data loaders and batch manager
     if not osp.exists(train.config.dataset.train_data):
         exit(f"Train data not found at {train.config.dataset.train_data}")
-    if not osp.exists(train.config.dataset.val_path):
-        exit(f"Validation data not found at {train.config.dataset.val_path}")
+    if not osp.exists(train.config.dataset.val_data):
+        exit(f"Validation data not found at {train.config.dataset.val_data}")
     if not osp.exists(train.config.dataset.wav_path):
         exit(f"Root path not found at {train.config.dataset.wav_path}")
 
-    val_list = get_data_path_list(train.config.dataset.val_path)
-    train.val_dataloader = build_dataloader(
+    val_list = get_data_path_list(train.config.dataset.val_data)
+    val_dataset = FilePathDataset(
         val_list,
         train.config.dataset.wav_path,
-        OOD_data=train.config.dataset.min_length,
+        OOD_data=train.config.dataset.OOD_data,
         min_length=train.config.dataset.min_length,
-        batch_size={},
         validation=True,
-        multispeaker=train.multispeaker,
+        multispeaker=train.config.model.multispeaker,
     )
     train.val_dataloader = build_dataloader(
         val_dataset,
@@ -137,7 +136,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         batch_size={},
         num_workers=4,
         device=train.config.training.device,
-        dataset_config={},
         multispeaker=train.config.model.multispeaker,
     )
 
@@ -151,7 +149,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         train.config.training.out_dir,
         probe_batch=probe_batch,
         root_path=train.config.dataset.wav_path,
-        OOD_data=train.config.dataset.min_length,
+        OOD_data=train.config.dataset.OOD_data,
         min_length=train.config.dataset.min_length,
         device=train.config.training.device,
         accelerator=train.accelerator,
@@ -251,7 +249,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         clamp=False,
     )
 
-    
     scheduler_params = {
         "max_lr": train.config.optimizer.lr,
         "pct_start": float(0),
@@ -327,7 +324,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     # TODO: This value is calculated inconsistently based on whether checkpoints are loaded/saved
     train.running_std = []
 
-    train.slmadv_params = Munch(train.config["slmadv_params"])
     train.slmadv = SLMAdversarialLoss(
         train.model,
         train.wl,
