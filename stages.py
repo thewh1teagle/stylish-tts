@@ -395,7 +395,6 @@ def train_second(
         return running_loss, iters
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
-    # TODO: we should check for train.manifest.stage instead of epoch
     if train.config.model.multispeaker and train.manifest.stage == "second_style":
         with train.accelerator.autocast():
             ref_ss = train.model.style_encoder(ref_mels.unsqueeze(1))
@@ -411,7 +410,6 @@ def train_second(
         bert_dur = train.model.bert(texts, attention_mask=(~text_mask).int())
         d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)
 
-    # TODO: we should check for train.manifest.stage instead of epoch
     if train.manifest.stage == "second_style":
         num_steps = np.random.randint(3, 5)
         with torch.no_grad():
