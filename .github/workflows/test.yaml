@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-14"
+          - platform: "ubuntu-24.04"
 
     runs-on: ${{ matrix.platform }}
     steps:
