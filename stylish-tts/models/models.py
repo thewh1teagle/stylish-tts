@@ -15,11 +15,11 @@ from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 from models.Utils.ASR.models import ASRCNN
 from models.Utils.JDC.model import JDCNet
 
-from models.Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
-from models.Modules.diffusion.modules import Transformer1d, StyleTransformer1d
-from models.Modules.diffusion.diffusion import AudioDiffusionConditional
+from .diffusion.sampler import KDiffusion, LogNormalDistribution
+from .diffusion.modules import Transformer1d, StyleTransformer1d
+from .diffusion.diffusion import AudioDiffusionConditional
 
-from models.Modules.discriminators import (
+from .discriminators import (
     MultiPeriodDiscriminator,
     MultiScaleSubbandCQTDiscriminator,
     WavLMDiscriminator,
@@ -781,7 +781,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
     ], "Decoder type unknown"
 
     if config.decoder.type == "istftnet":
-        from models.Modules.istftnet import Decoder
+        from .decoder.istftnet import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -796,7 +796,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     elif config.decoder.type == "ringformer":
-        from models.Modules.ringformer import Decoder
+        from .decoder.ringformer import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -811,7 +811,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     elif config.decoder.type == "vocos":
-        from models.Modules.vocos import Decoder
+        from .decoder.vocos import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -823,7 +823,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     else:
-        from models.Modules.hifigan import Decoder
+        from .decoder.hifigan import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,

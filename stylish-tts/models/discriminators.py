@@ -9,7 +9,7 @@ import torchaudio
 from nnAudio import features
 from einops import rearrange
 from .norm2d import NormConv2d
-from .utils import get_padding
+from .common import get_padding
 
 LRELU_SLOPE = 0.1
 
