@@ -729,48 +729,36 @@ class DurationEncoder(nn.Module):
         return mask
 
 
-def load_F0_models(path):
+def load_F0_models(config):
     # load F0 model
 
-    F0_model = JDCNet(num_class=1, seq_len=192)
+    F0_model = JDCNet(**(config.pitch_extractor.dict()))
     params = safetensors.torch.load_file(
         hf_hub_download(
             repo_id="stylish-tts/pitch_extractor",
             filename="pitch_extractor.safetensors",
         )
     )
-    # params = torch.load(path, map_location="cpu", weights_only=False)["net"]
     F0_model.load_state_dict(params)
     _ = F0_model.train()
 
     return F0_model
 
 
-def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
+def load_ASR_models(config):
     # load ASR model
-    def _load_config(path):
-        with open(path) as f:
-            config = yaml.safe_load(f)
-        model_config = config["model_params"]
-        return model_config
-
-    def _load_model(model_config, model_path):
-        model = ASRCNN(**model_config)
-        params = safetensors.torch.load_file(
-            hf_hub_download(
-                repo_id="stylish-tts/text_aligner", filename="text_aligner.safetensors"
-            )
+    model = ASRCNN(input_dim=config.model.n_mels,
+                   n_token=config.text_encoder.n_token,
+                   **(config.text_aligner.dict()))
+    params = safetensors.torch.load_file(
+        hf_hub_download(
+            repo_id="stylish-tts/text_aligner",
+            filename="text_aligner.safetensors"
         )
-        # params = torch.load(model_path, map_location="cpu", weights_only=False)["model"]
-        model.load_state_dict(params)
-        return model
-
-    asr_model_config = _load_config(ASR_MODEL_CONFIG)
-    asr_model = _load_model(asr_model_config, ASR_MODEL_PATH)
-    _ = asr_model.train()
-
-    return asr_model
-
+    )
+    model.load_state_dict(params)
+    _ = model.train()
+    return model
 
 def build_model(config, text_aligner, pitch_extractor, bert):
     assert config.decoder.type in [

@@ -40,12 +40,22 @@ model:
   n_mels: 80
   style_dim: 128 # style vector size
 
-pretrained:
-  F0_path: "models/Utils/JDC/bst.t7"
-  ASR_config: "models/Utils/ASR/config.yml"
-  ASR_path: "models/Utils/ASR/epoch_00080.pth"
-  PLBERT_config: "models/Utils/PLBERT/config.yml"
-  PLBERT_path: "models/Utils/PLBERT/step_1000000.t7"
+text_aligner:
+   hidden_dim: 256
+   token_embedding_dim: 512
+
+pitch_extractor:
+    num_class: 1
+    seq_len: 192
+    leaky_relu_slope: 0.01
+
+plbert:
+    hidden_size: 768
+    num_attention_heads: 12
+    intermediate_size: 2048
+    max_position_embeddings: 512
+    num_hidden_layers: 12
+    dropout: 0.1
 
 # The decoder/vocoder converts mel spectograms + style to pcm
   # config for decoder

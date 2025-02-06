@@ -26,8 +26,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader, BatchManager, FilePathDataset
 
-from models.Utils.ASR.models import ASRCNN
-from models.Utils.JDC.model import JDCNet
 from models.Utils.PLBERT.util import load_plbert
 
 from models.models import *
@@ -169,17 +167,11 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
 
     with train.accelerator.main_process_first():
         # load pretrained ASR model
-        text_aligner = load_ASR_models(
-            train.config.pretrained.ASR_path, train.config.pretrained.ASR_config
-        )
-
+        text_aligner = load_ASR_models(train.config)
         # load pretrained F0 model
-        pitch_extractor = load_F0_models(train.config.pretrained.F0_path)
-
+        pitch_extractor = load_F0_models(train.config)
         # load PL-BERT model
-        plbert = load_plbert(
-            train.config.pretrained.PLBERT_path, train.config.pretrained.PLBERT_config
-        )
+        plbert = load_plbert(train.config)
 
     # build model
     train.model, kdiffusion = build_model(
