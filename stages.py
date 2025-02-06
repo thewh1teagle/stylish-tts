@@ -483,7 +483,7 @@ def train_second(
     if train.start_ds:
         train.optimizer.zero_grad()
         d_loss = train.dl(wav.detach(), y_rec.detach()).mean()
-        d_loss.backward()
+        train.accelerator.backward(d_loss)
         optimizer_step(train, ["msd", "mpd"])
     else:
         d_loss = 0
@@ -541,7 +541,7 @@ def train_second(
 
         d_loss_slm, loss_gen_lm, y_pred = slm_out
         train.optimizer.zero_grad()
-        loss_gen_lm.backward()
+        train.accelerator.backward(loss_gen_lm)
         scale_gradients(
             train.model,
             train.config.slmadv_params.thresh,
@@ -550,7 +550,7 @@ def train_second(
         optimizer_step(train, ["bert_encoder", "bert", "predictor", "diffusion"])
         if d_loss_slm != 0:
             train.optimizer.zero_grad()
-            d_loss_slm.backward(retain_graph=True)
+            train.accelerator.backward(d_loss_slm, retain_graph=True)
             train.optimizer.step("wd")
     else:
         d_loss_slm, loss_gen_lm = 0, 0
