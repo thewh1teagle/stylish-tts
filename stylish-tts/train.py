@@ -34,8 +34,8 @@ from models.models import *
 from losses import *
 from utils import *
 
-from models.Modules.slmadv import SLMAdversarialLoss
-from models.Modules.diffusion.sampler import (
+from models.slmadv import SLMAdversarialLoss
+from models.diffusion.sampler import (
     DiffusionSampler,
     ADPM2Sampler,
     KarrasSchedule,
