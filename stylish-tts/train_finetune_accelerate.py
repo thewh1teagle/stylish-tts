@@ -27,7 +27,11 @@ from losses import *
 from utils import *
 
 from models.Modules.slmadv import SLMAdversarialLoss
-from models.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from models.Modules.diffusion.sampler import (
+    DiffusionSampler,
+    ADPM2Sampler,
+    KarrasSchedule,
+)
 
 from optimizers import build_optimizer
 
@@ -140,6 +144,7 @@ def main(config_path, probe_batch):
         accelerator=accelerator,
         log_print=log_print_function,
         multispeaker=multispeaker,
+        text_cleaner=None,
     )
 
     # load pretrained ASR model

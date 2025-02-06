@@ -15,7 +15,8 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
 import nltk
-nltk.download('punkt_tab')
+
+nltk.download("punkt_tab")
 
 import random
 
@@ -50,6 +51,7 @@ from models.models import *
 from utils import *
 from text_utils import TextCleaner
 
+# TODO: load from config
 textclenaer = TextCleaner()
 
 
@@ -154,7 +156,11 @@ for key in model:
 _ = [model[key].eval() for key in model]
 
 
-from models.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from models.Modules.diffusion.sampler import (
+    DiffusionSampler,
+    ADPM2Sampler,
+    KarrasSchedule,
+)
 
 
 sampler = DiffusionSampler(

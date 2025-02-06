@@ -18,6 +18,7 @@ from logging import StreamHandler
 from accelerate import Accelerator
 from accelerate import DistributedDataParallelKwargs
 from config_loader import load_config_yaml, Config, TrainContext
+from text_utils import TextCleaner
 
 
 warnings.simplefilter("ignore")
@@ -34,7 +35,11 @@ from losses import *
 from utils import *
 
 from models.Modules.slmadv import SLMAdversarialLoss
-from models.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from models.Modules.diffusion.sampler import (
+    DiffusionSampler,
+    ADPM2Sampler,
+    KarrasSchedule,
+)
 
 from optimizers import build_optimizer
 from stages import train_first, validate_first, train_second, validate_second
@@ -53,7 +58,9 @@ from stages import train_first, validate_first, train_second, validate_second
 @click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
 @click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
-@click.option("--stage", default="first_tma", type=str) # "first", "first_tma", "second", "second_style", "second_joint"
+@click.option(
+    "--stage", default="first_tma", type=str
+)  # "first", "first_tma", "second", "second_style", "second_joint"
 @click.option("--pretrained_model", default="", type=str)
 def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train = TrainContext()
@@ -121,6 +128,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     if not osp.exists(train.config.dataset.wav_path):
         exit(f"Root path not found at {train.config.dataset.wav_path}")
 
+    text_cleaner = TextCleaner(train.config.symbol)
     val_list = get_data_path_list(train.config.dataset.val_data)
     val_dataset = FilePathDataset(
         val_list,
@@ -129,7 +137,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         min_length=train.config.dataset.min_length,
         validation=True,
         multispeaker=train.config.model.multispeaker,
-
+        text_cleaner=text_cleaner,
     )
     train.val_dataloader = build_dataloader(
         val_dataset,
@@ -138,7 +146,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         num_workers=4,
         device=train.config.training.device,
         multispeaker=train.config.model.multispeaker,
-
     )
 
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
@@ -157,6 +164,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         accelerator=train.accelerator,
         log_print=log_print_function,
         multispeaker=train.config.model.multispeaker,
+        text_cleaner=text_cleaner,
     )
 
     with train.accelerator.main_process_first():

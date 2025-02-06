@@ -328,7 +328,6 @@ def train_first(
             }
             train.logger.info(
                 f"Epoch [{train.manifest.current_epoch}/{train.manifest.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
-
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():

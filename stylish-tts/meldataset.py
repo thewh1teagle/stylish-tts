@@ -20,38 +20,12 @@ from huggingface_hub import hf_hub_download
 
 import logging
 import utils
+from text_utils import TextCleaner
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 import pandas as pd
-
-_pad = "$"
-_punctuation = ';:,.!?¡¿—…"()“” '
-_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-_letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
-
-# Export all symbols:
-symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
-
-dicts = {}
-for i in range(len((symbols))):
-    dicts[symbols[i]] = i
-
-
-class TextCleaner:
-    def __init__(self, dummy=None):
-        self.word_index_dictionary = dicts
-
-    def __call__(self, text):
-        indexes = []
-        for char in text:
-            try:
-                indexes.append(self.word_index_dictionary[char])
-            except KeyError:
-                print("Meld " + char + ": " + text)
-        return indexes
-
 
 np.random.seed(1)
 random.seed(1)
@@ -85,6 +59,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         OOD_data="Data/OOD_texts.txt",
         min_length=50,
         multispeaker=False,
+        text_cleaner=None,
     ):
 
         spect_params = SPECT_PARAMS
@@ -92,7 +67,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.cache = {}
         _data_list = [l.strip().split("|") for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
-        self.text_cleaner = TextCleaner()
+        self.text_cleaner = text_cleaner
         self.sr = sr
 
         self.df = pd.DataFrame(self.data_list)
@@ -104,7 +79,15 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.max_mel_length = 192
 
         self.min_length = min_length
-        with open(hf_hub_download(repo_id="stylish-tts/train-ood-texts", repo_type="dataset", filename="OOD_texts.txt"), "r", encoding="utf-8") as f:
+        with open(
+            hf_hub_download(
+                repo_id="stylish-tts/train-ood-texts",
+                repo_type="dataset",
+                filename="OOD_texts.txt",
+            ),
+            "r",
+            encoding="utf-8",
+        ) as f:
             tl = f.readlines()
         idx = 1 if ".wav" in tl[0].split("|")[0] else 0
         self.ptexts = [t.split("|")[idx] for t in tl]
@@ -474,6 +457,7 @@ class BatchManager:
         accelerator=None,
         log_print=None,
         multispeaker=False,
+        text_cleaner=None,
     ):
         self.train_path = train_path
         self.probe_batch = probe_batch
@@ -499,6 +483,7 @@ class BatchManager:
             min_length=min_length,
             validation=False,
             multispeaker=multispeaker,
+            text_cleaner=text_cleaner,
         )
         self.time_bins = self.dataset.time_bins()
         self.process_count = 1
@@ -579,7 +564,9 @@ class BatchManager:
 
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
-                            _, _ = train.train_batch(0, batch, 0, 0, train, 1)
+                            _, _ = train.train_batch(
+                                i=0, batch=batch, running_loss=0, iters=0, train=train
+                            )
                             break
                         self.set_batch_size(key, batch_size)
                     done = True
@@ -617,7 +604,6 @@ class BatchManager:
             drop_last=True,
             multispeaker=self.multispeaker,
             epoch=train.manifest.current_epoch,
-
         )
         self.epoch_step_count = len(loader.batch_sampler)
         loader = train.accelerator.prepare(loader)

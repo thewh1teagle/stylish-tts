@@ -59,6 +59,19 @@ class DatasetConfig(BaseModel):
     )
 
 
+class SymbolConfig(BaseModel):
+    """
+    Configuration for text processing symbols with validation
+    """
+
+    pad: str = Field(..., description="Padding symbol for sequence alignment")
+    punctuation: str = Field(..., description="Supported punctuation marks")
+    letters: str = Field(..., description="Latin alphabet letters")
+    letters_ipa: str = Field(
+        ..., description="IPA phonetic characters including diacritics"
+    )
+
+
 class PreprocessConfig(BaseModel):
     """
     Preprocessing configuration parameters.
@@ -363,6 +376,7 @@ class Config(BaseModel):
         ..., description="Training plan configuration parameters."
     )
     dataset: DatasetConfig = Field(..., description="Dataset configuration parameters.")
+    symbol: SymbolConfig = Field(..., description="Text processing symbols")
     preprocess: PreprocessConfig = Field(
         ..., description="Preprocessing configuration parameters."
     )
