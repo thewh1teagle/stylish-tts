@@ -46,7 +46,7 @@ import torchaudio
 import librosa
 from nltk.tokenize import word_tokenize
 
-from models import *
+from models.models import *
 from utils import *
 from text_utils import TextCleaner
 
@@ -118,7 +118,7 @@ F0_path = config.get("F0_path", False)
 pitch_extractor = load_F0_models(F0_path)
 
 # load BERT model
-from Utils.PLBERT.util import load_plbert
+from models.Utils.PLBERT.util import load_plbert
 
 BERT_path = config.get("PLBERT_dir", False)
 plbert = load_plbert(BERT_path, os.path.join(BERT_path, "config.yml"))
@@ -154,7 +154,7 @@ for key in model:
 _ = [model[key].eval() for key in model]
 
 
-from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from models.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 
 
 sampler = DiffusionSampler(

@@ -25,16 +25,16 @@ from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader, BatchManager, FilePathDataset
 
-from Utils.ASR.models import ASRCNN
-from Utils.JDC.model import JDCNet
-from Utils.PLBERT.util import load_plbert
+from models.Utils.ASR.models import ASRCNN
+from models.Utils.JDC.model import JDCNet
+from models.Utils.PLBERT.util import load_plbert
 
-from models import *
+from models.models import *
 from losses import *
 from utils import *
 
-from Modules.slmadv import SLMAdversarialLoss
-from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from models.Modules.slmadv import SLMAdversarialLoss
+from models.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 
 from optimizers import build_optimizer
 from stages import train_first, validate_first, train_second, validate_second

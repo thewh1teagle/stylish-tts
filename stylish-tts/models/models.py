@@ -12,14 +12,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
-from Utils.ASR.models import ASRCNN
-from Utils.JDC.model import JDCNet
+from models.Utils.ASR.models import ASRCNN
+from models.Utils.JDC.model import JDCNet
 
-from Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
-from Modules.diffusion.modules import Transformer1d, StyleTransformer1d
-from Modules.diffusion.diffusion import AudioDiffusionConditional
+from models.Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
+from models.Modules.diffusion.modules import Transformer1d, StyleTransformer1d
+from models.Modules.diffusion.diffusion import AudioDiffusionConditional
 
-from Modules.discriminators import (
+from models.Modules.discriminators import (
     MultiPeriodDiscriminator,
     MultiScaleSubbandCQTDiscriminator,
     WavLMDiscriminator,
@@ -771,7 +771,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
     ], "Decoder type unknown"
 
     if config.decoder.type == "istftnet":
-        from Modules.istftnet import Decoder
+        from models.Modules.istftnet import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -786,7 +786,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     elif config.decoder.type == "ringformer":
-        from Modules.ringformer import Decoder
+        from models.Modules.ringformer import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -801,7 +801,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     elif config.decoder.type == "vocos":
-        from Modules.vocos import Decoder
+        from models.Modules.vocos import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -813,7 +813,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     else:
-        from Modules.hifigan import Decoder
+        from models.Modules.hifigan import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,

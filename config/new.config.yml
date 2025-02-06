@@ -35,11 +35,11 @@ model:
   style_dim: 128 # style vector size
 
 pretrained:
-  F0_path: "Utils/JDC/bst.t7"
-  ASR_config: "Utils/ASR/config.yml"
-  ASR_path: "Utils/ASR/epoch_00080.pth"
-  PLBERT_config: "Utils/PLBERT/config.yml"
-  PLBERT_path: "Utils/PLBERT/step_1000000.t7"
+  F0_path: "models/Utils/JDC/bst.t7"
+  ASR_config: "models/Utils/ASR/config.yml"
+  ASR_path: "models/Utils/ASR/epoch_00080.pth"
+  PLBERT_config: "models/Utils/PLBERT/config.yml"
+  PLBERT_path: "models/Utils/PLBERT/step_1000000.t7"
 
 # The decoder/vocoder converts mel spectograms + style to pcm
   # config for decoder
