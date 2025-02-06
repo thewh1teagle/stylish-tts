@@ -1,16 +1,22 @@
+# Dep:
+# pip install ring_attention_pytorch
+# pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
-from .utils import init_weights, get_padding
+from ..common import init_weights, get_padding
+
+from .stft import stft
+from .stft import TorchSTFT
+from .conformer import Conformer
+from einops import rearrange
 
 import math
 import random
 import numpy as np
 from scipy.signal import get_window
-
-LRELU_SLOPE = 0.1
 
 
 class AdaIN1d(nn.Module):
@@ -142,49 +148,6 @@ class AdaINResBlock1(torch.nn.Module):
             remove_weight_norm(l)
         for l in self.convs2:
             remove_weight_norm(l)
-
-
-class TorchSTFT(torch.nn.Module):
-    def __init__(
-        self, filter_length=800, hop_length=200, win_length=800, window="hann"
-    ):
-        super().__init__()
-        self.filter_length = filter_length
-        self.hop_length = hop_length
-        self.win_length = win_length
-        self.window = torch.from_numpy(
-            get_window(window, win_length, fftbins=True).astype(np.float32)
-        )
-
-    def transform(self, input_data):
-        forward_transform = torch.stft(
-            input_data,
-            self.filter_length,
-            self.hop_length,
-            self.win_length,
-            window=self.window.to(input_data.device),
-            return_complex=True,
-        )
-
-        return torch.abs(forward_transform), torch.angle(forward_transform)
-
-    def inverse(self, magnitude, phase):
-        inverse_transform = torch.istft(
-            magnitude * torch.exp(phase * 1j),
-            self.filter_length,
-            self.hop_length,
-            self.win_length,
-            window=self.window.to(magnitude.device),
-        )
-
-        return inverse_transform.unsqueeze(
-            -2
-        )  # unsqueeze to stay consistent with conv_transpose1d implementation
-
-    def forward(self, input_data):
-        self.magnitude, self.phase = self.transform(input_data)
-        reconstruction = self.inverse(self.magnitude, self.phase)
-        return reconstruction
 
 
 class SineGen(torch.nn.Module):
@@ -419,11 +382,16 @@ class Generator(torch.nn.Module):
         upsample_kernel_sizes,
         gen_istft_n_fft,
         gen_istft_hop_size,
+        # gin_channels=0,
     ):
         super(Generator, self).__init__()
-
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
+        self.gen_istft_n_fft = gen_istft_n_fft
+        self.gen_istft_hop_size = gen_istft_hop_size
+        # self.conv_pre = Conv1d(
+        #    initial_channel, upsample_initial_channel, 7, 1, padding=3
+        # )
         resblock = AdaINResBlock1
 
         self.m_source = SourceModuleHnNSF(
@@ -452,14 +420,16 @@ class Generator(torch.nn.Module):
                 )
             )
 
+        self.alphas = nn.ParameterList()
+        self.alphas.append(nn.Parameter(torch.ones(1, upsample_initial_channel, 1)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = upsample_initial_channel // (2 ** (i + 1))
+            self.alphas.append(nn.Parameter(torch.ones(1, ch, 1)))
             for j, (k, d) in enumerate(
                 zip(resblock_kernel_sizes, resblock_dilation_sizes)
             ):
                 self.resblocks.append(resblock(ch, k, d, style_dim))
-
             c_cur = upsample_initial_channel // (2 ** (i + 1))
 
             if i + 1 < len(upsample_rates):  #
@@ -480,18 +450,44 @@ class Generator(torch.nn.Module):
                 )
                 self.noise_res.append(resblock(c_cur, 11, [1, 3, 5], style_dim))
 
-        self.post_n_fft = gen_istft_n_fft
-        self.conv_post = weight_norm(Conv1d(ch, self.post_n_fft + 2, 7, 1, padding=3))
+        self.conformers = nn.ModuleList()
+        self.post_n_fft = self.gen_istft_n_fft
+        self.conv_post = weight_norm(Conv1d(128, self.post_n_fft + 2, 7, 1, padding=3))
+        for i in range(len(self.ups)):
+            ch = upsample_initial_channel // (2**i)
+            self.conformers.append(
+                Conformer(
+                    dim=ch,
+                    depth=2,
+                    dim_head=64,
+                    heads=8,
+                    ff_mult=4,
+                    conv_expansion_factor=2,
+                    conv_kernel_size=31,
+                    attn_dropout=0.1,
+                    ff_dropout=0.1,
+                    conv_dropout=0.1,
+                )
+            )
+
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
         self.stft = TorchSTFT(
-            filter_length=gen_istft_n_fft,
-            hop_length=gen_istft_hop_size,
-            win_length=gen_istft_n_fft,
+            "cuda",
+            filter_length=self.gen_istft_n_fft,
+            hop_length=self.gen_istft_hop_size,
+            win_length=self.gen_istft_n_fft,
         )
 
-    def forward(self, x, s, f0):
+        # if gin_channels != 0:
+        #    self.cond = nn.Conv1d(gin_channels, upsample_initial_channel, 1)
+
+    def forward(self, x, s, f0):  # g=None):
+        # x: [b,d,t]
+        # x = self.conv_pre(x)
+        # if g is not None:
+        #    x = x + self.cond(g)
         with torch.no_grad():
             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
 
@@ -501,32 +497,20 @@ class Generator(torch.nn.Module):
             har = torch.cat([har_spec, har_phase], dim=1)
 
         for i in range(self.num_upsamples):
-            x = F.leaky_relu(x, LRELU_SLOPE)
+            x = x + (1 / self.alphas[i]) * (torch.sin(self.alphas[i] * x) ** 2)
+            x = rearrange(x, "b f t -> b t f")
+            x = self.conformers[i](x)
+            x = rearrange(x, "b t f -> b f t")
+
             x_source = self.noise_convs[i](har)
             x_source = self.noise_res[i](x_source, s)
 
             x = self.ups[i](x)
+
             if i == self.num_upsamples - 1:
                 x = self.reflection_pad(x)
-
             x = x + x_source
-            xs = None
-            for j in range(self.num_kernels):
-                if xs is None:
-                    xs = self.resblocks[i * self.num_kernels + j](x, s)
-                else:
-                    xs += self.resblocks[i * self.num_kernels + j](x, s)
-            x = xs / self.num_kernels
-        x = F.leaky_relu(x)
-        x = self.conv_post(x)
-        spec = torch.exp(x[:, : self.post_n_fft // 2 + 1, :])
-        phase = torch.sin(x[:, self.post_n_fft // 2 + 1 :, :])
-        return self.stft.inverse(spec, phase)
 
-    def fw_phase(self, x, s):
-        for i in range(self.num_upsamples):
-            x = F.leaky_relu(x, LRELU_SLOPE)
-            x = self.ups[i](x)
             xs = None
             for j in range(self.num_kernels):
                 if xs is None:
@@ -534,12 +518,15 @@ class Generator(torch.nn.Module):
                 else:
                     xs += self.resblocks[i * self.num_kernels + j](x, s)
             x = xs / self.num_kernels
-        x = F.leaky_relu(x)
-        x = self.reflection_pad(x)
+
+        x = x + (1 / self.alphas[i + 1]) * (torch.sin(self.alphas[i + 1] * x) ** 2)
+        # x = self.reflection_pad(x)
         x = self.conv_post(x)
+
         spec = torch.exp(x[:, : self.post_n_fft // 2 + 1, :])
         phase = torch.sin(x[:, self.post_n_fft // 2 + 1 :, :])
-        return spec, phase
+        out = self.stft.inverse(spec, phase).to(x.device)
+        return out, spec, phase
 
     def remove_weight_norm(self):
         print("Removing weight norm...")
@@ -547,7 +534,6 @@ class Generator(torch.nn.Module):
             remove_weight_norm(l)
         for l in self.resblocks:
             l.remove_weight_norm()
-        remove_weight_norm(self.conv_pre)
         remove_weight_norm(self.conv_post)
 
 
@@ -716,5 +702,5 @@ class Decoder(nn.Module):
             if block.upsample_type != "none":
                 res = False
 
-        x = self.generator(x, s, F0_curve)
-        return x, None, None
+        x, mag, phase = self.generator(x, s, F0_curve)
+        return x, mag, phase

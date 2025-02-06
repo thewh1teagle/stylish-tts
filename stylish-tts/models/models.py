@@ -771,7 +771,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
     ], "Decoder type unknown"
 
     if config.decoder.type == "istftnet":
-        from models.Modules.istftnet import Decoder
+        from .decoder.istftnet import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -786,7 +786,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     elif config.decoder.type == "ringformer":
-        from models.Modules.ringformer import Decoder
+        from .decoder.ringformer import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -801,7 +801,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     elif config.decoder.type == "vocos":
-        from models.Modules.vocos import Decoder
+        from .decoder.vocos import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
@@ -813,7 +813,7 @@ def build_model(config, text_aligner, pitch_extractor, bert):
             gen_istft_hop_size=config.decoder.gen_istft_hop_size,
         )
     else:
-        from models.Modules.hifigan import Decoder
+        from .decoder.hifigan import Decoder
 
         decoder = Decoder(
             dim_in=config.decoder.hidden_dim,
