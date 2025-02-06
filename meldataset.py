@@ -16,6 +16,7 @@ import torch.nn.functional as F
 import torchaudio
 import torch.utils.data
 import torch.distributed as dist
+from huggingface_hub import hf_hub_download
 
 import logging
 import utils
@@ -103,7 +104,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.max_mel_length = 192
 
         self.min_length = min_length
-        with open(OOD_data, "r", encoding="utf-8") as f:
+        with open(hf_hub_download(repo_id="stylish-tts/train-ood-texts", repo_type="dataset", filename="OOD_texts.txt"), "r", encoding="utf-8") as f:
             tl = f.readlines()
         idx = 1 if ".wav" in tl[0].split("|")[0] else 0
         self.ptexts = [t.split("|")[idx] for t in tl]
