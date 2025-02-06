@@ -15,11 +15,11 @@ from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 from models.Utils.ASR.models import ASRCNN
 from models.Utils.JDC.model import JDCNet
 
-from models.Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
-from models.Modules.diffusion.modules import Transformer1d, StyleTransformer1d
-from models.Modules.diffusion.diffusion import AudioDiffusionConditional
+from .diffusion.sampler import KDiffusion, LogNormalDistribution
+from .diffusion.modules import Transformer1d, StyleTransformer1d
+from .diffusion.diffusion import AudioDiffusionConditional
 
-from models.Modules.discriminators import (
+from .discriminators import (
     MultiPeriodDiscriminator,
     MultiScaleSubbandCQTDiscriminator,
     WavLMDiscriminator,

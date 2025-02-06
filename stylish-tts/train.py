@@ -33,8 +33,8 @@ from models.models import *
 from losses import *
 from utils import *
 
-from models.Modules.slmadv import SLMAdversarialLoss
-from models.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from models.slmadv import SLMAdversarialLoss
+from models.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 
 from optimizers import build_optimizer
 from stages import train_first, validate_first, train_second, validate_second
