@@ -1,12 +1,20 @@
+"""
+Text Aligner
+
+- Taken from StyleTTS 2 repo here: https://github.com/yl4579/StyleTTS2
+- Training code is here: https://github.com/yl4579/AuxiliaryASR
+- Paper sources the model here: https://zenodo.org/records/4541452
+"""
+
 import math
 import torch
 from torch import nn
 from torch.nn import TransformerEncoder
 import torch.nn.functional as F
-from .layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
+from .text_aligner_layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
 
 
-class ASRCNN(nn.Module):
+class TextAligner(nn.Module):
     def __init__(
         self,
         input_dim=80,

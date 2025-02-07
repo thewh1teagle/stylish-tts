@@ -12,8 +12,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
-from models.Utils.ASR.models import ASRCNN
-from models.Utils.JDC.model import JDCNet
+from .text_aligner import TextAligner
+from .pitch_extractor import PitchExtractor
+from .plbert import PLBERT
 
 from .diffusion.sampler import KDiffusion, LogNormalDistribution
 from .diffusion.modules import Transformer1d, StyleTransformer1d
@@ -728,39 +729,16 @@ class DurationEncoder(nn.Module):
         mask = torch.gt(mask + 1, lengths.unsqueeze(1))
         return mask
 
-
-def load_F0_models(config):
-    # load F0 model
-
-    F0_model = JDCNet(**(config.pitch_extractor.dict()))
-    params = safetensors.torch.load_file(
-        hf_hub_download(
-            repo_id="stylish-tts/pitch_extractor",
-            filename="pitch_extractor.safetensors",
-        )
-    )
-    F0_model.load_state_dict(params)
-    _ = F0_model.train()
-
-    return F0_model
+def build_model(config):
+    text_aligner = TextAligner(input_dim=config.model.n_mels,
+                        n_token=config.text_encoder.n_token,
+                        **(config.text_aligner.dict()))
+    pitch_extractor = PitchExtractor(**(config.pitch_extractor.dict()))
+    bert = PLBERT(
+        vocab_size=config.text_encoder.n_token,
+        **(config.plbert.dict()))
 
 
-def load_ASR_models(config):
-    # load ASR model
-    model = ASRCNN(input_dim=config.model.n_mels,
-                   n_token=config.text_encoder.n_token,
-                   **(config.text_aligner.dict()))
-    params = safetensors.torch.load_file(
-        hf_hub_download(
-            repo_id="stylish-tts/text_aligner",
-            filename="text_aligner.safetensors"
-        )
-    )
-    model.load_state_dict(params)
-    _ = model.train()
-    return model
-
-def build_model(config, text_aligner, pitch_extractor, bert):
     assert config.decoder.type in [
         "istftnet",
         "hifigan",
@@ -911,8 +889,37 @@ def build_model(config, text_aligner, pitch_extractor, bert):
 
     return nets, kdiffusion
 
+def load_defaults(train, model):
+    with train.accelerator.main_process_first():
+        # Load pretrained text_aligner
+        params = safetensors.torch.load_file(
+            hf_hub_download(
+                repo_id="stylish-tts/text_aligner",
+                filename="text_aligner.safetensors"
+            )
+        )
+        model.text_aligner.load_state_dict(params)
+
+        # Load pretrained pitch_extractor
+        params = safetensors.torch.load_file(
+            hf_hub_download(
+                repo_id="stylish-tts/pitch_extractor",
+                filename="pitch_extractor.safetensors",
+            )
+        )
+        model.pitch_extractor.load_state_dict(params)
+
+        # Load pretrained PLBERT
+        params = safetensors.torch.load_file(
+            hf_hub_download(
+                repo_id="stylish-tts/plbert",
+                filename="plbert.safetensors")
+        )
+        model.bert.load_state_dict(params, strict=False)
+
 
 def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):
+
     state = torch.load(path, map_location="cpu", weights_only=False)
     params = state["net"]
     for key in model:

@@ -20,13 +20,10 @@ from accelerate import DistributedDataParallelKwargs
 from config_loader import load_config_yaml, Config, TrainContext
 from text_utils import TextCleaner
 
-
-warnings.simplefilter("ignore")
+#warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader, BatchManager, FilePathDataset
-
-from models.Utils.PLBERT.util import load_plbert
 
 from models.models import *
 from losses import *
@@ -165,23 +162,8 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         text_cleaner=text_cleaner,
     )
 
-    with train.accelerator.main_process_first():
-        # load pretrained ASR model
-        text_aligner = load_ASR_models(train.config)
-        # load pretrained F0 model
-        pitch_extractor = load_F0_models(train.config)
-        # load PL-BERT model
-        plbert = load_plbert(train.config)
-
     # build model
-    train.model, kdiffusion = build_model(
-        train.config, text_aligner, pitch_extractor, plbert
-    )
-
-    for k in train.model:
-        train.model[k] = train.accelerator.prepare(train.model[k])
-
-    _ = [train.model[key].to(train.config.training.device) for key in train.model]
+    train.model, kdiffusion = build_model(train.config)
 
     # DP
     # for key in train.model:
@@ -224,7 +206,15 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         # joint_epoch += start_epoch
         # epochs += start_epoch
         train.manifest.current_epoch = 1
+        # TODO: This should happen only once when starting stage 2
         train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
+    else:
+        load_defaults(train, train.model)
+
+    for k in train.model:
+        train.model[k] = train.accelerator.prepare(train.model[k])
+
+    _ = [train.model[key].to(train.config.training.device) for key in train.model]
 
     train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
@@ -343,7 +333,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     )
 
     train_val_loop(train, probe_batch)
-    torch.distributed.destroy_process_group()
+    train.accelerator.end_training()
 
 
 def train_val_loop(train: TrainContext, probe_batch: int):

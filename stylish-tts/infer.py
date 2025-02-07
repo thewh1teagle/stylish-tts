@@ -107,26 +107,10 @@ global_phonemizer = phonemizer.backend.EspeakBackend(
     language="en-us", preserve_punctuation=True, with_stress=True
 )
 
-
 config = yaml.safe_load(open("Models/LibriTTS/config.yml"))
 
-# load pretrained ASR model
-ASR_config = config.get("ASR_config", False)
-ASR_path = config.get("ASR_path", False)
-text_aligner = load_ASR_models(ASR_path, ASR_config)
-
-# load pretrained F0 model
-F0_path = config.get("F0_path", False)
-pitch_extractor = load_F0_models(F0_path)
-
-# load BERT model
-from models.Utils.PLBERT.util import load_plbert
-
-BERT_path = config.get("PLBERT_dir", False)
-plbert = load_plbert(BERT_path, os.path.join(BERT_path, "config.yml"))
-
 model_params = recursive_munch(config["model_params"])
-model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+model = build_model(model_params)
 
 _ = [model[key].eval() for key in model]
 _ = [model[key].to(device) for key in model]

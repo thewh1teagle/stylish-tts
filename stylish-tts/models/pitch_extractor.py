@@ -9,7 +9,7 @@ import torch
 from torch import nn
 
 
-class JDCNet(nn.Module):
+class PitchExtractor(nn.Module):
     """
     Joint Detection and Classification Network model for singing voice melody.
     """
