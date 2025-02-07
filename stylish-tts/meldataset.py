@@ -29,10 +29,6 @@ import pandas as pd
 
 np.random.seed(1)
 random.seed(1)
-SPECT_PARAMS = {"n_fft": 2048, "win_length": 1200, "hop_length": 300}
-MEL_PARAMS = {
-    "n_mels": 80,
-}
 
 to_mel = torchaudio.transforms.MelSpectrogram(
     n_mels=80, n_fft=2048, win_length=1200, hop_length=300
@@ -62,8 +58,6 @@ class FilePathDataset(torch.utils.data.Dataset):
         text_cleaner=None,
     ):
 
-        spect_params = SPECT_PARAMS
-        mel_params = MEL_PARAMS
         self.cache = {}
         _data_list = [l.strip().split("|") for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
@@ -71,8 +65,6 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.sr = sr
 
         self.df = pd.DataFrame(self.data_list)
-
-        self.to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
 
         self.mean, self.std = -4, 4
         self.data_augmentation = data_augmentation and (not validation)
@@ -418,7 +410,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
             sampler = torch.utils.data.sampler.BatchSampler(
                 dist, self.get_batch_size(key), self.drop_last
             )
-            #print(key, self.get_batch_size(key))
+            # print(key, self.get_batch_size(key))
             for item_list in sampler:
                 self.last_bin = key
                 yield [current_bin[i] for i in item_list]

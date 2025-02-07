@@ -478,31 +478,33 @@ class Generator(Backbone):
     ):
         super().__init__()
         self.input_channels = input_channels
+        self.embed = nn.Conv1d(input_channels, dim, kernel_size=7, padding=3)
+        self.norm = nn.LayerNorm(dim, eps=1e-6)
         layer_scale_init_value = layer_scale_init_value or 1 / num_layers
 
-        self.m_source = SourceModuleHnNSF(
-            # sampling_rate=24000//gen_istft_hop_size,
-            sampling_rate=24000,
-            upsample_scale=1,
-            harmonic_num=8,
-            voiced_threshod=10,
-        )
+        # self.m_source = SourceModuleHnNSF(
+        #    # sampling_rate=24000//gen_istft_hop_size,
+        #    sampling_rate=24000,
+        #    upsample_scale=1,
+        #    harmonic_num=8,
+        #    voiced_threshod=10,
+        # )
         # self.f0_upsamp = torch.nn.Upsample(scale_factor=gen_istft_hop_size)
-        self.noise_convs = nn.ModuleList()
-        self.noise_res = nn.ModuleList()
+        # self.noise_convs = nn.ModuleList()
+        # self.noise_res = nn.ModuleList()
         self.convnext = nn.ModuleList()
 
         for i in range(num_layers):
             # Add Conv1d for noise injection
-            self.noise_convs.append(
-                nn.Conv1d(1, dim, kernel_size=3, padding=1)
-                # nn.Conv1d(gen_istft_n_fft + 2, dim, kernel_size=3, padding=1)
-            )
+            # self.noise_convs.append(
+            #    nn.Conv1d(1, dim, kernel_size=3, padding=1)
+            #    # nn.Conv1d(gen_istft_n_fft + 2, dim, kernel_size=3, padding=1)
+            # )
             # Add residual blocks for conditioning noise with style
-            self.noise_res.append(
-                AdaINResBlock1(dim, 3, [1, 3, 5], style_dim)
-                # AdaINResBlock1(dim, 7, [1, 3, 5], style_dim)
-            )
+            # self.noise_res.append(
+            #    AdaINResBlock1(dim, 3, [1, 3, 5], style_dim)
+            #    # AdaINResBlock1(dim, 7, [1, 3, 5], style_dim)
+            # )
             # Add ConvNeXt block
             self.convnext.append(
                 ConvNeXtBlock(
@@ -529,14 +531,17 @@ class Generator(Backbone):
             nn.init.constant_(m.bias, 0)
 
     def forward(self, x, s, f0) -> torch.Tensor:
-        har_source, noi_source, uv = self.m_source(f0.unsqueeze(-1))
-        har_source = har_source.transpose(1, 2)
+        # har_source, noi_source, uv = self.m_source(f0.unsqueeze(-1))
+        # har_source = har_source.transpose(1, 2)
+        x = self.embed(x)
+        x = self.norm(x.transpose(1, 2))
+        x = x.transpose(1, 2)
         for i, conv_block in enumerate(self.convnext):
-            x_source = self.noise_convs[i](har_source)
-            x_source = self.noise_res[i](x_source, s)
+            # x_source = self.noise_convs[i](har_source)
+            # x_source = self.noise_res[i](x_source, s)
 
             # x = self.reflection_pad(x)
-            x = x + x_source
+            # x = x + x_source
             x = conv_block(x, s)
         x = self.final_layer_norm(x.transpose(1, 2))
         x = self.stft(x)
@@ -569,7 +574,7 @@ class ISTFT(nn.Module):
         self.hop_length = hop_length
         self.win_length = win_length
         window = torch.hann_window(win_length)
-        self.register_buffer("window", window)
+        self.register_buffer("window", window, persistent=False)
 
     def forward(self, spec: torch.Tensor) -> torch.Tensor:
         """
@@ -658,12 +663,12 @@ class ISTFTHead(FourierHead):
 
     def __init__(self, dim: int, n_fft: int, hop_length: int, padding: str = "same"):
         super().__init__()
-        self.filter_length = n_fft
-        self.win_length = n_fft
-        self.hop_length = hop_length
-        self.window = torch.from_numpy(
-            get_window("hann", self.win_length, fftbins=True).astype(np.float32)
-        )
+        # self.filter_length = n_fft
+        # self.win_length = n_fft
+        # self.hop_length = hop_length
+        # self.window = torch.from_numpy(
+        #    get_window("hann", self.win_length, fftbins=True).astype(np.float32)
+        # )
 
         out_dim = n_fft + 2
         self.out = torch.nn.Linear(dim, out_dim)
@@ -700,17 +705,17 @@ class ISTFTHead(FourierHead):
         audio = self.istft(S)
         return audio
 
-    def transform(self, input_data):
-        forward_transform = torch.stft(
-            input_data,
-            self.filter_length,
-            self.hop_length,
-            self.win_length,
-            window=self.window.to(input_data.device),
-            return_complex=True,
-        )
+    # def transform(self, input_data):
+    #    forward_transform = torch.stft(
+    #        input_data,
+    #        self.filter_length,
+    #        self.hop_length,
+    #        self.win_length,
+    #        window=self.window.to(input_data.device),
+    #        return_complex=True,
+    #    )
 
-        return torch.abs(forward_transform), torch.angle(forward_transform)
+    #    return torch.abs(forward_transform), torch.angle(forward_transform)
 
 
 class AdainResBlk1d(nn.Module):
@@ -823,8 +828,8 @@ class Decoder(nn.Module):
         )
 
         self.generator = Generator(
-            input_channels=dim_out,
-            dim=dim_in,
+            input_channels=dim_in,
+            dim=dim_out,
             style_dim=style_dim,
             intermediate_dim=intermediate_dim,
             num_layers=num_layers,
