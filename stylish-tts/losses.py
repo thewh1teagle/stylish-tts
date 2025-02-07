@@ -243,16 +243,13 @@ class WavLMLoss(torch.nn.Module):
             wav_embeddings = self.wavlm(
                 input_values=wav_16, output_hidden_states=True
             ).hidden_states
+            wav_tensor = torch.stack(wav_embeddings)
         y_rec_16 = self.resample(y_rec)
         y_rec_embeddings = self.wavlm(
             input_values=y_rec_16.squeeze(1), output_hidden_states=True
         ).hidden_states
-
-        floss = 0
-        for er, eg in zip(wav_embeddings, y_rec_embeddings):
-            floss += torch.mean(torch.abs(er - eg))
-
-        return floss.mean()
+        y_rec_tensor = torch.stack(y_rec_embeddings)
+        return torch.nn.functional.l1_loss(wav_tensor, y_rec_tensor)
 
     def generator(self, y_rec):
         y_rec_16 = self.resample(y_rec)

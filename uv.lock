@@ -156,6 +156,15 @@ wheels = [
 ]
 
 [[package]]
+name = "beartype"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/e1/00515b97afa3993b4a314e4bc168fbde0917fd5845435cb6f16a19770746/beartype-0.19.0.tar.gz", hash = "sha256:de42dfc1ba5c3710fde6c3002e3bd2cad236ed4d2aabe876345ab0b4234a6573", size = 1294480 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/69/f6db6e4cb2fe2f887dead40b76caa91af4844cb647dd2c7223bb010aa416/beartype-0.19.0-py3-none-any.whl", hash = "sha256:33b2694eda0daf052eb2aff623ed9a8a586703bbf0a90bbc475a83bbf427f699", size = 1039760 },
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.13.1"
 source = { registry = "https://pypi.org/simple" }
@@ -772,6 +781,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7c/1a/3c8edc664e06e6bd06cce40c6b22da5f1429aa4224d0c590f3be21c91ead/isoduration-20.11.0.tar.gz", hash = "sha256:ac2f9015137935279eac671f94f89eb00584f940f5dc49462a0c4ee692ba1bd9", size = 11649 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/55/e5326141505c5d5e34c5e0935d2908a74e4561eca44108fbfb9c13d2911a/isoduration-20.11.0-py3-none-any.whl", hash = "sha256:b2904c2a4228c3d44f409c8ae8e2370eb21a26f7ac2ec5446df141dde3452042", size = 11321 },
+]
+
+[[package]]
+name = "jaxtyping"
+version = "0.2.37"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wadler-lindig" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/56/d1/acd3abf3587487ae131a022328c44068c5ca96e766ed2841c292c2a70ffc/jaxtyping-0.2.37.tar.gz", hash = "sha256:ae8c124abbea61b8c56455fb8b42f1183ab63353572aedfb1de355bb5b40e951", size = 45615 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/7b/623d15216d70e6c1cf149163ee4559e6da23ea0118f8cd7c72fdfb951298/jaxtyping-0.2.37-py3-none-any.whl", hash = "sha256:519f694ce569ba5000a1f8823e742df2d86e6da3956d2218769b6bdc5ad2d23a", size = 56263 },
 ]
 
 [[package]]
@@ -2387,6 +2408,21 @@ wheels = [
 ]
 
 [[package]]
+name = "ring-attention-pytorch"
+version = "0.5.19"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beartype" },
+    { name = "einops" },
+    { name = "jaxtyping" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f7/a3/1c97698051bab285b2a4c4346890f4ec08829bf95a6cf884183bc86ef8ea/ring_attention_pytorch-0.5.19.tar.gz", hash = "sha256:4ed091ab0c0020aba234497d9b35cd9d778a6616fe23d95e8eaf5bca6906afb3", size = 30548 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/a5/00537afc50d0a7467aff6eeaa20711700074d6299ced965720b25949d982/ring_attention_pytorch-0.5.19-py3-none-any.whl", hash = "sha256:81723bf510a47776b493bb4521528681525484c4c4fe722d6b3a6dc0ab717913", size = 27472 },
+]
+
+[[package]]
 name = "rpds-py"
 version = "0.22.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2676,11 +2712,14 @@ dependencies = [
     { name = "pandas" },
     { name = "phonemizer-fork" },
     { name = "pydantic" },
+    { name = "ring-attention-pytorch" },
     { name = "scikit-learn" },
     { name = "tensorboard" },
     { name = "torch" },
     { name = "torchaudio" },
     { name = "transformers" },
+    { name = "triton" },
+    { name = "triton-nightly" },
 ]
 
 [package.dev-dependencies]
@@ -2706,11 +2745,14 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "phonemizer-fork", specifier = ">=3.3.2" },
     { name = "pydantic", specifier = ">=2.10.6" },
+    { name = "ring-attention-pytorch", specifier = ">=0.5.19" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "tensorboard", specifier = ">=2.18.0" },
     { name = "torch", specifier = ">=2.6.0" },
     { name = "torchaudio", specifier = ">=2.6.0" },
     { name = "transformers", specifier = ">=4.48.2" },
+    { name = "triton", specifier = ">=3.2.0" },
+    { name = "triton-nightly", specifier = ">=3.0.0.post20240716052845" },
 ]
 
 [package.metadata.requires-dev]
@@ -2965,6 +3007,18 @@ wheels = [
 ]
 
 [[package]]
+name = "triton-nightly"
+version = "3.0.0.post20240716052845"
+source = { registry = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/" }
+dependencies = [
+    { name = "filelock" },
+]
+wheels = [
+    { url = "https://aiinfra.pkgs.visualstudio.com/2692857e-05ef-43b4-ba9c-ccf1c22c437c/_packaging/07c94329-d4c3-4ad4-9e6b-f904a60032ec/pypi/download/triton-nightly/3.post20240716052845/triton_nightly-3.0.0.post20240716052845-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b00c4fd767becc0c5d42a277e68b4a50c3fe347a93554fd7213d883647dab628" },
+    { url = "https://aiinfra.pkgs.visualstudio.com/2692857e-05ef-43b4-ba9c-ccf1c22c437c/_packaging/07c94329-d4c3-4ad4-9e6b-f904a60032ec/pypi/download/triton-nightly/3.post20240716052845/triton_nightly-3.0.0.post20240716052845-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4863a753855652e67806f96faeed938a5ccba10f5c6e79fecd4b351eb2a22eb1" },
+]
+
+[[package]]
 name = "types-python-dateutil"
 version = "2.9.0.20241206"
 source = { registry = "https://pypi.org/simple" }
@@ -3016,6 +3070,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/aa/63/e53da845320b757bf29ef6a9062f5c669fe997973f966045cb019c3f4b66/urllib3-2.3.0.tar.gz", hash = "sha256:f8c5449b3cf0861679ce7e0503c7b44b5ec981bec0d1d3795a07f1ba96f0204d", size = 307268 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/19/4ec628951a74043532ca2cf5d97b7b14863931476d117c471e8e2b1eb39f/urllib3-2.3.0-py3-none-any.whl", hash = "sha256:1cee9ad369867bfdbbb48b7dd50374c0967a0bb7710050facf0dd6911440e3df", size = 128369 },
+]
+
+[[package]]
+name = "wadler-lindig"
+version = "0.1.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/a2/e8fc843e14aec55d18572a93c5443cc89a6b7d537b90d804f7b373301d9f/wadler_lindig-0.1.3.tar.gz", hash = "sha256:476fb7015135f714cef8f8eac7c44b164c8b993345e651a9b6f25b7b112440c9", size = 15197 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/3b/5b918a0da0d6920e7f7328cf0ab00df31b905d709f458596304f09096785/wadler_lindig-0.1.3-py3-none-any.whl", hash = "sha256:3018e4e6b115a7ef21c77414a41cbe7e03e83f6b5e25004958e33432a17f3c94", size = 20140 },
 ]
 
 [[package]]

@@ -79,7 +79,7 @@ def compute_alignment(
 
     # --- Text Aligner Forward Pass ---
     with train.accelerator.autocast():
-        ppgs, s2s_pred, s2s_attn = train.model.text_aligner(mels, mask, texts)
+        s2s_pred, s2s_attn = train.model.text_aligner(mels, mask, texts)
         s2s_attn = s2s_attn.transpose(-1, -2)
         s2s_attn = s2s_attn[..., 1:]
         s2s_attn = s2s_attn.transpose(-1, -2)
@@ -290,7 +290,7 @@ def train_first(
             loss_s2s /= texts.size(0)
             loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
             loss_gen_all = train.gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
-            loss_slm = train.wl(wav.detach(), y_rec).mean()
+            loss_slm = train.wl(wav.detach(), y_rec)#.mean()
             g_loss = (
                 train.config.loss_weight.mel * loss_mel
                 + train.config.loss_weight.mono * loss_mono
@@ -307,8 +307,9 @@ def train_first(
     # --- Optimizer Steps ---
     optimizer_step(train, ["text_encoder", "style_encoder", "decoder"])
 
-    if train.manifest.stage == "first_tma":
-        optimizer_step(train, ["text_aligner", "pitch_extractor"])
+    #if train.manifest.stage == "first_tma":
+    #    optimizer_step(train, ["text_aligner",
+    #    "pitch_extractor"])
     train.manifest.iters += 1
 
     # --- Logging ---
@@ -491,7 +492,7 @@ def train_second(
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec, wav)
         loss_gen_all = train.gl(wav, y_rec).mean() if train.start_ds else 0
-        loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1)).mean()
+        loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1))#.mean()
 
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
 
@@ -616,7 +617,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                 train.config.training.device
             )
             text_mask = length_to_mask(input_lengths).to(train.config.training.device)
-            _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
+            _, s2s_attn = train.model.text_aligner(mels, mask, texts)
             s2s_attn = s2s_attn.transpose(-1, -2)
             s2s_attn = s2s_attn[..., 1:]
             s2s_attn = s2s_attn.transpose(-1, -2)
@@ -738,7 +739,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                 text_mask = length_to_mask(input_lengths).to(
                     train.config.training.device
                 )
-                _, _, s2s_attn = train.model.text_aligner(mels, mask, texts)
+                _, s2s_attn = train.model.text_aligner(mels, mask, texts)
                 s2s_attn = s2s_attn.transpose(-1, -2)
                 s2s_attn = s2s_attn[..., 1:]
                 s2s_attn = s2s_attn.transpose(-1, -2)

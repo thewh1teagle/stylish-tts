@@ -418,6 +418,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
             sampler = torch.utils.data.sampler.BatchSampler(
                 dist, self.get_batch_size(key), self.drop_last
             )
+            #print(key, self.get_batch_size(key))
             for item_list in sampler:
                 self.last_bin = key
                 yield [current_bin[i] for i in item_list]
@@ -571,7 +572,7 @@ class BatchManager:
                         self.set_batch_size(key, batch_size)
                     done = True
                 except Exception as e:
-                    if "CUDA out of memory" in str(e):
+                    if "out of memory" in str(e):
                         audio_length = (last_bin * 0.25) + 0.25
                         self.log_print(
                             f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
@@ -586,9 +587,9 @@ class BatchManager:
                         if batch_size > 1:
                             batch_size -= 1
                     else:
+                        print("UNKNOWN EXCEPTION")
                         raise e
         self.save_batch_dict()
-        quit()
 
     def train_loop(self, train, debug=False):
         running_loss = 0
