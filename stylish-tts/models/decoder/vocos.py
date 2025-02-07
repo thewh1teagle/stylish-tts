@@ -829,7 +829,7 @@ class Decoder(nn.Module):
 
         self.generator = Generator(
             input_channels=dim_in,
-            dim=dim_out,
+            dim=dim_in,
             style_dim=style_dim,
             intermediate_dim=intermediate_dim,
             num_layers=num_layers,
