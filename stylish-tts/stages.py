@@ -290,7 +290,7 @@ def train_first(
             loss_s2s /= texts.size(0)
             loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
             loss_gen_all = train.gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
-            loss_slm = train.wl(wav.detach(), y_rec)#.mean()
+            loss_slm = train.wl(wav.detach(), y_rec)  # .mean()
             g_loss = (
                 train.config.loss_weight.mel * loss_mel
                 + train.config.loss_weight.mono * loss_mono
@@ -307,7 +307,7 @@ def train_first(
     # --- Optimizer Steps ---
     optimizer_step(train, ["text_encoder", "style_encoder", "decoder"])
 
-    #if train.manifest.stage == "first_tma":
+    # if train.manifest.stage == "first_tma":
     #    optimizer_step(train, ["text_aligner",
     #    "pitch_extractor"])
     train.manifest.iters += 1
@@ -492,7 +492,7 @@ def train_second(
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec, wav)
         loss_gen_all = train.gl(wav, y_rec).mean() if train.start_ds else 0
-        loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1))#.mean()
+        loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1))  # .mean()
 
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
 
@@ -817,7 +817,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                     train.manifest.current_epoch,
                     sample_rate=train.config.preprocess.sample_rate,
                 )
-                if train.manifest.current_epoch == 0:
+                if train.manifest.current_epoch == 1:
                     train.writer.add_audio(
                         f"gt/y{bib}",
                         waves[bib].squeeze(),

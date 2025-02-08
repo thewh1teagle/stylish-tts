@@ -40,11 +40,11 @@ class TextAligner(nn.Module):
             ]
         )
         self.projection = ConvNorm(hidden_dim, hidden_dim // 2)
-        #self.ctc_linear = nn.Sequential(
-        #    LinearNorm(hidden_dim // 2, hidden_dim),
-        #    nn.ReLU(),
-        #    LinearNorm(hidden_dim, n_token),
-        #)
+        self.ctc_linear = nn.Sequential(
+            LinearNorm(hidden_dim // 2, hidden_dim),
+            nn.ReLU(),
+            LinearNorm(hidden_dim, n_token),
+        )
         self.asr_s2s = ASRS2S(
             embedding_dim=token_embedding_dim,
             hidden_dim=hidden_dim // 2,
@@ -57,13 +57,13 @@ class TextAligner(nn.Module):
         x = self.cnns(x)
         x = self.projection(x)
         x = x.transpose(1, 2)
-        #ctc_logit = self.ctc_linear(x)
+        # ctc_logit = self.ctc_linear(x)
         if text_input is not None:
             _, s2s_logit, s2s_attn = self.asr_s2s(x, src_key_padding_mask, text_input)
-            #return ctc_logit, s2s_logit, s2s_attn
+            # return ctc_logit, s2s_logit, s2s_attn
             return s2s_logit, s2s_attn
         else:
-            return None#ctc_logit
+            return None  # ctc_logit
 
     def get_feature(self, x):
         x = self.to_mfcc(x.squeeze(1))
