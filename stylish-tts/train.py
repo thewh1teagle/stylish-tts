@@ -161,6 +161,9 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
 
     # build model
     train.model, kdiffusion = build_model(train.config)
+    for key in train.model:
+        train.model[key] = train.accelerator.prepare(train.model[key])
+        train.model[key].to(train.config.training.device)
 
     # DP
     # for key in train.model:
@@ -171,6 +174,23 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train.manifest.current_epoch = 1
     train.manifest.iters = 0
 
+    scheduler_params = {
+        "max_lr": train.config.optimizer.lr,
+        "pct_start": float(0),
+        "epochs": train.manifest.epochs,
+        "steps_per_epoch": train.batch_manager.get_step_count(),
+    }
+    scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
+    scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
+    scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+    scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+
+    train.optimizer = build_optimizer(
+        {key: train.model[key].parameters() for key in train.model},
+        scheduler_params_dict=scheduler_params_dict,
+        lr=train.config.optimizer.lr,
+    )
+
     # load an existing model for first stage
     if (
         pretrained_model
@@ -178,23 +198,26 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         and stage in ["first", "first_tma"]
     ):
         print(f"Loading the first stage model at {pretrained_model} ...")
-        train.model, _, train.manifest.current_epoch, train.manifest.iters = (
-            load_checkpoint(
-                train.model,
-                None,
-                pretrained_model,
-                load_only_params=True,
-                ignore_modules=[
-                    "bert",
-                    "bert_encoder",
-                    "predictor",
-                    "predictor_encoder",
-                    "msd",
-                    "mpd",
-                    "wd",
-                    "diffusion",
-                ],
-            )
+        (
+            train.model,
+            train.optimizer,
+            train.manifest.current_epoch,
+            train.manifest.iters,
+        ) = load_checkpoint(
+            train.model,
+            train.optimizer,
+            pretrained_model,
+            load_only_params=True,
+            ignore_modules=[
+                "bert",
+                "bert_encoder",
+                "predictor",
+                "predictor_encoder",
+                "msd",
+                "mpd",
+                "wd",
+                "diffusion",
+            ],
         )  # keep starting epoch for tensorboard log
 
         # TODO: what epoch are we on?
@@ -226,10 +249,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     elif stage in ["second", "second_style", "second_joint"]:
         load_defaults(train, train.model)
 
-    for key in train.model:
-        train.model[key] = train.accelerator.prepare(train.model[key])
-        train.model[key].to(train.config.training.device)
-
     train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
     )
@@ -255,23 +274,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
             sigma_min=0.0001, sigma_max=3.0, rho=9.0
         ),  # empirical parameters
         clamp=False,
-    )
-
-    scheduler_params = {
-        "max_lr": train.config.optimizer.lr,
-        "pct_start": float(0),
-        "epochs": train.manifest.epochs,
-        "steps_per_epoch": train.batch_manager.get_step_count(),
-    }
-    scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
-    scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
-    scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
-    scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
-
-    train.optimizer = build_optimizer(
-        {key: train.model[key].parameters() for key in train.model},
-        scheduler_params_dict=scheduler_params_dict,
-        lr=train.config.optimizer.lr,
     )
 
     for k in train.optimizer.optimizers.keys():

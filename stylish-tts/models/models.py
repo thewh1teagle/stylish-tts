@@ -932,10 +932,13 @@ def load_checkpoint(model, optimizer, path, ignore_modules=[]):
                 print(
                     f"{key} key length: {len(model[key].state_dict().keys())}, state_dict key length: {len(state_dict.keys())}"
                 )
-                for (k_m, v_m), (k_c, v_c) in zip(
-                    model[key].state_dict().items(), state_dict.items()
-                ):
-                    new_state_dict[k_m] = v_c
+                for k, v in state_dict.items():
+                    new_state_dict[k[7:]] = v
+                # for (k_m, v_m), (k_c, v_c) in zip(
+                #    model[key].state_dict().items(), state_dict.items()
+                # ):
+                #    print(k_m, k_c)
+                #    new_state_dict[k_m] = v_c
                 model[key].load_state_dict(new_state_dict, strict=True)
             print("%s loaded" % key)
 

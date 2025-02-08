@@ -35,6 +35,7 @@ class STFTLoss(torch.nn.Module):
         self.shift_size = shift_size
         self.win_length = win_length
         self.to_mel = torchaudio.transforms.MelSpectrogram(
+            n_mels=80,
             sample_rate=24000,
             n_fft=fft_size,
             win_length=win_length,

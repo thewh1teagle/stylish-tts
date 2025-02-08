@@ -357,6 +357,11 @@ def train_second(
     """
     Training function for the second stage.
     """
+
+    # train.validate(1, save=False, train=train)
+    # log_and_save_checkpoint(train, 1, "test_save")
+    # quit()
+
     (
         waves,
         texts,
