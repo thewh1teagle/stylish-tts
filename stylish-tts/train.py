@@ -20,7 +20,7 @@ from accelerate import DistributedDataParallelKwargs
 from config_loader import load_config_yaml, Config, TrainContext
 from text_utils import TextCleaner
 
-#warnings.simplefilter("ignore")
+# warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader, BatchManager, FilePathDataset
@@ -103,7 +103,9 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         ]
     )
 
-    ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=False, find_unused_parameters=True)
+    ddp_kwargs = DistributedDataParallelKwargs(
+        broadcast_buffers=False, find_unused_parameters=True
+    )
     train.accelerator = Accelerator(
         project_dir=train.config.training.out_dir,
         split_batches=True,
@@ -301,7 +303,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
                 train.model,
                 train.optimizer,
                 pretrained_model,
-                load_only_params=train.config.get("load_only_params", True),
+                load_only_params=False,
             )
             train.manifest.current_epoch += 1
 
@@ -344,7 +346,9 @@ def train_val_loop(train: TrainContext, probe_batch: int):
         train.train_batch = train_second
         train.validate = validate_second
     else:
-        exit("Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint'")
+        exit(
+            "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint'"
+        )
     while train.manifest.current_epoch <= train.manifest.epochs:
         train.running_loss = 0
         train.start_time = time.time()

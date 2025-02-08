@@ -499,13 +499,13 @@ def train_second(
     g_loss = (
         train.config.loss_weight.mel * loss_mel
         + train.config.loss_weight.F0 * loss_F0_rec
-        + train.config.loss_weight.ce * loss_ce
+        + train.config.loss_weight.duration_ce * loss_ce
         + train.config.loss_weight.norm * loss_norm_rec
-        + train.config.loss_weight.dur * loss_dur
+        + train.config.loss_weight.duration * loss_dur
         + train.config.loss_weight.gen * loss_gen_all
         + train.config.loss_weight.slm * loss_lm
-        + train.config.loss_weight.sty * loss_sty
-        + train.config.loss_weight.diff * loss_diff
+        + train.config.loss_weight.style * loss_sty
+        + train.config.loss_weight.diffusion * loss_diff
         + loss_magphase
     )
 
@@ -582,7 +582,7 @@ def train_second(
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
-    if (i + 1) % train.config.training.gival_interval == 0 or (
+    if (i + 1) % train.config.training.val_interval == 0 or (
         i + 1
     ) % train.config.training.save_interval == 0:
         save = (i + 1) % train.config.training.save_interval == 0
