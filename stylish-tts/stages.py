@@ -381,6 +381,7 @@ def train_second(
         ],
     )
     with torch.no_grad():
+        # TODO: This is not currently used is it needed?
         mel_mask = length_to_mask(mel_input_length).to(train.config.training.device)
     try:
         _, s2s_attn_mono, _, asr, text_mask, _ = compute_alignment(
@@ -760,6 +761,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                     continue
                 s = train.model.predictor_encoder(mels.unsqueeze(1))
                 gs = train.model.style_encoder(mels.unsqueeze(1))
+                # TODO: This is not currently used is it needed?
                 s_trg = torch.cat([s, gs], dim=-1).detach()
                 bert_dur = train.model.bert(texts, attention_mask=(~text_mask).int())
                 d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)
