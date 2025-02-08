@@ -4,12 +4,15 @@ import torch
 import click
 import shutil
 import logging
+import random
 from logging import StreamHandler
 from accelerate import Accelerator
 from accelerate import DistributedDataParallelKwargs
 from config_loader import load_config_yaml
 from train_context import TrainContext
 from text_utils import TextCleaner
+
+import numpy as np
 
 #  warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
@@ -54,7 +57,8 @@ from stages import train_first, validate_first, train_second, validate_second
 @click.option("--pretrained_model", default="", type=str)
 def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train = TrainContext()
-
+    np.random.seed(1)
+    random.seed(1)
     if osp.exists(config_path):
         train.config = load_config_yaml(config_path)
     else:
@@ -134,6 +138,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train.val_dataloader = build_dataloader(
         val_dataset,
         val_dataset.time_bins(),
+        validation=True,
         batch_size={},
         num_workers=4,
         device=train.config.training.device,

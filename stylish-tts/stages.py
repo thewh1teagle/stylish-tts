@@ -81,6 +81,7 @@ def compute_alignment(
     # --- Text Aligner Forward Pass ---
     with train.accelerator.autocast():
         s2s_pred, s2s_attn = train.model.text_aligner(mels, mask, texts)
+        # Remove the last token to make the shape match texts
         s2s_attn = s2s_attn.transpose(-1, -2)
         s2s_attn = s2s_attn[..., 1:]
         s2s_attn = s2s_attn.transpose(-1, -2)
@@ -143,6 +144,7 @@ def compute_duration_ce_loss(
         dur_pred = torch.sigmoid(pred).sum(dim=1)
         loss_dur += F.l1_loss(dur_pred[1 : length - 1], inp[1 : length - 1])
         loss_ce += F.binary_cross_entropy_with_logits(pred.flatten(), target.flatten())
+    print("LEN TEXT_LENGTHS", len(text_lengths))
     n = len(text_lengths)
     return loss_ce / n, loss_dur / n
 
@@ -308,9 +310,8 @@ def train_first(
     # --- Optimizer Steps ---
     optimizer_step(train, ["text_encoder", "style_encoder", "decoder"])
 
-    # if train.manifest.stage == "first_tma":
-    #    optimizer_step(train, ["text_aligner",
-    #    "pitch_extractor"])
+    if train.manifest.stage == "first_tma":
+        optimizer_step(train, ["text_aligner", "pitch_extractor"])
     train.manifest.iters += 1
 
     # --- Logging ---
@@ -358,7 +359,10 @@ def train_second(
     Training function for the second stage.
     """
 
-    # train.validate(1, save=False, train=train)
+    # for i in range(10):
+    #    np.random.seed(1)
+    #    random.seed(1)
+    #    train.validate(1, save=False, train=train)
     # log_and_save_checkpoint(train, 1, "test_save")
     # quit()
 
@@ -501,6 +505,7 @@ def train_second(
         loss_gen_all = train.gl(wav, y_rec).mean() if train.start_ds else 0
         loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1))  # .mean()
 
+    print("TEXTS SIZE", texts.size(0))
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
 
     g_loss = (

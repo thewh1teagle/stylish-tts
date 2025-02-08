@@ -27,8 +27,6 @@ logger.setLevel(logging.DEBUG)
 
 import pandas as pd
 
-np.random.seed(1)
-random.seed(1)
 
 to_mel = torchaudio.transforms.MelSpectrogram(
     n_mels=80, n_fft=2048, win_length=1200, hop_length=300
