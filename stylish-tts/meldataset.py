@@ -308,8 +308,6 @@ def build_dataloader(
     drop_last = not validation and probe_batch_size is not None
     data_loader = torch.utils.data.DataLoader(
         dataset,
-        # batch_size=min(batch_size, len(dataset)),
-        # shuffle=(not validation),
         num_workers=num_workers,
         batch_sampler=DynamicBatchSampler(
             time_bins,
@@ -322,7 +320,6 @@ def build_dataloader(
             force_batch_size=probe_batch_size,
             epoch=epoch,
         ),
-        # drop_last=(not validation),
         collate_fn=collate_fn,
         pin_memory=(device != "cpu"),
     )

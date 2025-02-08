@@ -144,7 +144,6 @@ def compute_duration_ce_loss(
         dur_pred = torch.sigmoid(pred).sum(dim=1)
         loss_dur += F.l1_loss(dur_pred[1 : length - 1], inp[1 : length - 1])
         loss_ce += F.binary_cross_entropy_with_logits(pred.flatten(), target.flatten())
-    print("LEN TEXT_LENGTHS", len(text_lengths))
     n = len(text_lengths)
     return loss_ce / n, loss_dur / n
 
@@ -505,7 +504,6 @@ def train_second(
         loss_gen_all = train.gl(wav, y_rec).mean() if train.start_ds else 0
         loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1))  # .mean()
 
-    print("TEXTS SIZE", texts.size(0))
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
 
     g_loss = (
