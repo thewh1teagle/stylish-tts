@@ -1,15 +1,16 @@
-import random, time, traceback
+import random
+import time
+import traceback
 import os.path as osp
 import torch
 import torch.nn.functional as F
 import numpy as np
-import yaml
 from typing import List, Tuple, Any
 
 from utils import length_to_mask, maximum_path, log_norm, log_print, get_image
 from monotonic_align import mask_from_lens
 from losses import magphase_loss
-from config_loader import TrainContext
+from train_context import TrainContext
 
 ###############################################
 # Helper Functions
@@ -380,6 +381,7 @@ def train_second(
         ],
     )
     with torch.no_grad():
+        # TODO: This is not currently used is it needed?
         mel_mask = length_to_mask(mel_input_length).to(train.config.training.device)
     try:
         _, s2s_attn_mono, _, asr, text_mask, _ = compute_alignment(
@@ -761,6 +763,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                     continue
                 s = train.model.predictor_encoder(mels.unsqueeze(1))
                 gs = train.model.style_encoder(mels.unsqueeze(1))
+                # TODO: This is not currently used is it needed?
                 s_trg = torch.cat([s, gs], dim=-1).detach()
                 bert_dur = train.model.bert(texts, attention_mask=(~text_mask).int())
                 d_en = train.model.bert_encoder(bert_dur).transpose(-1, -2)

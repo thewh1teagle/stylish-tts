@@ -96,32 +96,53 @@ class ModelConfig(BaseModel):
     n_mels: int = Field(..., description="Number of mel frequency bins.")
     style_dim: int = Field(..., description="Dimension of the style vector.")
 
+
 class TextAlignerConfig(BaseModel):
     """
     Configuration for the text aligner component.
     """
-    hidden_dim: int = Field(..., description="Dimension of the hidden layers in the text aligner.")
-    token_embedding_dim: int = Field(..., description="Dimension of the token embeddings in the text aligner.")
+
+    hidden_dim: int = Field(
+        ..., description="Dimension of the hidden layers in the text aligner."
+    )
+    token_embedding_dim: int = Field(
+        ..., description="Dimension of the token embeddings in the text aligner."
+    )
+
 
 class PitchExtractorConfig(BaseModel):
     """
     Configuration for the pitch extractor component.
     """
+
     num_class: int = Field(..., description="Number of classes for pitch extraction.")
     seq_len: int = Field(..., description="Sequence length for pitch extraction.")
-    leaky_relu_slope: float = Field(..., description="Slope for the leaky ReLU activation function.")
+    leaky_relu_slope: float = Field(
+        ..., description="Slope for the leaky ReLU activation function."
+    )
+
 
 class PLBERTConfig(BaseModel):
     """
     Configuration for the PLBERT model.
     """
+
     hidden_size: int = Field(..., description="Hidden size of the PLBERT model.")
-    num_attention_heads: int = Field(..., description="Number of attention heads in the PLBERT model.")
-    intermediate_size: int = Field(..., description="Intermediate size of the feed-forward layers in PLBERT.")
-    max_position_embeddings: int = Field(..., description="Maximum number of position embeddings in PLBERT.")
-    num_hidden_layers: int = Field(..., description="Number of hidden layers in the PLBERT model.")
+    num_attention_heads: int = Field(
+        ..., description="Number of attention heads in the PLBERT model."
+    )
+    intermediate_size: int = Field(
+        ..., description="Intermediate size of the feed-forward layers in PLBERT."
+    )
+    max_position_embeddings: int = Field(
+        ..., description="Maximum number of position embeddings in PLBERT."
+    )
+    num_hidden_layers: int = Field(
+        ..., description="Number of hidden layers in the PLBERT model."
+    )
     dropout: float = Field(..., description="Dropout rate used in the PLBERT model.")
-    
+
+
 class HiFiGANDecoderConfig(BaseModel):
     """
     Configuration for HiFiGAN decoder.
@@ -394,8 +415,12 @@ class Config(BaseModel):
     model: ModelConfig = Field(
         ..., description="General model configuration parameters."
     )
-    text_aligner: TextAlignerConfig = Field(..., description="Configuration for the text aligner component.")
-    pitch_extractor: PitchExtractorConfig = Field(..., description="Configuration for the pitch extractor component.")
+    text_aligner: TextAlignerConfig = Field(
+        ..., description="Configuration for the text aligner component."
+    )
+    pitch_extractor: PitchExtractorConfig = Field(
+        ..., description="Configuration for the pitch extractor component."
+    )
     plbert: PLBERTConfig = Field(..., description="Configuration for the PLBERT model.")
     decoder: Union[
         HiFiGANDecoderConfig,
@@ -427,23 +452,6 @@ class Config(BaseModel):
     slmadv_params: SlmAdvConfig = Field(
         ..., description="SLM adversarial training configuration parameters."
     )
-
-
-class Manifest:
-    def __init__(self):
-        self.current_epoch: int = 0
-        self.current_step: int = 0
-        self.iters: int = 0
-        self.stage: str = "first"
-        self.epochs: int = 0
-        self.training_log: str = []
-
-
-class TrainContext:
-    def __init__(self):
-        self.config: Config = None
-        self.manifest: Manifest = Manifest()
-        pass
 
 
 def load_config_yaml(config_path: str) -> Config:

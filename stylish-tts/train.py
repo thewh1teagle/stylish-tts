@@ -1,33 +1,25 @@
 # load packages
-import random
-import yaml
 import time
-from munch import Munch
-import numpy as np
 import torch
-from torch import nn
-import torch.nn.functional as F
-import torchaudio
-import librosa
 import click
 import shutil
-import traceback
-import warnings
 import logging
 from logging import StreamHandler
 from accelerate import Accelerator
 from accelerate import DistributedDataParallelKwargs
-from config_loader import load_config_yaml, Config, TrainContext
+from config_loader import load_config_yaml
+from train_context import TrainContext
 from text_utils import TextCleaner
 
-# warnings.simplefilter("ignore")
+#  warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader, BatchManager, FilePathDataset
 
-from models.models import *
-from losses import *
-from utils import *
+from models.models import load_checkpoint, build_model, load_defaults
+from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
+from utils import get_data_path_list
+
 
 from models.slmadv import SLMAdversarialLoss
 from models.diffusion.sampler import (
@@ -35,6 +27,9 @@ from models.diffusion.sampler import (
     ADPM2Sampler,
     KarrasSchedule,
 )
+
+import os.path as osp
+import os
 
 from optimizers import build_optimizer
 from stages import train_first, validate_first, train_second, validate_second
@@ -209,7 +204,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         # epochs += start_epoch
         train.manifest.current_epoch = 1
         # TODO: This should happen only once when starting stage 2
-        train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
+        # train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
     else:
         load_defaults(train, train.model)
 
@@ -300,10 +295,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
                 train.manifest.current_epoch,
                 train.manifest.iters,
             ) = load_checkpoint(
-                train.model,
-                train.optimizer,
-                pretrained_model,
-                load_only_params=False,
+                train.model, train.optimizer, pretrained_model, ignore_modules=[]
             )
             train.manifest.current_epoch += 1
 

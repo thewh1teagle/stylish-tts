@@ -9,6 +9,7 @@ Pretrained PLBERT
 
 import transformers
 
+
 class PLBERT(transformers.AlbertModel):
     def __init__(self, **kwargs):
         super().__init__(transformers.AlbertConfig(**kwargs))
