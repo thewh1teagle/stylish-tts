@@ -715,6 +715,8 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
     for key in train.model:
         train.model[key].eval()
 
+    samples = []
+    samples_gt = []
     with torch.no_grad():
         iters_test = 0
         for batch in train.val_dataloader:
@@ -778,6 +780,9 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                     loss_dur += F.l1_loss(dur_pred[1 : length - 1], inp[1 : length - 1])
                 loss_dur /= texts.size(0)
                 y_rec, _, _ = train.model.decoder(asr, F0_fake, N_fake, gs)
+                if train.accelerator.is_main_process and len(samples) < 5:
+                    samples.append(y_rec[0].detach().cpu().numpy())
+                    samples_gt.append(waves[0].detach().cpu().numpy())
                 loss_mel = train.stft_loss(y_rec.squeeze(1), waves.detach())
                 F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
                 loss_F0 = F.l1_loss(F0_real, F0_fake) / 10
@@ -802,28 +807,19 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
         attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
         train.writer.add_figure("eval/attn", attn_image, train.manifest.current_epoch)
 
-        with torch.no_grad():
-            for bib in range(min(len(asr), 6)):
-                mel_length = int(mel_input_length[bib].item())
-                gt = mels[bib, :, :mel_length].unsqueeze(0)
-                en = asr[bib, :, : mel_length // 2].unsqueeze(0)
-                F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
-                s = train.model.style_encoder(gt.unsqueeze(1))
-                real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-                y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
-                train.writer.add_audio(
-                    f"eval/y{bib}",
-                    y_rec.cpu().numpy().squeeze(),
-                    train.manifest.current_epoch,
-                    sample_rate=train.config.preprocess.sample_rate,
-                )
-                if train.manifest.current_epoch == 1:
-                    train.writer.add_audio(
-                        f"gt/y{bib}",
-                        waves[bib].squeeze(),
-                        train.manifest.current_epoch,
-                        sample_rate=train.config.preprocess.sample_rate,
-                    )
+        for i in range(len(samples)):
+            train.writer.add_audio(
+                f"eval/y{i}",
+                samples[i],
+                train.manifest.iters,
+                sample_rate=train.config.preprocess.sample_rate,
+            )
+            train.writer.add_audio(
+                f"gt/y{i}",
+                samples_gt[i],
+                train.manifest.iters,
+                sample_rate=train.config.preprocess.sample_rate,
+            )
         if (
             train.manifest.current_epoch % train.config.training.save_epoch_interval
             == 0
