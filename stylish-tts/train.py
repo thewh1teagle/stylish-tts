@@ -175,7 +175,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     if (
         pretrained_model
         and osp.exists(pretrained_model)
-        and stage in {"first", "first_tma"}
+        and stage in ["first", "first_tma"]
     ):
         print(f"Loading the first stage model at {pretrained_model} ...")
         train.model, _, train.manifest.current_epoch, train.manifest.iters = (
@@ -205,13 +205,30 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         train.manifest.current_epoch = 1
         # TODO: This should happen only once when starting stage 2
         # train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
-    else:
+    elif stage in ["first", "first_tma"]:
         load_defaults(train, train.model)
 
-    for k in train.model:
-        train.model[k] = train.accelerator.prepare(train.model[k])
+    # load models if there is a model for second stage
+    if (
+        pretrained_model
+        and osp.exists(pretrained_model)
+        and stage in {"second", "second_style", "second_joint"}
+    ):
+        (
+            train.model,
+            train.optimizer,
+            train.manifest.current_epoch,
+            train.manifest.iters,
+        ) = load_checkpoint(
+            train.model, train.optimizer, pretrained_model, ignore_modules=[]
+        )
+        train.manifest.current_epoch += 1
+    elif stage in ["second", "second_style", "second_joint"]:
+        load_defaults(train, train.model)
 
-    _ = [train.model[key].to(train.config.training.device) for key in train.model]
+    for key in train.model:
+        train.model[key] = train.accelerator.prepare(train.model[key])
+        train.model[key].to(train.config.training.device)
 
     train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
@@ -281,23 +298,6 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
             g["initial_lr"] = train.config.optimizer.ft_lr
             g["min_lr"] = 0
             g["weight_decay"] = 1e-4
-
-    if train.accelerator.main_process_first():
-        # load models if there is a model for second stage
-        if (
-            pretrained_model
-            and osp.exists(pretrained_model)
-            and stage in {"second", "second_style", "second_joint"}
-        ):
-            (
-                train.model,
-                train.optimizer,
-                train.manifest.current_epoch,
-                train.manifest.iters,
-            ) = load_checkpoint(
-                train.model, train.optimizer, pretrained_model, ignore_modules=[]
-            )
-            train.manifest.current_epoch += 1
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
