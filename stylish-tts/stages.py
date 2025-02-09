@@ -9,10 +9,11 @@ from typing import List, Tuple, Any
 
 from utils import length_to_mask, maximum_path, log_norm, log_print, get_image
 from monotonic_align import mask_from_lens
+from munch import Munch
 from losses import magphase_loss
 from batch_context import BatchContext
 from train_context import TrainContext
-from loss_log import LossLog
+from loss_log import LossLog, combine_logs
 
 ###############################################
 # Helper Functions
@@ -214,7 +215,7 @@ def log_and_save_checkpoint(
 
 def prepare_models(training_set, eval_set, train):
     result = {}
-    for key in train.model.keys():
+    for key in train.model:
         if key in training_set or key in eval_set:
             result[key] = train.model[key]
             result[key].to(train.config.training.device)
@@ -227,15 +228,21 @@ def prepare_models(training_set, eval_set, train):
     return Munch(**result)
 
 
-def step_models(training_set, train):
-    train.optimizer.step(training_set.keys())
+def train_acoustic_adapter(
+    i: int, batch, running_loss: float, iters: int, train: TrainContext
+) -> Tuple[float, int]:
+    log = train_acoustic(train, batch, split=False)
+    if i % 10 == 0:
+        log.broadcast(train.manifest)
+    return 0, iters
 
 
-def train_acoustic(train: TrainContext, inputs):
+def train_acoustic(train: TrainContext, inputs, split=False):
+    split_count = 8 if split else 1
     texts, text_lengths, mels, mel_lengths, audio_gt = prepare_batch(
         inputs,
         train.config.training.device,
-        ["text", "input_lengths", "mels", "mel_input_length", "waves"],
+        ["texts", "input_lengths", "mels", "mel_input_length", "waves"],
     )
     training_set = {
         "text_encoder",
@@ -251,7 +258,7 @@ def train_acoustic(train: TrainContext, inputs):
         text_encoding = state.text_encoding(texts, text_lengths)
         duration = state.acoustic_duration(
             mels,
-            mel_length,
+            mel_lengths,
             texts,
             text_lengths,
             apply_attention_mask=True,
@@ -261,14 +268,62 @@ def train_acoustic(train: TrainContext, inputs):
         energy = state.acoustic_energy(mels)
         style_embedding = state.acoustic_style_embedding(mels)
         decoding = state.decoding(
-            text_encoding, duration, pitch, energy, style_embedding, audio_gt
+            text_encoding,
+            duration,
+            pitch,
+            energy,
+            style_embedding,
+            audio_gt,
+            split=split_count,
         )
         train.optimizer.zero_grad()
+        loglist = []
         for audio_out, mag, phase, audio_gt_slice in decoding:
-            loss_log = loss_acoustic(audio_out, mag, phase, audio_gt_slice, state=state)
-            train.accelerator.backwards(loss_log.latest)
-    step_models(training_set, train)
-    log_training(loss_log, train)
+            log = incremental_loss_acoustic(
+                audio_out, mag, phase, audio_gt_slice, split_count, state=state
+            )
+            train.accelerator.backward(log.total(), retain_graph=True)
+            loglist.append(log)
+        incremental_log = combine_logs(loglist)
+        global_log = global_loss_acoustic(texts, text_lengths, state)
+        train.accelerator.backward(global_log.total())
+    optimizer_step(train, training_set)
+    return combine_logs([incremental_log, global_log])
+
+
+def incremental_loss_acoustic(
+    audio_out, mag, phase, audio_gt_slice, split_count, state
+):
+    log = LossLog(
+        state.train.logger, state.train.writer, state.config.loss_weight.dict()
+    )
+
+    log.add_loss(
+        "mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt_slice) / split_count
+    )
+
+    if mag is not None and phase is not None:
+        log.add_loss(
+            "magphase", magphase_loss(mag, phase, audio_gt_slice) / split_count
+        )
+
+    return log
+
+
+def global_loss_acoustic(texts, text_lengths, state):
+    log = LossLog(
+        state.train.logger, state.train.writer, state.config.loss_weight.dict()
+    )
+
+    loss_s2s = 0
+    for pred, text, length in zip(state.s2s_pred, texts, text_lengths):
+        loss_s2s += F.cross_entropy(pred[:length], text[:length])
+    loss_s2s /= texts.size(0)
+    log.add_loss("s2s", loss_s2s)
+
+    log.add_loss("mono", F.l1_loss(*(state.duration_results)) * 10)
+
+    return log
 
 
 ###############################################

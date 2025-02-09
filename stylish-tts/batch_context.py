@@ -2,8 +2,9 @@ import random
 
 import torch
 
+from monotonic_align import mask_from_lens
 from train_context import TrainContext
-from utils import length_to_mask, log_norm
+from utils import length_to_mask, log_norm, maximum_path
 
 
 class BatchContext:
@@ -41,17 +42,16 @@ class BatchContext:
           - duration: Duration attention vector
         """
         # Create masks.
-        mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
-            train.config.training.device
+        mask = length_to_mask(mel_lengths // (2**self.train.n_down)).to(
+            self.config.training.device
         )
 
         # --- Text Aligner Forward Pass ---
-        with train.accelerator.autocast():
-            s2s_pred, s2s_attn = train.model.text_aligner(mels, mask, texts)
-            # Remove the last token to make the shape match texts
-            s2s_attn = s2s_attn.transpose(-1, -2)
-            s2s_attn = s2s_attn[..., 1:]
-            s2s_attn = s2s_attn.transpose(-1, -2)
+        s2s_pred, s2s_attn = self.model.text_aligner(mels, mask, texts)
+        # Remove the last token to make the shape match texts
+        s2s_attn = s2s_attn.transpose(-1, -2)
+        s2s_attn = s2s_attn[..., 1:]
+        s2s_attn = s2s_attn.transpose(-1, -2)
 
         # Optionally apply extra attention mask.
         if apply_attention_mask:
@@ -65,7 +65,7 @@ class BatchContext:
                 )
                 attn_mask = (
                     attn_mask
-                    * (~text_mask)
+                    * (~self.text_mask)
                     .unsqueeze(-1)
                     .expand(
                         self.text_mask.shape[0], self.text_mask.shape[1], mask.shape[-1]
@@ -78,18 +78,18 @@ class BatchContext:
         # --- Monotonic Attention Path ---
         with torch.no_grad():
             mask_ST = mask_from_lens(
-                s2s_attn, input_lengths, mel_input_length // (2**train.n_down)
+                s2s_attn, text_lengths, mel_lengths // (2**self.train.n_down)
             )
             s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
 
         # --- Text Encoder Forward Pass ---
-        with train.accelerator.autocast():
-            if use_random_choice and bool(random.getrandbits(1)):
-                duration = s2s_attn
-            else:
-                duration = s2s_attn_mono
+        if use_random_choice and bool(random.getrandbits(1)):
+            duration = s2s_attn
+        else:
+            duration = s2s_attn_mono
 
         self.duration_results = (s2s_attn, s2s_attn_mono)
+        self.s2s_pred = s2s_pred
         return duration
 
     def acoustic_pitch(self, mels: torch.Tensor):

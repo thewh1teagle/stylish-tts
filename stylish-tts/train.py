@@ -35,7 +35,13 @@ import os.path as osp
 import os
 
 from optimizers import build_optimizer
-from stages import train_first, validate_first, train_second, validate_second
+from stages import (
+    train_first,
+    validate_first,
+    train_second,
+    validate_second,
+    train_acoustic_adapter,
+)
 
 
 # simple fix for dataparallel that allows access to class attributes
@@ -200,7 +206,7 @@ def main(config_path, early_joint, stage, pretrained_model):
     if (
         pretrained_model
         and osp.exists(pretrained_model)
-        and stage in ["first", "first_tma"]
+        and stage in ["first", "first_tma", "acoustic"]
     ):
         print(f"Loading the first stage model at {pretrained_model} ...")
         (
@@ -233,7 +239,7 @@ def main(config_path, early_joint, stage, pretrained_model):
         train.manifest.current_epoch = 1
         # TODO: This should happen only once when starting stage 2
         # train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
-    elif stage in ["first", "first_tma"]:
+    elif stage in ["first", "first_tma", "acoustic"]:
         load_defaults(train, train.model)
 
     # load models if there is a model for second stage
@@ -340,6 +346,9 @@ def main(config_path, early_joint, stage, pretrained_model):
 def train_val_loop(train: TrainContext):
     if train.manifest.stage in {"first", "first_tma"}:
         train.train_batch = train_first
+        train.validate = validate_first
+    elif train.manifest.stage in {"acoustic"}:
+        train.train_batch = train_acoustic_adapter
         train.validate = validate_first
     elif train.manifest.stage in {"second", "second_style", "second_joint"}:
         train.train_batch = train_second

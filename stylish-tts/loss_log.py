@@ -2,72 +2,61 @@ from train_context import TrainContext
 
 
 class LossLog:
-    def __init__(self, train: TrainContext):
-        self.logger = train.logger
-        self.writer = train.writer
-        self.weights = train.config.loss_weights
-        self.count = 0
-        self.incremental = {}
-        self.single = {}
-        self.metrics = None
-        self.total_loss = 0
-
-    def reset(self):
-        self.count = 0
-        self.incremental = {}
-        self.single = {}
-        self.metrics = None
-        self.total_loss = 0
+    def __init__(self, logger, writer, loss_weights):
+        self.logger = logger
+        self.writer = writer
+        self.weights = loss_weights
+        self.metrics = {}
+        self.total_loss = None
 
     def total(self):
-        if self.metrics is None:
-            self.calculate_results()
-        return results["total_loss"]
+        if self.total_loss is None:
+            self.calculate_metrics()
+        return self.total_loss
 
     def broadcast(self, manifest):
-        if self.metrics is None:
+        if self.total_loss is None:
             self.calculate_metrics()
         self.logger.info(
             f"Epoch [{manifest.current_epoch}/{manifest.epochs}], Step [TODO:STEPCOUNT], loss: {self.total_loss}, "
             + ", ".join(f"{k}: {v:.5f}" for k, v in self.metrics.items())
         )
-        train.writer.add_scalar("train/loss", self.total_loss, manifest.iters)
+        self.writer.add_scalar("train/loss", self.total_loss, manifest.iters)
         for key, value in self.metrics.items():
-            train.writer.add_scalar(f"train/{key}", value, manifest.iters)
+            self.writer.add_scalar(f"train/{key}", value, manifest.iters)
 
     def weight(self, key: str):
         if key in self.weights:
             return self.weights[key]
         else:
-            self.logger(f"WARNING: Unknown weight for key {key}, defaulting to 1")
+            print(f"WARNING: Unknown weight for key {key}, defaulting to 1")
+            print(self.weights)
             return 1
 
     def update_loss(self, key, value, count):
-        weight = self.weight(key)
-        loss = value * weight / count
-        self.total_loss += loss
-        self.metrics[key] = loss
         return weight
 
     def calculate_metrics(self):
-        self.metrics = {}
-        self.total_loss = 0
+        total = 0
         total_weight = 0
-        if count > 0:
-            for key, value in self.incremental.items():
-                total_weight += self.update_loss(key, value, self.count)
-        for key, value in self.single.items():
-            total_weight += self.update_loss(key, value, 1)
-        self.total_loss = self.total_loss / weight_total
+        for key, value in self.metrics.items():
+            weight = self.weight(key)
+            loss = value * weight
+            total += loss
+            total_weight += weight
+        self.total_loss = total / total_weight
 
-    def add_loss(self, key, value, incremental=False):
-        if incremental:
-            if key not in self.incremental:
-                self.incremental[key] = 0
-            self.incremental[key] += value
-            self._add_loss(self.incremental)
-        else:
-            self.single[key] = value
+    def add_loss(self, key, value):
+        self.metrics[key] = value
 
-    def increment_loss_count(self):
-        self.count += 1
+
+def combine_logs(loglist):
+    result = None
+    if len(loglist) > 0:
+        result = LossLog(loglist[0].logger, loglist[0].writer, loglist[0].weights)
+        for log in loglist:
+            for key in log.metrics.keys():
+                if key not in result.metrics:
+                    result.metrics[key] = 0
+                result.metrics[key] += log.metrics[key]
+    return result
