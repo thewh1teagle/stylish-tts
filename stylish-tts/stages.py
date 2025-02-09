@@ -10,7 +10,9 @@ from typing import List, Tuple, Any
 from utils import length_to_mask, maximum_path, log_norm, log_print, get_image
 from monotonic_align import mask_from_lens
 from losses import magphase_loss
+from batch_context import BatchContext
 from train_context import TrainContext
+from loss_log import LossLog
 
 ###############################################
 # Helper Functions
@@ -210,41 +212,62 @@ def log_and_save_checkpoint(
     print(f"Saving checkpoint to {save_path}")
 
 
-def train_acoustic(train: TrainContext, state: BatchContext, inputs):
+def prepare_models(training_set, eval_set, train):
+    result = {}
+    for key in train.model.keys():
+        if key in training_set or key in eval_set:
+            result[key] = train.model[key]
+            result[key].to(train.config.training.device)
+        else:
+            train.model[key].to("cpu")
+        if key in training_set:
+            result[key].train()
+        elif key in eval_set:
+            result[key].eval()
+    return Munch(**result)
+
+
+def step_models(training_set, train):
+    train.optimizer.step(training_set.keys())
+
+
+def train_acoustic(train: TrainContext, inputs):
     texts, text_lengths, mels, mel_lengths, audio_gt = prepare_batch(
         inputs,
         train.config.training.device,
         ["text", "input_lengths", "mels", "mel_input_length", "waves"],
     )
-    training_set = [
+    training_set = {
         "text_encoder",
         "text_aligner",
         "pitch_extractor",
         "style_encoder",
         "decoder",
-    ]
-    prepare_models(training_set)
-    text_encoding = state.text_encoding(texts, text_lengths)
-    duration = state.acoustic_duration(
-        mels,
-        mel_length,
-        texts,
-        text_lengths,
-        apply_attention_mask=True,
-        use_random_choice=True,
-    )
-    pitch = state.acoustic_pitch(mels)
-    energy = state.acoustic_energy(mels)
-    style_embedding = state.acoustic_style_embedding(mels)
-    decoding = state.decoding(
-        text_encoding, duration, pitch, energy, style_embedding, audio_gt
-    )
-    for audio_out, mag, phase, audio_gt_slice in decoding:
-        loss_log = loss_acoustic(
-            audio_out, mag, phase, audio_gt_slice, train=train, state=state
+    }
+    eval_set = {}
+    model = prepare_models(training_set, eval_set, train)
+    state = BatchContext(train, model, texts, text_lengths)
+    with train.accelerator.autocast():
+        text_encoding = state.text_encoding(texts, text_lengths)
+        duration = state.acoustic_duration(
+            mels,
+            mel_length,
+            texts,
+            text_lengths,
+            apply_attention_mask=True,
+            use_random_choice=True,
         )
-        train.accelerator.backwards(loss_log.latest)
-    step_models(training_set)
+        pitch = state.acoustic_pitch(mels)
+        energy = state.acoustic_energy(mels)
+        style_embedding = state.acoustic_style_embedding(mels)
+        decoding = state.decoding(
+            text_encoding, duration, pitch, energy, style_embedding, audio_gt
+        )
+        train.optimizer.zero_grad()
+        for audio_out, mag, phase, audio_gt_slice in decoding:
+            loss_log = loss_acoustic(audio_out, mag, phase, audio_gt_slice, state=state)
+            train.accelerator.backwards(loss_log.latest)
+    step_models(training_set, train)
     log_training(loss_log, train)
 
 
