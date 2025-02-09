@@ -6,6 +6,7 @@ training:
   save_epoch_interval: 1
   device: "cuda"
   mixed_precision: "bf16" # "bf16", "fp16", or "no" for no mixed precision
+  probe_batch_max: 35
 
 training_plan:
   first: 10
@@ -41,24 +42,24 @@ model:
   style_dim: 128 # style vector size
 
 text_aligner:
-   hidden_dim: 256
-   token_embedding_dim: 512
+  hidden_dim: 256
+  token_embedding_dim: 512
 
 pitch_extractor:
-    num_class: 1
-    seq_len: 192
-    leaky_relu_slope: 0.01
+  num_class: 1
+  seq_len: 192
+  leaky_relu_slope: 0.01
 
 plbert:
-    hidden_size: 768
-    num_attention_heads: 12
-    intermediate_size: 2048
-    max_position_embeddings: 512
-    num_hidden_layers: 12
-    dropout: 0.1
+  hidden_size: 768
+  num_attention_heads: 12
+  intermediate_size: 2048
+  max_position_embeddings: 512
+  num_hidden_layers: 12
+  dropout: 0.1
 
 # The decoder/vocoder converts mel spectograms + style to pcm
-  # config for decoder
+# config for decoder
 decoder:
   type: 'vocos'
   hidden_dim: 512
@@ -76,7 +77,7 @@ text_encoder:
 # The style encoder (and prosody encoder) generates
 # a style embedding from audio
 embedding_encoder:
-  dim_in: 64 
+  dim_in: 64
   hidden_dim: 512
   skip_downsamples: true
 
@@ -85,7 +86,7 @@ prosody_predictor:
   n_layer: 3
   max_dur: 50 # maximum duration of a single phoneme
   dropout: 0.2
-      
+
 # speech language model config
 slm:
   model: 'microsoft/wavlm-base-plus'
@@ -93,7 +94,7 @@ slm:
   hidden: 768 # hidden size of SLM
   nlayers: 13 # number of layers of SLM
   initial_channel: 64 # initial channels of SLM discriminator head
-  
+
 # style diffusion model config
 diffusion:
   embedding_mask_proba: 0.1
@@ -108,7 +109,7 @@ diffusion:
   dist:
     sigma_data: 0.2 # placeholder for estimate_sigma_data set to false
     estimate_sigma_data: true # estimate sigma_data from the current batch if set to true
-    mean: -3.0
+    mean: -3
     std: 1.0
 
 loss_weight:
@@ -123,12 +124,12 @@ loss_weight:
   duration_ce: 20 # duration predictor probability output CE loss (2nd stage)
   style: 1 # style reconstruction loss (2nd stage)
   diffusion: 1 # score matching loss (2nd stage)
- 
+
 optimizer:
   lr: 0.0001 # general learning rate
   bert_lr: 0.00001 # learning rate for PLBERT
   ft_lr: 0.00001 # learning rate for acoustic modules
-  
+
 slmadv_params:
   min_len: 400 # minimum length of samples
   max_len: 500 # maximum length of samples
@@ -137,4 +138,3 @@ slmadv_params:
   thresh: 5 # gradient norm above which the gradient is scaled
   scale: 0.01 # gradient scaling factor for predictors from SLM discriminators
   sig: 1.5 # sigma for differentiable duration modeling
-  
