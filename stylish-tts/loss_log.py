@@ -59,3 +59,15 @@ class LossLog:
         for key, value in self.single.items():
             total_weight += self.update_loss(key, value, 1)
         self.total_loss = self.total_loss / weight_total
+
+    def add_loss(self, key, value, incremental=False):
+        if incremental:
+            if key not in self.incremental:
+                self.incremental[key] = 0
+            self.incremental[key] += value
+            self._add_loss(self.incremental)
+        else:
+            self.single[key] = value
+
+    def increment_loss_count(self):
+        self.count += 1
