@@ -210,6 +210,44 @@ def log_and_save_checkpoint(
     print(f"Saving checkpoint to {save_path}")
 
 
+def train_acoustic(train: TrainContext, state: BatchContext, inputs):
+    texts, text_lengths, mels, mel_lengths, audio_gt = prepare_batch(
+        inputs,
+        train.config.training.device,
+        ["text", "input_lengths", "mels", "mel_input_length", "waves"],
+    )
+    training_set = [
+        "text_encoder",
+        "text_aligner",
+        "pitch_extractor",
+        "style_encoder",
+        "decoder",
+    ]
+    prepare_models(training_set)
+    text_encoding = state.text_encoding(texts, text_lengths)
+    duration = state.acoustic_duration(
+        mels,
+        mel_length,
+        texts,
+        text_lengths,
+        apply_attention_mask=True,
+        use_random_choice=True,
+    )
+    pitch = state.acoustic_pitch(mels)
+    energy = state.acoustic_energy(mels)
+    style_embedding = state.acoustic_style_embedding(mels)
+    decoding = state.decoding(
+        text_encoding, duration, pitch, energy, style_embedding, audio_gt
+    )
+    for audio_out, mag, phase, audio_gt_slice in decoding:
+        loss_log = loss_acoustic(
+            audio_out, mag, phase, audio_gt_slice, train=train, state=state
+        )
+        train.accelerator.backwards(loss_log.latest)
+    step_models(training_set)
+    log_training(loss_log, train)
+
+
 ###############################################
 # train_first
 ###############################################
