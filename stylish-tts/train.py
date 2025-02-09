@@ -49,13 +49,12 @@ from stages import train_first, validate_first, train_second, validate_second
 
 @click.command()
 @click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
-@click.option("--probe_batch", default=None, type=int)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
 @click.option(
     "--stage", default="first_tma", type=str
 )  # "first", "first_tma", "second", "second_style", "second_joint"
 @click.option("--pretrained_model", default="", type=str)
-def main(config_path, probe_batch, early_joint, stage, pretrained_model):
+def main(config_path, early_joint, stage, pretrained_model):
     train = TrainContext()
     np.random.seed(1)
     random.seed(1)
@@ -153,7 +152,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
     train.batch_manager = BatchManager(
         train.config.dataset.train_data,
         train.config.training.out_dir,
-        probe_batch=probe_batch,
+        probe_batch_max=train.config.training.probe_batch_max,
         root_path=train.config.dataset.wav_path,
         OOD_data=train.config.dataset.OOD_data,
         min_length=train.config.dataset.min_length,
@@ -162,6 +161,7 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         log_print=log_print_function,
         multispeaker=train.config.model.multispeaker,
         text_cleaner=text_cleaner,
+        stage=stage,
     )
 
     # build model
@@ -333,11 +333,11 @@ def main(config_path, probe_batch, early_joint, stage, pretrained_model):
         sig=train.config.slmadv_params.sig,
     )
 
-    train_val_loop(train, probe_batch)
+    train_val_loop(train)
     train.accelerator.end_training()
 
 
-def train_val_loop(train: TrainContext, probe_batch: int):
+def train_val_loop(train: TrainContext):
     if train.manifest.stage in {"first", "first_tma"}:
         train.train_batch = train_first
         train.validate = validate_first
@@ -357,9 +357,9 @@ def train_val_loop(train: TrainContext, probe_batch: int):
             train.start_ds = True
 
         _ = [train.model[key].train() for key in train.model]
-        train.batch_manager.epoch_loop(train=train)
-        if probe_batch is not None:
-            break
+        probe_loop = train.batch_manager.epoch_loop(train=train)
+        if probe_loop:
+            continue
         _ = [train.model[key].eval() for key in train.model]
         train.validate(1, True, train)
         train.manifest.current_epoch += 1

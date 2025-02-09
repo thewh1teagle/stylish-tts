@@ -20,7 +20,6 @@ from huggingface_hub import hf_hub_download
 
 import logging
 import utils
-from text_utils import TextCleaner
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -437,7 +436,7 @@ class BatchManager:
         self,
         train_path,
         log_dir,
-        probe_batch=None,
+        probe_batch_max=None,
         root_path="",
         OOD_data=[],
         min_length=50,
@@ -446,20 +445,18 @@ class BatchManager:
         log_print=None,
         multispeaker=False,
         text_cleaner=None,
+        stage="",
     ):
         self.train_path = train_path
-        self.probe_batch = probe_batch
+        self.probe_batch_max = probe_batch_max
         self.log_dir = log_dir
         self.log_print = log_print
         self.device = device
         self.multispeaker = multispeaker
-
+        self.stage = stage
         self.batch_dict = {}
-        if self.probe_batch is None:
-            batch_file = osp.join(self.log_dir, "batch_sizes.json")
-            if osp.isfile(batch_file):
-                with open(batch_file, "r") as batch_input:
-                    self.batch_dict = json.load(batch_input)
+        self.load_batch_dict()
+
         train_list = utils.get_data_path_list(self.train_path)
         if len(train_list) == 0:
             print("Could not open train_list", self.train_path)
@@ -501,16 +498,25 @@ class BatchManager:
     def set_batch_size(self, i, batch_size):
         self.batch_dict[str(i)] = batch_size
 
+    def load_batch_dict(self):
+        batch_file = osp.join(self.log_dir, f"{self.stage}_batch_sizes.json")
+        if osp.isfile(batch_file):
+            with open(batch_file, "r") as batch_input:
+                self.batch_dict = json.load(batch_input)
+
     def save_batch_dict(self):
-        batch_file = osp.join(self.log_dir, "batch_sizes.json")
+        batch_file = osp.join(self.log_dir, f"{self.stage}_batch_sizes.json")
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, train, debug=False):
-        if self.probe_batch is not None:
+    def epoch_loop(self, train, debug=False) -> bool:
+        if not self.batch_dict:
             self.probe_loop(train)
+            # return true here so we know we probed instead of trained
+            return True
         else:
             self.train_loop(train=train, debug=debug)
+            return False
 
     def probe_loop(self, train):
         if self.process_count > 1:
@@ -519,7 +525,7 @@ class BatchManager:
             )
 
         self.batch_dict = {}
-        batch_size = self.probe_batch
+        batch_size = self.probe_batch_max
         time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
         for key in time_keys:

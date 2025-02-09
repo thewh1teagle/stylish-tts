@@ -21,6 +21,9 @@ class TrainingConfig(BaseModel):
     )
     device: str = Field(..., description="Computational device (e.g., 'cuda').")
     mixed_precision: str = Field(..., description="accelerator use bf16 or fp16 or no")
+    probe_batch_max: int = Field(
+        ..., description="Maximum batch size to attempt during bin probing."
+    )
 
 
 class TrainingPlanConfig(BaseModel):
