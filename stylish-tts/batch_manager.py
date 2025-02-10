@@ -1,4 +1,4 @@
-import json
+import gc, json
 import os.path as osp
 import torch
 
