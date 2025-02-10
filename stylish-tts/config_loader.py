@@ -363,6 +363,7 @@ class LossWeightConfig(BaseModel):
     diffusion: float = Field(
         ..., description="Weight for score matching (diffusion) loss."
     )
+    magphase: float = Field(..., description="Weight for magnitude/phase loss.")
 
 
 class OptimizerConfig(BaseModel):

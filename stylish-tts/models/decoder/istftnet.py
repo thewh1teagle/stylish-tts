@@ -521,7 +521,7 @@ class Generator(torch.nn.Module):
         x = self.conv_post(x)
         spec = torch.exp(x[:, : self.post_n_fft // 2 + 1, :])
         phase = torch.sin(x[:, self.post_n_fft // 2 + 1 :, :])
-        return self.stft.inverse(spec, phase)
+        return self.stft.inverse(spec, phase), spec, phase
 
     def fw_phase(self, x, s):
         for i in range(self.num_upsamples):
@@ -716,5 +716,5 @@ class Decoder(nn.Module):
             if block.upsample_type != "none":
                 res = False
 
-        x = self.generator(x, s, F0_curve)
-        return x, None, None
+        x, mag, phase = self.generator(x, s, F0_curve)
+        return x, mag, phase
