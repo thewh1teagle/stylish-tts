@@ -376,6 +376,7 @@ def train_val_loop(train: TrainContext):
         for _, batch in enumerate(train.batch_manager.loader):
             train_val_iterate(batch, train)
         train.manifest.current_epoch += 1
+        train.manifest.current_step = 0
         # TODO: change stages based on current epoch?
         train.manifest.training_log.append(
             f"Completed 1 epoch of {train.manifest.stage} training"

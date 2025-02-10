@@ -18,8 +18,8 @@ class LossLog:
         if self.total_loss is None:
             self.calculate_metrics()
         self.logger.info(
-            f"Epoch [{manifest.current_epoch}/{manifest.max_epoch}], Step [{manifest.current_step}/{manifest.steps_per_epoch}], loss: {self.total_loss}, "
-            + ", ".join(f"{k}: {v:.5f}" for k, v in self.metrics.items())
+            f"Epoch [{manifest.current_epoch}/{manifest.max_epoch}], Step [{manifest.current_step}/{manifest.steps_per_epoch}], loss: {self.total_loss:.3f}, "
+            + ", ".join(f"{k}: {v:.3f}" for k, v in self.metrics.items())
         )
         self.writer.add_scalar(
             "train/loss", self.total_loss, manifest.current_total_step

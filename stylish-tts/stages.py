@@ -783,9 +783,13 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
             train.logger,
         )
         log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
-        train.writer.add_scalar("eval/mel_loss", avg_loss, train.manifest.current_epoch)
+        train.writer.add_scalar(
+            "eval/mel_loss", avg_loss, train.manifest.current_total_step
+        )
         attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
-        train.writer.add_figure("eval/attn", attn_image, train.manifest.current_epoch)
+        train.writer.add_figure(
+            "eval/attn", attn_image, train.manifest.current_total_step
+        )
 
         with torch.no_grad():
             for bib in range(min(len(asr), 6)):
@@ -799,16 +803,15 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                 train.writer.add_audio(
                     f"eval/y{bib}",
                     y_rec.cpu().numpy().squeeze(),
-                    train.manifest.current_epoch,
+                    train.manifest.current_total_step,
                     sample_rate=train.config.preprocess.sample_rate,
                 )
-                if train.manifest.current_epoch == 1:
-                    train.writer.add_audio(
-                        f"gt/y{bib}",
-                        waves[bib].squeeze(),
-                        train.manifest.current_epoch,
-                        sample_rate=train.config.preprocess.sample_rate,
-                    )
+                train.writer.add_audio(
+                    f"gt/y{bib}",
+                    waves[bib].squeeze(),
+                    train.manifest.current_total_step,
+                    sample_rate=train.config.preprocess.sample_rate,
+                )
 
         if (
             train.manifest.current_epoch % train.config.training.save_epoch_interval
