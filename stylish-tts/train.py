@@ -17,7 +17,8 @@ import numpy as np
 #  warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
 
-from meldataset import build_dataloader, BatchManager, FilePathDataset
+from meldataset import build_dataloader, FilePathDataset
+from batch_manager import BatchManager
 
 from models.models import load_checkpoint, build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss

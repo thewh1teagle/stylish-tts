@@ -1,5 +1,5 @@
 from config_loader import Config
-from meldataset import BatchManager
+from batch_manager import BatchManager
 
 
 class Manifest:
