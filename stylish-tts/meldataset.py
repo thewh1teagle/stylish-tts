@@ -542,8 +542,6 @@ class BatchManager:
                             "Attempting %d/%d @ %d"
                             % (frame_count, max_frame_size, batch_size)
                         )
-                        # TODO: this is the epochs itteration not total itterations maybe we should change the name
-                        train.manifest.iters = 0
                         loader = build_dataloader(
                             self.dataset,
                             self.time_bins,

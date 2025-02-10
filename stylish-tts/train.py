@@ -97,7 +97,7 @@ def main(config_path, early_joint, stage, pretrained_model):
     )
     train.logger.addHandler(file_handler)
 
-    train.manifest.epochs = sum(
+    train.manifest.max_epoch = sum(
         [
             train.config.training_plan.first,
             train.config.training_plan.first_tma,
@@ -183,12 +183,12 @@ def main(config_path, early_joint, stage, pretrained_model):
 
     # TODO: I think we want to start with epoch 0 or fix the tensorboard logging because it only writes gt sample when epoch 0
     train.manifest.current_epoch = 1
-    train.manifest.iters = 0
+    train.manifest.current_global_step = 0
 
     scheduler_params = {
         "max_lr": train.config.optimizer.lr,
         "pct_start": float(0),
-        "epochs": train.manifest.epochs,
+        "epochs": train.manifest.max_epoch,
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
     scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
@@ -213,7 +213,7 @@ def main(config_path, early_joint, stage, pretrained_model):
             train.model,
             train.optimizer,
             train.manifest.current_epoch,
-            train.manifest.iters,
+            train.manifest.current_global_step,
         ) = load_checkpoint(
             train.model,
             train.optimizer,
@@ -252,7 +252,7 @@ def main(config_path, early_joint, stage, pretrained_model):
             train.model,
             train.optimizer,
             train.manifest.current_epoch,
-            train.manifest.iters,
+            train.manifest.current_global_step,
         ) = load_checkpoint(
             train.model, train.optimizer, pretrained_model, ignore_modules=[]
         )
@@ -357,7 +357,7 @@ def train_val_loop(train: TrainContext):
         exit(
             "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint'"
         )
-    while train.manifest.current_epoch <= train.manifest.epochs:
+    while train.manifest.current_epoch <= train.manifest.max_epoch:
         train.running_loss = 0
         train.start_time = time.time()
 

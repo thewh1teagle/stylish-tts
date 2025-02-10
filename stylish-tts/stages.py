@@ -198,7 +198,7 @@ def log_and_save_checkpoint(
     state = {
         "net": {key: train.model[key].state_dict() for key in train.model},
         "optimizer": train.optimizer.state_dict(),
-        "iters": train.manifest.iters,
+        "iters": train.manifest.current_global_step,
         "val_loss": train.best_loss,
         "epoch": train.manifest.current_epoch,
     }
@@ -427,7 +427,7 @@ def train_first(
 
     if train.manifest.stage == "first_tma":
         optimizer_step(train, ["text_aligner", "pitch_extractor"])
-    train.manifest.iters += 1
+    train.manifest.current_global_step += 1
 
     # --- Logging ---
     # TODO: maybe we should only print what we need based on the stage
@@ -445,11 +445,13 @@ def train_first(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
-                train.writer.add_scalar(f"train/{key}", value, train.manifest.iters)
+                train.writer.add_scalar(
+                    f"train/{key}", value, train.manifest.current_global_step
+                )
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
@@ -681,7 +683,7 @@ def train_second(
     else:
         d_loss_slm, loss_gen_lm = 0, 0
 
-    train.manifest.iters += 1
+    train.manifest.current_global_step += 1
     if train.accelerator.is_main_process:
         if (i + 1) % train.config.training.log_interval == 0:
             metrics = {
@@ -700,11 +702,13 @@ def train_second(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.epochs}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
-                train.writer.add_scalar(f"train/{key}", value, train.manifest.iters)
+                train.writer.add_scalar(
+                    f"train/{key}", value, train.manifest.current_global_step
+                )
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
@@ -938,13 +942,13 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
             train.writer.add_audio(
                 f"eval/y{i}",
                 samples[i],
-                train.manifest.iters,
+                train.manifest.current_global_step,
                 sample_rate=train.config.preprocess.sample_rate,
             )
             train.writer.add_audio(
                 f"gt/y{i}",
                 samples_gt[i],
-                train.manifest.iters,
+                train.manifest.current_global_step,
                 sample_rate=train.config.preprocess.sample_rate,
             )
         if (

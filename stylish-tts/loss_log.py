@@ -21,7 +21,9 @@ class LossLog:
             f"Epoch [{manifest.current_epoch}/{manifest.epochs}], Step [TODO:STEPCOUNT], loss: {self.total_loss}, "
             + ", ".join(f"{k}: {v:.5f}" for k, v in self.metrics.items())
         )
-        self.writer.add_scalar("train/loss", self.total_loss, manifest.iters)
+        self.writer.add_scalar(
+            "train/loss", self.total_loss, manifest.current_global_step
+        )
         for key, value in self.metrics.items():
             self.writer.add_scalar(f"train/{key}", value, manifest.iters)
 
