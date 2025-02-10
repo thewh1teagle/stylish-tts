@@ -131,8 +131,8 @@ class BatchContext:
                 audio_gt_slice = audio_gt[
                     :, mel_start * 300 * 2 : mel_end * 300 * 2
                 ].detach()
-                audio_out, mag, phase = train.model.decoder(
-                    text_slice @ dur_slice, pitch_slice, energy_slice, style
+                audio_out, mag, phase = self.train.model.decoder(
+                    text_slice @ duration_slice, pitch_slice, energy_slice, style
                 )
                 yield (audio_out, mag, phase, audio_gt_slice)
                 text_start += text_hop
