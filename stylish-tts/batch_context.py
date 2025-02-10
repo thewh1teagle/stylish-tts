@@ -4,6 +4,7 @@ import torch
 
 from monotonic_align import mask_from_lens
 from train_context import TrainContext
+from config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 
 
@@ -15,12 +16,14 @@ class BatchContext:
         texts: torch.Tensor,
         text_lengths: torch.Tensor,
     ):
-        self.train = train
-        self.config = train.config
+        self.train: TrainContext = train
+        self.config: Config = train.config
         # This is a subset containing only those models used this batch
         self.model = model
 
-        self.text_mask = length_to_mask(text_lengths).to(self.config.training.device)
+        self.text_mask: torch.Tensor = length_to_mask(text_lengths).to(
+            self.config.training.device
+        )
         self.duration_results = None
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):

@@ -457,7 +457,7 @@ def train_first(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
@@ -708,7 +708,7 @@ def train_second(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
