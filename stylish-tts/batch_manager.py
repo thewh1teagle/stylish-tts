@@ -1,4 +1,4 @@
-import gc, json
+import gc, json, traceback
 import os.path as osp
 import torch
 
@@ -145,6 +145,7 @@ class BatchManager:
                             batch_size -= 1
                     else:
                         print("UNKNOWN EXCEPTION")
+                        print("".join(traceback.format_exception(e)))
                         raise e
         self.save_batch_dict()
 
@@ -205,4 +206,5 @@ class BatchManager:
                     gc.collect()
                     torch.cuda.empty_cache()
                 else:
+                    print("".join(traceback.format_exception(e)))
                     raise e
