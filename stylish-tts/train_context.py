@@ -6,6 +6,7 @@ class Manifest:
     def __init__(self):
         self.current_epoch: int = 0
         self.current_step: int = 0
+        self.steps_per_epoch: int = 0
         self.current_total_step: int = 0
         self.stage: str = "first"
         self.max_epoch: int = 0

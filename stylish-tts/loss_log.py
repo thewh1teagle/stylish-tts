@@ -18,14 +18,14 @@ class LossLog:
         if self.total_loss is None:
             self.calculate_metrics()
         self.logger.info(
-            f"Epoch [{manifest.current_epoch}/{manifest.epochs}], Step [TODO:STEPCOUNT], loss: {self.total_loss}, "
+            f"Epoch [{manifest.current_epoch}/{manifest.max_epoch}], Step [{manifest.current_step}/{manifest.steps_per_epoch}], loss: {self.total_loss}, "
             + ", ".join(f"{k}: {v:.5f}" for k, v in self.metrics.items())
         )
         self.writer.add_scalar(
             "train/loss", self.total_loss, manifest.current_total_step
         )
         for key, value in self.metrics.items():
-            self.writer.add_scalar(f"train/{key}", value, manifest.iters)
+            self.writer.add_scalar(f"train/{key}", value, manifest.current_total_step)
 
     def weight(self, key: str):
         if key in self.weights:

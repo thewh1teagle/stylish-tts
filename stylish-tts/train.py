@@ -78,16 +78,19 @@ def main(config_path, early_joint, stage, pretrained_model):
     if not osp.exists(train.config.training.out_dir):
         os.makedirs(train.config.training.out_dir, exist_ok=True)
     if not osp.exists(train.config.training.out_dir):
-        exit("Failed to create or find log directory.")
+        exit(
+            f"Failed to create or find log directory at {train.config.training.out_dir}."
+        )
     shutil.copy(
         config_path, osp.join(train.config.training.out_dir, osp.basename(config_path))
     )
 
     train.logger = logging.getLogger(__name__)
     train.logger.setLevel(logging.DEBUG)
-    handler = StreamHandler()
-    handler.setLevel(logging.DEBUG)
-    train.logger.addHandler(handler)
+    err_handler = StreamHandler()
+    err_handler.setLevel(logging.DEBUG)
+    err_handler.setFormatter(logging.Formatter("%(asctime)s: %(message)s"))
+    train.logger.addHandler(err_handler)
 
     file_handler = logging.FileHandler(
         osp.join(train.config.training.out_dir, "train.log")
@@ -360,6 +363,7 @@ def train_val_loop(train: TrainContext):
         )
     while train.manifest.current_epoch <= train.manifest.max_epoch:
         train.batch_manager.init_epoch(train)
+        train.manifest.steps_per_epoch = train.batch_manager.get_step_count()
         train.running_loss = 0
         train.start_time = time.time()
 

@@ -214,6 +214,9 @@ def log_and_save_checkpoint(
 
 
 def prepare_models(training_set, eval_set, train):
+    """
+    Prepares models for training or evaluation, attaches them to the cpu memory if unused, returns an object which contains only the models that will be used.
+    """
     result = {}
     for key in train.model:
         if key in training_set or key in eval_set:
@@ -238,6 +241,9 @@ def train_acoustic_adapter(
 
 
 def train_acoustic(train: TrainContext, inputs, split=False):
+    """
+    Train the acoustic models, the text encoder, and the decoder
+    """
     split_count = 8 if split else 1
     texts, text_lengths, mels, mel_lengths, audio_gt = prepare_batch(
         inputs,
@@ -294,6 +300,9 @@ def train_acoustic(train: TrainContext, inputs, split=False):
 def incremental_loss_acoustic(
     audio_out, mag, phase, audio_gt_slice, split_count, state
 ):
+    """
+    Loss for training acoustic models which should be calculated incrementally when the decoding is split up to save memory.
+    """
     log = LossLog(
         state.train.logger, state.train.writer, state.config.loss_weight.dict()
     )
@@ -311,6 +320,9 @@ def incremental_loss_acoustic(
 
 
 def global_loss_acoustic(texts, text_lengths, state):
+    """
+    Loss for training acoustic models which does not use the decoder
+    """
     log = LossLog(
         state.train.logger, state.train.writer, state.config.loss_weight.dict()
     )
