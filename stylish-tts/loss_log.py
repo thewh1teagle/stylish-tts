@@ -22,7 +22,7 @@ class LossLog:
             + ", ".join(f"{k}: {v:.5f}" for k, v in self.metrics.items())
         )
         self.writer.add_scalar(
-            "train/loss", self.total_loss, manifest.current_global_step
+            "train/loss", self.total_loss, manifest.current_total_step
         )
         for key, value in self.metrics.items():
             self.writer.add_scalar(f"train/{key}", value, manifest.iters)

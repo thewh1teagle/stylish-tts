@@ -184,7 +184,7 @@ def main(config_path, early_joint, stage, pretrained_model):
 
     # TODO: I think we want to start with epoch 0 or fix the tensorboard logging because it only writes gt sample when epoch 0
     train.manifest.current_epoch = 1
-    train.manifest.current_global_step = 0
+    train.manifest.current_total_step = 0
 
     scheduler_params = {
         "max_lr": train.config.optimizer.lr,
@@ -214,7 +214,7 @@ def main(config_path, early_joint, stage, pretrained_model):
             train.model,
             train.optimizer,
             train.manifest.current_epoch,
-            train.manifest.current_global_step,
+            train.manifest.current_total_step,
         ) = load_checkpoint(
             train.model,
             train.optimizer,
@@ -253,7 +253,7 @@ def main(config_path, early_joint, stage, pretrained_model):
             train.model,
             train.optimizer,
             train.manifest.current_epoch,
-            train.manifest.current_global_step,
+            train.manifest.current_total_step,
         ) = load_checkpoint(
             train.model, train.optimizer, pretrained_model, ignore_modules=[]
         )
@@ -359,6 +359,7 @@ def train_val_loop(train: TrainContext):
             "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint'"
         )
     while train.manifest.current_epoch <= train.manifest.max_epoch:
+        train.batch_manager.init_epoch(train)
         train.running_loss = 0
         train.start_time = time.time()
 
@@ -366,17 +367,26 @@ def train_val_loop(train: TrainContext):
         if train.manifest.stage == "second_style" or train.early_joint:
             train.start_ds = True
 
+        # TODO: This line should be obsolete soon
         _ = [train.model[key].train() for key in train.model]
-        probe_loop = train.batch_manager.epoch_loop(train=train)
-        if probe_loop:
-            continue
-        _ = [train.model[key].eval() for key in train.model]
-        train.validate(1, True, train)
+        for _, batch in enumerate(train.batch_manager.loader):
+            train_val_iterate(batch, train)
         train.manifest.current_epoch += 1
         # TODO: change stages based on current epoch?
         train.manifest.training_log.append(
             f"Completed 1 epoch of {train.manifest.stage} training"
         )
+
+
+def train_val_iterate(batch, train: TrainContext):
+    train.batch_manager.train_iterate(batch, train)
+    train.manifest.current_total_step += 1
+    train.manifest.current_step += 1
+    num = train.manifest.current_step + 1
+    do_val = num % train.config.training.val_interval == 0
+    do_save = num % train.config.training.save_interval == 0
+    if do_val or do_save:
+        train.validate(current_step=num, save=do_save, train=train)
 
 
 if __name__ == "__main__":

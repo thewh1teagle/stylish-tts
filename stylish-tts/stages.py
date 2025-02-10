@@ -198,7 +198,7 @@ def log_and_save_checkpoint(
     state = {
         "net": {key: train.model[key].state_dict() for key in train.model},
         "optimizer": train.optimizer.state_dict(),
-        "iters": train.manifest.current_global_step,
+        "iters": train.manifest.current_total_step,
         "val_loss": train.best_loss,
         "epoch": train.manifest.current_epoch,
     }
@@ -234,7 +234,7 @@ def train_acoustic_adapter(
     log = train_acoustic(train, batch, split=False)
     if i % 10 == 0:
         log.broadcast(train.manifest)
-    return 0, iters
+    return 0
 
 
 def train_acoustic(train: TrainContext, inputs, split=False):
@@ -360,7 +360,7 @@ def train_first(
         mel_gt.shape[-1] < 80 and not train.config.embedding_encoder.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
-        return running_loss, iters
+        return running_loss
 
     # --- Pitch Extraction ---
     with torch.no_grad():
@@ -427,7 +427,7 @@ def train_first(
 
     if train.manifest.stage == "first_tma":
         optimizer_step(train, ["text_aligner", "pitch_extractor"])
-    train.manifest.current_global_step += 1
+    train.manifest.current_total_step += 1
 
     # --- Logging ---
     # TODO: maybe we should only print what we need based on the stage
@@ -450,18 +450,12 @@ def train_first(
             )
             for key, value in metrics.items():
                 train.writer.add_scalar(
-                    f"train/{key}", value, train.manifest.current_global_step
+                    f"train/{key}", value, train.manifest.current_total_step
                 )
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
-    if (i + 1) % train.config.training.val_interval == 0 or (
-        i + 1
-    ) % train.config.training.save_interval == 0:
-        save = (i + 1) % train.config.training.save_interval == 0
-        train.validate(current_step=i + 1, save=save, train=train)
-
-    return running_loss, iters
+    return running_loss
 
 
 ###############################################
@@ -521,7 +515,7 @@ def train_second(
         )
     except Exception as e:
         print(f"s2s_attn computation failed: {e}")
-        return running_loss, iters
+        return running_loss
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
     if train.config.model.multispeaker and train.manifest.stage == "second_style":
@@ -589,7 +583,7 @@ def train_second(
         mels.shape[-1] < 80 and not train.config.embedding_encoder.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
-        return running_loss, iters
+        return running_loss
 
     with torch.no_grad():
         F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
@@ -665,7 +659,7 @@ def train_second(
         )
         if slm_out is None:
             print("slm_out none")
-            return running_loss, iters
+            return running_loss
 
         d_loss_slm, loss_gen_lm, y_pred = slm_out
         train.optimizer.zero_grad()
@@ -683,7 +677,7 @@ def train_second(
     else:
         d_loss_slm, loss_gen_lm = 0, 0
 
-    train.manifest.current_global_step += 1
+    train.manifest.current_total_step += 1
     if train.accelerator.is_main_process:
         if (i + 1) % train.config.training.log_interval == 0:
             metrics = {
@@ -707,18 +701,12 @@ def train_second(
             )
             for key, value in metrics.items():
                 train.writer.add_scalar(
-                    f"train/{key}", value, train.manifest.current_global_step
+                    f"train/{key}", value, train.manifest.current_total_step
                 )
             running_loss = 0
             print("Time elapsed:", time.time() - train.start_time)
 
-    if (i + 1) % train.config.training.val_interval == 0 or (
-        i + 1
-    ) % train.config.training.save_interval == 0:
-        save = (i + 1) % train.config.training.save_interval == 0
-        train.validate(current_step=i + 1, save=save, train=train)
-
-    return running_loss, iters
+    return running_loss
 
 
 ###############################################
@@ -802,7 +790,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                     train.manifest.current_epoch,
                     sample_rate=train.config.preprocess.sample_rate,
                 )
-                if train.manifest.current_epoch == 0:
+                if train.manifest.current_epoch == 1:
                     train.writer.add_audio(
                         f"gt/y{bib}",
                         waves[bib].squeeze(),
@@ -942,13 +930,13 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
             train.writer.add_audio(
                 f"eval/y{i}",
                 samples[i],
-                train.manifest.current_global_step,
+                train.manifest.current_total_step,
                 sample_rate=train.config.preprocess.sample_rate,
             )
             train.writer.add_audio(
                 f"gt/y{i}",
                 samples_gt[i],
-                train.manifest.current_global_step,
+                train.manifest.current_total_step,
                 sample_rate=train.config.preprocess.sample_rate,
             )
         if (

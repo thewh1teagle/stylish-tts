@@ -83,15 +83,6 @@ class BatchManager:
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def epoch_loop(self, train, debug=False) -> bool:
-        if not self.batch_dict:
-            self.probe_loop(train)
-            # return true here so we know we probed instead of trained
-            return True
-        else:
-            self.train_loop(train=train, debug=debug)
-            return False
-
     def probe_loop(self, train):
         if self.process_count > 1:
             exit(
@@ -130,7 +121,7 @@ class BatchManager:
 
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
-                            _, _ = train.train_batch(
+                            _ = train.train_batch(
                                 i=0, batch=batch, running_loss=0, iters=0, train=train
                             )
                             break
@@ -156,12 +147,13 @@ class BatchManager:
                         raise e
         self.save_batch_dict()
 
-    def train_loop(self, train, debug=False):
-        running_loss = 0
-        iters = 0
-        last_oom = -1
-        max_attempts = 3
-        loader = build_dataloader(
+    def init_epoch(self, train):
+        if not self.batch_dict:
+            self.probe_loop(train)
+        self.running_loss = 0
+        self.last_oom = -1
+        self.last_bin = None
+        self.loader = build_dataloader(
             self.dataset,
             self.time_bins,
             batch_size=self.batch_dict,
@@ -171,39 +163,45 @@ class BatchManager:
             multispeaker=self.multispeaker,
             epoch=train.manifest.current_epoch,
         )
-        self.epoch_step_count = len(loader.batch_sampler)
-        loader = train.accelerator.prepare(loader)
-        for i, batch in enumerate(loader):
-            last_bin = get_time_bin(batch[0].shape[-1])
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    if debug:
-                        batch_size = self.get_batch_size(last_bin)
-                        audio_length = (last_bin * 0.25) + 0.25
-                        self.log_print(
-                            f"train_batch(i={i}, batch={batch_size}, running_loss={running_loss}, iters={iters}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
-                        )
-                    running_loss, iters = train.train_batch(
-                        i, batch, running_loss, iters, train
+        self.epoch_step_count = len(self.loader.batch_sampler)
+        self.loader = train.accelerator.prepare(self.loader)
+
+    def train_iterate(self, batch, train, debug=False):
+        max_attempts = 3
+        self.last_bin = get_time_bin(batch[0].shape[-1])
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if debug:
+                    batch_size = self.get_batch_size(self.last_bin)
+                    audio_length = (self.last_bin * 0.25) + 0.25
+                    self.log_print(
+                        f"train_batch(i={i}, batch={batch_size}, running_loss={self.running_loss}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                     )
-                    break
-                except Exception as e:
-                    batch_size = self.get_batch_size(last_bin)
-                    audio_length = (last_bin * 0.25) + 0.25
-                    if "CUDA out of memory" in str(e):
-                        self.log_print(
-                            f"{attempt * ('*' if attempt < max_attempts else 'X')}\n"
-                            f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
-                        )
-                        self.log_print(e)
-                        train.optimizer.zero_grad()
-                        if last_oom != last_bin:
-                            last_oom = last_bin
-                            if batch_size > 1:
-                                batch_size -= 1
-                            self.set_batch_size(last_bin, batch_size)
-                            self.save_batch_dict()
-                        gc.collect()
-                        torch.cuda.empty_cache()
-                    else:
-                        raise e
+                self.running_loss = train.train_batch(
+                    train.manifest.current_step,
+                    batch,
+                    self.running_loss,
+                    train.manifest.current_total_step,
+                    train,
+                )
+                break
+            except Exception as e:
+                batch_size = self.get_batch_size(self.last_bin)
+                audio_length = (self.last_bin * 0.25) + 0.25
+                if "CUDA out of memory" in str(e):
+                    self.log_print(
+                        f"{attempt * ('*' if attempt < max_attempts else 'X')}\n"
+                        f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                    )
+                    self.log_print(e)
+                    train.optimizer.zero_grad()
+                    if self.last_oom != self.last_bin:
+                        self.last_oom = self.last_bin
+                        if batch_size > 1:
+                            batch_size -= 1
+                        self.set_batch_size(self.last_bin, batch_size)
+                        self.save_batch_dict()
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                else:
+                    raise e
