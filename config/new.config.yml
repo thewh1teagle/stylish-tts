@@ -118,6 +118,8 @@ loss_weight:
   slm: 1 # slm feature matching loss
   mono: 1 # monotonic alignment loss (1st stage, TMA)
   s2s: 1 # sequence-to-sequence loss (1st stage, TMA)
+  # TODO: What should the weight of this be?
+  magphase: 1
   F0: 1 # F0 reconstruction loss (2nd stage)
   norm: 1 # norm reconstruction loss (2nd stage)
   duration: 1 # duration loss (2nd stage)

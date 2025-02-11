@@ -11,6 +11,7 @@ from accelerate import DistributedDataParallelKwargs
 from config_loader import load_config_yaml
 from train_context import TrainContext
 from text_utils import TextCleaner
+from typing import Callable
 
 import numpy as np
 
@@ -387,7 +388,11 @@ def train_val_iterate(batch, train: TrainContext):
     train.batch_manager.train_iterate(batch, train)
     train.manifest.current_total_step += 1
     train.manifest.current_step += 1
-    num = train.manifest.current_total_step + 1
+    train.manifest.total_trained_audio_seconds += (
+        float(len(batch[0][0]) * len(batch[0])) / train.config.preprocess.sample_rate
+    )
+
+    num = train.manifest.current_step + 1
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0
     if do_val or do_save:

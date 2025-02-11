@@ -41,7 +41,7 @@ def get_data_path_list(path):
     return result
 
 
-def length_to_mask(lengths):
+def length_to_mask(lengths) -> torch.Tensor:
     mask = (
         torch.arange(lengths.max())
         .unsqueeze(0)
