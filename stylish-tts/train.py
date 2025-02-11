@@ -392,7 +392,7 @@ def train_val_iterate(batch, train: TrainContext):
         float(len(batch[0][0]) * len(batch[0])) / train.config.preprocess.sample_rate
     )
 
-    num = train.manifest.current_step + 1
+    num = train.manifest.current_total_step + 1
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0
     if do_val or do_save:
