@@ -191,23 +191,19 @@ def optimizer_step(train: TrainContext, keys: List[str]) -> None:
         train.optimizer.step(key)
 
 
-def log_and_save_checkpoint(
+def save_checkpoint(
     train: TrainContext, current_step: int, prefix: str = "epoch_1st"
 ) -> None:
     """
-    Logs metrics and saves a checkpoint.
+    Saves checkpoint using a checkpoint.
     """
     checkpoint_dir = osp.join(
         train.config.training.out_dir,
         f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}",
     )
-    manifest = train.manifest.__dict__
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    with open(osp.join(checkpoint_dir, "manifest.json"), "w") as f:
-        json.dump(manifest, f)
-
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
     train.accelerator.save_state(checkpoint_dir)
+
     print(f"Saving checkpoint to {checkpoint_dir}")
 
 
@@ -819,7 +815,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
             if avg_loss < train.manifest.best_loss:
                 train.manifest.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_1st")
+            save_checkpoint(train, current_step, prefix="epoch_1st")
 
     for key in train.model:
         train.model[key].train()
@@ -950,6 +946,6 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
             if avg_loss < train.manifest.best_loss:
                 train.manifest.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_2nd")
+            save_checkpoint(train, current_step, prefix="epoch_2nd")
     for key in train.model:
         train.model[key].train()

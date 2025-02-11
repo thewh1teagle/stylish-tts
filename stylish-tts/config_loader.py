@@ -454,6 +454,12 @@ class Config(BaseModel):
         ..., description="SLM adversarial training configuration parameters."
     )
 
+    def state_dict(self) -> dict:
+        return self.dict()
+
+    def load_state_dict(self, state: dict) -> None:
+        self.update_obj(state)
+
 
 def load_config_yaml(config_path: str) -> Config:
     """

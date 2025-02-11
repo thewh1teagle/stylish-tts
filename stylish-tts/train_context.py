@@ -23,9 +23,13 @@ class Manifest:
         self.training_log: list = []
         self.running_std: List[float] = []
 
-    def load(self, path: str) -> None:
-        with open(path, "r") as f:
-            self.__dict__ = json.load(f)
+    def state_dict(self) -> dict:
+        return self.__dict__.copy()
+
+    def load_state_dict(self, state: dict) -> None:
+        for key, value in state.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
 
 class TrainContext:

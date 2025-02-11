@@ -62,8 +62,8 @@ from stages import (
     "--stage", default="first_tma", type=str
 )  # "first", "first_tma", "second", "second_style", "second_joint"
 @click.option("--pretrained_model", default="", type=str)
-@click.option("--last_checkpoint", default="", type=str)
-def main(config_path, early_joint, stage, pretrained_model, last_checkpoint):
+@click.option("--checkpoint", default="", type=str)
+def main(config_path, early_joint, stage, pretrained_model, checkpoint):
     train = TrainContext()
     np.random.seed(1)
     random.seed(1)
@@ -72,17 +72,6 @@ def main(config_path, early_joint, stage, pretrained_model, last_checkpoint):
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
         exit(f"Config file not found at {config_path}")
-
-    if last_checkpoint:
-        manifest_path = osp.join(last_checkpoint, "manifest.json")
-        if osp.exists(manifest_path):
-            train.manifest.load(manifest_path)
-        else:
-            exit(f"Last checkpoint file not found at {last_checkpoint}")
-        train.accelerator = Accelerator(...)
-        train.accelerator.load_state(last_checkpoint)
-
-        print(f"Loading last checkpoint at {last_checkpoint} ...")
 
     train.config_path = config_path
     train.early_joint = early_joint
@@ -137,6 +126,9 @@ def main(config_path, early_joint, stage, pretrained_model, last_checkpoint):
 
     if train.accelerator.is_main_process:
         train.writer = SummaryWriter(train.config.training.out_dir + "/tensorboard")
+
+    train.accelerator.register_for_checkpointing(train.config)
+    train.accelerator.register_for_checkpointing(train.manifest)
 
     # Set up data loaders and batch manager
     if not osp.exists(train.config.dataset.train_data):
@@ -218,6 +210,11 @@ def main(config_path, early_joint, stage, pretrained_model, last_checkpoint):
         scheduler_params_dict=scheduler_params_dict,
         lr=train.config.optimizer.lr,
     )
+
+    if checkpoint:
+        train.accelerator.load_state(checkpoint)
+
+        print(f"Loading last checkpoint at {checkpoint} ...")
 
     # load an existing model for first stage
     if (
