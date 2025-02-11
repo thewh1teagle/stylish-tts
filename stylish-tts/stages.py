@@ -815,17 +815,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                     sample_rate=train.config.preprocess.sample_rate,
                 )
 
-        if (
-            train.manifest.current_epoch % train.config.training.save_epoch_interval
-            == 0
-            and save
-            and current_step == -1
-        ):
-            if avg_loss < train.manifest.best_loss:
-                train.manifest.best_loss = avg_loss
-            print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_1st")
-        if save and current_step != -1:
+        if save:
             if avg_loss < train.manifest.best_loss:
                 train.manifest.best_loss = avg_loss
             print("Saving..")
@@ -956,17 +946,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                 train.manifest.current_total_step,
                 sample_rate=train.config.preprocess.sample_rate,
             )
-        if (
-            train.manifest.current_epoch % train.config.training.save_epoch_interval
-            == 0
-            and save
-            and current_step == -1
-        ):
-            if avg_loss < train.manifest.best_loss:
-                train.manifest.best_loss = avg_loss
-            print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_2nd")
-        if save and current_step != -1:
+        if save:
             if avg_loss < train.manifest.best_loss:
                 train.manifest.best_loss = avg_loss
             print("Saving..")
