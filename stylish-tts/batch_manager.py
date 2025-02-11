@@ -126,7 +126,11 @@ class BatchManager:
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _ = train.train_batch(
-                                i=0, batch=batch, running_loss=0, iters=0, train=train
+                                current_epoch_step=0,
+                                batch=batch,
+                                running_loss=0,
+                                iters=0,
+                                train=train,
                             )
                             break
                         self.set_batch_size(key, batch_size)

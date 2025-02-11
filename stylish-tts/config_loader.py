@@ -16,9 +16,6 @@ class TrainingConfig(BaseModel):
         ..., description="Interval (in steps) for saving checkpoints."
     )
     val_interval: int = Field(..., description="Interval (in steps) for validation.")
-    save_epoch_interval: int = Field(
-        ..., description="Interval (in epochs) for saving checkpoints."
-    )
     device: str = Field(..., description="Computational device (e.g., 'cuda').")
     mixed_precision: str = Field(..., description="accelerator use bf16 or fp16 or no")
     probe_batch_max: int = Field(

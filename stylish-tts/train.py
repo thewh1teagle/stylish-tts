@@ -62,7 +62,8 @@ from stages import (
     "--stage", default="first_tma", type=str
 )  # "first", "first_tma", "second", "second_style", "second_joint"
 @click.option("--pretrained_model", default="", type=str)
-def main(config_path, early_joint, stage, pretrained_model):
+@click.option("--last_checkpoint", default="", type=str)
+def main(config_path, early_joint, stage, pretrained_model, last_checkpoint):
     train = TrainContext()
     np.random.seed(1)
     random.seed(1)
@@ -71,6 +72,17 @@ def main(config_path, early_joint, stage, pretrained_model):
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
         exit(f"Config file not found at {config_path}")
+
+    if last_checkpoint:
+        manifest_path = osp.join(last_checkpoint, "manifest.json")
+        if osp.exists(manifest_path):
+            train.manifest.load(manifest_path)
+        else:
+            exit(f"Last checkpoint file not found at {last_checkpoint}")
+        train.accelerator = Accelerator(...)
+        train.accelerator.load_state(last_checkpoint)
+
+        print(f"Loading last checkpoint at {last_checkpoint} ...")
 
     train.config_path = config_path
     train.early_joint = early_joint
@@ -265,13 +277,13 @@ def main(config_path, early_joint, stage, pretrained_model):
     elif stage in ["second", "second_style", "second_joint"]:
         load_defaults(train, train.model)
 
-    train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
+    train.generator_loss = GeneratorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
     )
-    train.dl = DiscriminatorLoss(train.model.mpd, train.model.msd).to(
+    train.discriminator_loss = DiscriminatorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
     )
-    train.wl = WavLMLoss(
+    train.wavlm_loss = WavLMLoss(
         train.config.slm.model,
         train.model.wd,
         train.config.preprocess.sample_rate,
@@ -283,7 +295,7 @@ def main(config_path, early_joint, stage, pretrained_model):
     # train.wl = MyDataParallel(train.wl)
 
     # TODO: How to access model diffusion?
-    train.sampler = DiffusionSampler(
+    train.diffusion_sampler = DiffusionSampler(
         kdiffusion,
         sampler=ADPM2Sampler(),
         sigma_schedule=KarrasSchedule(
@@ -319,7 +331,7 @@ def main(config_path, early_joint, stage, pretrained_model):
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
-    train.best_loss = float("inf")  # best test loss
+    train.manifest.best_loss = float("inf")  # best test loss
 
     torch.cuda.empty_cache()
 
@@ -331,12 +343,12 @@ def main(config_path, early_joint, stage, pretrained_model):
     train.start_ds = False
 
     # TODO: This value is calculated inconsistently based on whether checkpoints are loaded/saved
-    train.running_std = []
+    train.manifest.running_std = []
 
-    train.slmadv = SLMAdversarialLoss(
+    train.slm_adversarial_loss = SLMAdversarialLoss(
         train.model,
-        train.wl,
-        train.sampler,
+        train.wavlm_loss,
+        train.diffusion_sampler,
         train.config.slmadv_params.min_len,
         train.config.slmadv_params.max_len,
         batch_percentage=train.config.slmadv_params.batch_percentage,
