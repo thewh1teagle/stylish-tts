@@ -14,6 +14,7 @@ from text_utils import TextCleaner
 from typing import Callable
 
 import numpy as np
+import safetensors
 
 #  warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
@@ -343,6 +344,14 @@ def main(config_path, early_joint, stage, pretrained_model):
         skip_update=train.config.slmadv_params.iter,
         sig=train.config.slmadv_params.sig,
     )
+
+    # for model in train.model:
+    #    if model not in {"diffusion"}:
+    # train.model.text_encoder.to("cuda")
+    # train.model.text_encoder.lstm.flatten_parameters()
+    # safetensors.torch.save_file(train.model.text_encoder.state_dict(), "tmp.safetensors")
+    # train.accelerator.save_state("tmp")
+    # exit()
 
     train_val_loop(train)
     train.accelerator.end_training()
