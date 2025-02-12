@@ -235,7 +235,7 @@ def train_acoustic_adapter(
     i: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if i > 0 and i % 10 == 0:
+    if i > 0 and i % train.config.training.log_interval == 0:
         log.broadcast(train.manifest)
     return 0
 

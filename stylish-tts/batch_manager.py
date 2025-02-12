@@ -194,11 +194,11 @@ class BatchManager:
                 batch_size = self.get_batch_size(self.last_bin)
                 audio_length = (self.last_bin * 0.25) + 0.25
                 if "CUDA out of memory" in str(e):
-                    self.log_print(
-                        f"{attempt * ('*' if attempt < max_attempts else 'X')}\n"
+                    train.logger.info(
+                        f"{attempt * ('*' if attempt < max_attempts else 'X')} "
                         f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                     )
-                    self.log_print(e)
+                    #self.log_print(e)
                     train.optimizer.zero_grad()
                     if self.last_oom != self.last_bin:
                         self.last_oom = self.last_bin
