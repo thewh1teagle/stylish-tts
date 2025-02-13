@@ -1,42 +1,45 @@
 import gc, json, traceback
 import os.path as osp
 import torch
-
+from typing import Optional, Callable, Dict, Any, List
 from meldataset import FilePathDataset, build_dataloader, get_frame_count, get_time_bin
 import utils
+from accelerate.accelerator import Accelerator
+from text_utils import TextCleaner
+from torch.utils.data import DataLoader
 
 
 class BatchManager:
     def __init__(
         self,
-        train_path,
-        log_dir,
-        probe_batch_max=None,
-        root_path="",
-        OOD_data=[],
-        min_length=50,
-        device="cpu",
-        accelerator=None,
-        log_print=None,
-        multispeaker=False,
-        text_cleaner=None,
-        stage="",
+        train_path: str,
+        log_dir: str,
+        probe_batch_max: int = None,
+        root_path: str = "",
+        OOD_data: str = [],
+        min_length: int = 50,
+        device: str = "cpu",
+        accelerator: Optional["Accelerator"] = None,
+        log_print: Optional[Callable[..., None]] = None,
+        multispeaker: bool = False,
+        text_cleaner: TextCleaner = None,
+        stage: str = "",
     ):
-        self.train_path = train_path
-        self.probe_batch_max = probe_batch_max
-        self.log_dir = log_dir
-        self.log_print = log_print
-        self.device = device
-        self.multispeaker = multispeaker
-        self.stage = stage
-        self.batch_dict = {}
+        self.train_path: str = train_path
+        self.probe_batch_max: int = probe_batch_max
+        self.log_dir: str = log_dir
+        self.log_print: Optional[Callable[..., None]] = log_print
+        self.device: str = device
+        self.multispeaker: bool = multispeaker
+        self.stage: int = stage
+        self.batch_dict: Dict[str, int] = {}
         self.load_batch_dict()
 
         train_list = utils.get_data_path_list(self.train_path)
         if len(train_list) == 0:
             print("Could not open train_list", self.train_path)
             exit()
-        self.dataset = FilePathDataset(
+        self.dataset: FilePathDataset = FilePathDataset(
             train_list,
             root_path,
             OOD_data=OOD_data,
@@ -45,12 +48,12 @@ class BatchManager:
             multispeaker=multispeaker,
             text_cleaner=text_cleaner,
         )
-        self.time_bins = self.dataset.time_bins()
-        self.process_count = 1
+        self.time_bins: Dict[int, List[int]] = self.dataset.time_bins()
+        self.process_count: int = 1
         if accelerator is not None:
             self.process_count = accelerator.num_processes
             accelerator.even_batches = False
-        loader = build_dataloader(
+        loader: DataLoader = build_dataloader(
             self.dataset,
             self.time_bins,
             batch_size=self.batch_dict,
@@ -59,32 +62,32 @@ class BatchManager:
             drop_last=True,
             multispeaker=multispeaker,
         )
-        self.epoch_step_count = len(loader.batch_sampler)
+        self.epoch_step_count: int = len(loader.batch_sampler)
 
-    def get_step_count(self):
+    def get_step_count(self) -> int:
         return self.epoch_step_count // self.process_count
 
-    def get_batch_size(self, i):
+    def get_batch_size(self, i) -> int:
         batch_size = 1
         if str(i) in self.batch_dict:
             batch_size = self.batch_dict[str(i)]
         return batch_size
 
-    def set_batch_size(self, i, batch_size):
+    def set_batch_size(self, i, batch_size) -> None:
         self.batch_dict[str(i)] = batch_size
 
-    def load_batch_dict(self):
+    def load_batch_dict(self) -> None:
         batch_file = osp.join(self.log_dir, f"{self.stage}_batch_sizes.json")
         if osp.isfile(batch_file):
             with open(batch_file, "r") as batch_input:
                 self.batch_dict = json.load(batch_input)
 
-    def save_batch_dict(self):
+    def save_batch_dict(self) -> None:
         batch_file = osp.join(self.log_dir, f"{self.stage}_batch_sizes.json")
         with open(batch_file, "w") as o:
             json.dump(self.batch_dict, o)
 
-    def probe_loop(self, train):
+    def probe_loop(self, train) -> None:
         if self.process_count > 1:
             exit(
                 "--probe_batch must be run with accelerator num_processes set to 1. After running it, distribute the batch_sizes.json files to the log directories and run in DDP"
@@ -149,7 +152,7 @@ class BatchManager:
                         raise e
         self.save_batch_dict()
 
-    def init_epoch(self, train):
+    def init_epoch(self, train) -> None:
         if not self.batch_dict:
             self.probe_loop(train)
         self.running_loss = 0
@@ -168,7 +171,7 @@ class BatchManager:
         self.epoch_step_count = len(self.loader.batch_sampler)
         self.loader = train.accelerator.prepare(self.loader)
 
-    def train_iterate(self, batch, train, debug=False):
+    def train_iterate(self, batch, train, debug=False) -> None:
         max_attempts = 3
         self.last_bin = get_time_bin(batch[0].shape[-1])
         for attempt in range(1, max_attempts + 1):
@@ -177,7 +180,7 @@ class BatchManager:
                     batch_size = self.get_batch_size(self.last_bin)
                     audio_length = (self.last_bin * 0.25) + 0.25
                     self.log_print(
-                        f"train_batch(i={i}, batch={batch_size}, running_loss={self.running_loss}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
+                        f"train_batch(i={train.manifest.current_step}, batch={batch_size}, running_loss={self.running_loss}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                     )
                 self.running_loss = train.train_batch(
                     train.manifest.current_step,
@@ -191,11 +194,11 @@ class BatchManager:
                 batch_size = self.get_batch_size(self.last_bin)
                 audio_length = (self.last_bin * 0.25) + 0.25
                 if "CUDA out of memory" in str(e):
-                    self.log_print(
-                        f"{attempt * ('*' if attempt < max_attempts else 'X')}\n"
+                    train.logger.info(
+                        f"{attempt * ('*' if attempt < max_attempts else 'X')} "
                         f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                     )
-                    self.log_print(e)
+                    #self.log_print(e)
                     train.optimizer.zero_grad()
                     if self.last_oom != self.last_bin:
                         self.last_oom = self.last_bin

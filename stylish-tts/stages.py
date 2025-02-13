@@ -235,7 +235,7 @@ def train_acoustic_adapter(
     i: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if i > 0 and i % 10 == 0:
+    if i > 0 and i % train.config.training.log_interval == 0:
         log.broadcast(train.manifest)
     return 0
 
@@ -344,7 +344,7 @@ def global_loss_acoustic(texts, text_lengths, state):
 
 
 def train_first(
-    i: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     """
     Training function for the first stage.
@@ -444,7 +444,7 @@ def train_first(
     # --- Logging ---
     # TODO: maybe we should only print what we need based on the stage
     if train.accelerator.is_main_process:
-        if (i + 1) % train.config.training.log_interval == 0:
+        if (current_epoch_step + 1) % train.config.training.log_interval == 0:
             metrics = {
                 "mel_loss": running_loss / train.config.training.log_interval,
                 "gen_loss": (
@@ -457,7 +457,7 @@ def train_first(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
@@ -708,7 +708,7 @@ def train_second(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
