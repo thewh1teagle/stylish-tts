@@ -455,10 +455,10 @@ class Config(BaseModel):
     )
 
     def state_dict(self) -> dict:
-        return self.dict()
+        return self.model_dump()
 
     def load_state_dict(self, state: dict) -> None:
-        self.update_obj(state)
+        self = self.model_copy(update=state)
 
 
 def load_config_yaml(config_path: str) -> Config:

@@ -662,7 +662,7 @@ class ProsodyPredictor(nn.Module):
             x_pad[:, : x.shape[1], :] = x
             x = x_pad.to(x.device)
 
-            duration = self.duration_proj(
+            duration = self.duration_projection(
                 nn.functional.dropout(x, 0.5, training=self.training)
             )
 
