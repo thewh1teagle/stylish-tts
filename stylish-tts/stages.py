@@ -38,6 +38,7 @@ def prepare_batch(
             "mels",
             "mel_input_length",
             "ref_mels",
+            "paths",
         ]
     index = {
         "waves": 0,
@@ -48,6 +49,7 @@ def prepare_batch(
         "mels": 5,
         "mel_input_length": 6,
         "ref_mels": 7,
+        "paths": 8,
     }
     prepared = tuple()
     for key in keys_to_transfer:
@@ -55,7 +57,11 @@ def prepare_batch(
             raise ValueError(
                 f"Key {key} not found in batch; valid keys: {list(index.keys())}"
             )
-        prepared += (batch[index[key]].to(device),)
+        if key in {"paths"}:
+            prepared += (batch[index[key]],)
+        else:
+            prepared += (batch[index[key]].to(device),)
+
     return prepared
 
 
@@ -202,7 +208,7 @@ def save_checkpoint(
         f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}",
     )
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
-    train.accelerator.save_state(checkpoint_dir)
+    train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
 
     print(f"Saving checkpoint to {checkpoint_dir}")
 

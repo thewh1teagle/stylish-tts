@@ -592,7 +592,7 @@ class ProsodyPredictor(nn.Module):
         self.lstm = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
         )
-        self.duration_proj = LinearNorm(d_hid, max_dur)
+        self.duration_projection = LinearNorm(d_hid, max_dur)
 
         self.shared = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True

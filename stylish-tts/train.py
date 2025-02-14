@@ -177,6 +177,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         multispeaker=train.config.model.multispeaker,
         text_cleaner=text_cleaner,
         stage=stage,
+        epoch=train.manifest.current_epoch,
     )
 
     # build model
@@ -213,7 +214,11 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
 
     if checkpoint:
         train.accelerator.load_state(checkpoint)
-
+        # if we are not loading on a epoch boundary we need to resume the loader and skip to the correct step
+        if train.manifest.current_step != 0:
+            train.batch_manager.resume_loader = train.accelerator.skip_first_batches(
+                train.batch_manager.loader, train.manifest.current_step
+            )
         print(f"Loading last checkpoint at {checkpoint} ...")
 
     # load an existing model for first stage
@@ -400,8 +405,9 @@ def train_val_iterate(batch, train: TrainContext):
     train.manifest.total_trained_audio_seconds += (
         float(len(batch[0][0]) * len(batch[0])) / train.config.preprocess.sample_rate
     )
-
-    num = train.manifest.current_step + 1
+    # filenames = batch[8]
+    # print(f"Step {train.manifest.current_step} Processing: {filenames}")
+    num = train.manifest.current_step
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0
     if do_val or do_save:
