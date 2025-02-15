@@ -1,6 +1,8 @@
 import random
 
 import torch
+import torchaudio
+import torchcrepe
 
 from monotonic_align import mask_from_lens
 from train_context import TrainContext
@@ -25,6 +27,9 @@ class BatchContext:
             self.config.training.device
         )
         self.duration_results = None
+        self.resample = torchaudio.transforms.Resample(
+            self.config.preprocess.sample_rate, 16000
+        ).to(self.config.training.device)
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
         return self.model.text_encoder(texts, text_lengths, self.text_mask)
@@ -101,9 +106,25 @@ class BatchContext:
         self.s2s_pred = s2s_pred
         return duration
 
-    def acoustic_pitch(self, mels: torch.Tensor):
+    # def acoustic_pitch(self, mels: torch.Tensor):
+    def acoustic_pitch(self, audio_gt: torch.Tensor):
         with torch.no_grad():
-            pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
+            # pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
+            c = self.config
+            fmin = 50
+            fmax = 550
+            model = "full"
+            audio = self.resample(audio_gt).to(c.training.device)
+            pitch = torchcrepe.predict(
+                audio,
+                16000,
+                200,  # c.preprocess.hop_length,
+                fmin,
+                fmax,
+                model,
+                batch_size=2048,
+                device=c.training.device,
+            )[:, :-1]
         return pitch
 
     def acoustic_energy(self, mels: torch.Tensor):

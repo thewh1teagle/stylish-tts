@@ -39,6 +39,7 @@ def prepare_batch(
             "mel_input_length",
             "ref_mels",
             "paths",
+            "pitches",
         ]
     index = {
         "waves": 0,
@@ -50,6 +51,7 @@ def prepare_batch(
         "mel_input_length": 6,
         "ref_mels": 7,
         "paths": 8,
+        "pitches": 9,
     }
     prepared = tuple()
     for key in keys_to_transfer:
@@ -222,20 +224,23 @@ def prepare_models(training_set, eval_set, train):
         if key in training_set or key in eval_set:
             result[key] = train.model[key]
             result[key].to(train.config.training.device)
-        #else:
+        # else:
         #    train.model[key].to("cpu")
-        #if key in training_set:
+        # if key in training_set:
         #    result[key].train()
-        #elif key in eval_set:
+        # elif key in eval_set:
         #    result[key].eval()
     return Munch(**result)
 
 
 def train_acoustic_adapter(
-    i: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if i > 0 and i % train.config.training.log_interval == 0:
+    if (
+        current_epoch_step > 0
+        and current_epoch_step % train.config.training.log_interval == 0
+    ):
         log.broadcast(train.manifest)
     return 0
 
@@ -245,19 +250,19 @@ def train_acoustic(train: TrainContext, inputs, split=False):
     Train the acoustic models, the text encoder, and the decoder
     """
     split_count = 8 if split else 1
-    texts, text_lengths, mels, mel_lengths, audio_gt = prepare_batch(
+    texts, text_lengths, mels, mel_lengths, audio_gt, pitch = prepare_batch(
         inputs,
         train.config.training.device,
-        ["texts", "input_lengths", "mels", "mel_input_length", "waves"],
+        ["texts", "input_lengths", "mels", "mel_input_length", "waves", "pitches"],
     )
     training_set = {
         "text_encoder",
         "text_aligner",
-        "pitch_extractor",
+        # "pitch_extractor",
         "style_encoder",
         "decoder",
     }
-    eval_set = {}
+    eval_set = {"pitch_extractor"}
     model = prepare_models(training_set, eval_set, train)
     state = BatchContext(train, model, texts, text_lengths)
     with train.accelerator.autocast():
@@ -270,7 +275,8 @@ def train_acoustic(train: TrainContext, inputs, split=False):
             apply_attention_mask=True,
             use_random_choice=True,
         )
-        pitch = state.acoustic_pitch(mels)
+        # pitch = state.acoustic_pitch(mels)
+        # pitch = state.acoustic_pitch(audio_gt)
         energy = state.acoustic_energy(mels)
         style_embedding = state.acoustic_style_embedding(mels)
         decoding = state.decoding(

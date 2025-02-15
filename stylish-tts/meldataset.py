@@ -17,6 +17,7 @@ import torchaudio
 import torch.utils.data
 import torch.distributed as dist
 from huggingface_hub import hf_hub_download
+from safetensors import safe_open
 
 import logging
 import utils
@@ -56,6 +57,12 @@ class FilePathDataset(torch.utils.data.Dataset):
     ):
 
         self.cache = {}
+        self.pitch = {}
+        with safe_open(
+            "/mnt/z/stylish-dataset/pitch.safetensors", framework="pt", device="cpu"
+        ) as f:
+            for key in f.keys():
+                self.pitch[key] = f.get_tensor(key)
         _data_list = [l.strip().split("|") for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = text_cleaner
@@ -140,6 +147,9 @@ class FilePathDataset(torch.utils.data.Dataset):
 
             ref_text = torch.LongTensor(text)
 
+        pitch = None
+        if path in self.pitch:
+            pitch = torch.nan_to_num(self.pitch[path].detach().clone())
         return (
             speaker_id,
             acoustic_feature,
@@ -149,6 +159,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             ref_label,
             path,
             wave,
+            pitch,
         )
 
     def _load_tensor(self, data):
@@ -247,6 +258,7 @@ class Collater(object):
         waves = torch.zeros(
             (batch_size, batch[0][7].shape[-1])
         ).float()  # [None for _ in range(batch_size)]
+        pitches = torch.zeros((batch_size, max_mel_length)).float()
 
         for bid, (
             label,
@@ -257,6 +269,7 @@ class Collater(object):
             ref_label,
             path,
             wave,
+            pitch,
         ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -274,6 +287,8 @@ class Collater(object):
                 ref_mels[bid, :, :ref_mel_size] = ref_mel
                 ref_labels[bid] = ref_label
             waves[bid] = wave
+            if pitch is not None:
+                pitches[bid] = pitch
 
         return (
             waves,
@@ -285,6 +300,7 @@ class Collater(object):
             output_lengths,
             ref_mels,
             paths,
+            pitches,
         )
 
 

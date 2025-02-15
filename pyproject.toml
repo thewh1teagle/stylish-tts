@@ -27,6 +27,7 @@ dependencies = [
     "triton>=3.1.0",
     "triton-nightly>=3.0.0.post20240716052845",
     "xlstm>=2.0.2",
+    "torchcrepe>=0.0.23",
 ]
 
 [dependency-groups]
