@@ -1,3 +1,4 @@
+import math
 import gc, json, traceback
 import os.path as osp
 import torch
@@ -126,7 +127,7 @@ class BatchManager:
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _ = train.train_batch(
-                                i=0, batch=batch, running_loss=0, iters=0, train=train
+                                0, batch=batch, running_loss=0, iters=0, train=train
                             )
                             break
                         self.set_batch_size(key, batch_size)
@@ -173,6 +174,7 @@ class BatchManager:
 
     def train_iterate(self, batch, train, debug=False) -> None:
         max_attempts = 3
+        #train.optimizer.scale(math.sqrt(batch[0].shape[0]))
         self.last_bin = get_time_bin(batch[0].shape[-1])
         for attempt in range(1, max_attempts + 1):
             try:
@@ -195,8 +197,8 @@ class BatchManager:
                 audio_length = (self.last_bin * 0.25) + 0.25
                 if "CUDA out of memory" in str(e):
                     train.logger.info(
-                        f"{attempt * ('*' if attempt < max_attempts else 'X')} "
-                        f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                        f"{attempt * ('*' if attempt < max_attempts else 'X')} " +
+                        f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size} " + str(batch[2])
                     )
                     #self.log_print(e)
                     train.optimizer.zero_grad()
@@ -211,3 +213,4 @@ class BatchManager:
                 else:
                     print("".join(traceback.format_exception(e)))
                     raise e
+        #train.optimizer.scale(1.0 / math.sqrt(batch[0].shape[0]))

@@ -13,10 +13,13 @@ class MultiOptimizer:
     def __init__(self, optimizers={}, schedulers={}):
         self.optimizers = optimizers
         self.schedulers = schedulers
+        self.scale_schedulers = {}
         self.keys = list(optimizers.keys())
         self.param_groups = reduce(
             lambda x, y: x + y, [v.param_groups for v in self.optimizers.values()]
         )
+        for key in self.keys:
+            self.scale_schedulers[key] = ScaleLR(self.optimizers[key])
 
     def state_dict(self):
         state_dicts = [(key, self.optimizers[key].state_dict()) for key in self.keys]
@@ -51,7 +54,29 @@ class MultiOptimizer:
             self.schedulers[key].step(*args)
         else:
             _ = [self.schedulers[key].step(*args) for key in self.keys]
+    def scale(self, scale, key_in=None):
+        keys = [key_in]
+        if key_in is None:
+            keys = self.keys
+        for key in keys:
+            self.scale_schedulers[key].set_factor(scale)
+            self.scale_schedulers[key].step()
 
+class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
+    def __init__(
+        self,
+        optimizer: Optimizer,
+        factor: float = 1.0,
+    ):  
+        self.factor = factor
+        super().__init__(optimizer)
+
+    def set_factor(self, factor):
+        self.factor = factor
+
+    def get_lr(self):
+        """Compute the learning rate of each parameter group."""
+        return [group["lr"] * self.factor for group in self.optimizer.param_groups]
 
 def define_scheduler(optimizer, params):
     scheduler = torch.optim.lr_scheduler.OneCycleLR(

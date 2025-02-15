@@ -193,6 +193,7 @@ def main(config_path, early_joint, stage, pretrained_model):
     scheduler_params = {
         "max_lr": train.config.optimizer.lr,
         "pct_start": float(0),
+        # TODO: This should actually be based on the current stage
         "epochs": train.manifest.max_epoch,
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
