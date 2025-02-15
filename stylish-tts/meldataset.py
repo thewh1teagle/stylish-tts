@@ -284,6 +284,7 @@ class Collater(object):
             mels,
             output_lengths,
             ref_mels,
+            paths,
         )
 
 

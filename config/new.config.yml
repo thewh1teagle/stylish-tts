@@ -3,7 +3,6 @@ training:
   log_interval: 10
   save_interval: 2000
   val_interval: 2000
-  save_epoch_interval: 1
   device: "cuda"
   mixed_precision: "bf16" # "bf16", "fp16", or "no" for no mixed precision
   probe_batch_max: 35

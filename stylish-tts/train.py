@@ -63,7 +63,8 @@ from stages import (
     "--stage", default="first_tma", type=str
 )  # "first", "first_tma", "second", "second_style", "second_joint"
 @click.option("--pretrained_model", default="", type=str)
-def main(config_path, early_joint, stage, pretrained_model):
+@click.option("--checkpoint", default="", type=str)
+def main(config_path, early_joint, stage, pretrained_model, checkpoint):
     train = TrainContext()
     np.random.seed(1)
     random.seed(1)
@@ -127,6 +128,9 @@ def main(config_path, early_joint, stage, pretrained_model):
     if train.accelerator.is_main_process:
         train.writer = SummaryWriter(train.config.training.out_dir + "/tensorboard")
 
+    train.accelerator.register_for_checkpointing(train.config)
+    train.accelerator.register_for_checkpointing(train.manifest)
+
     # Set up data loaders and batch manager
     if not osp.exists(train.config.dataset.train_data):
         exit(f"Train data not found at {train.config.dataset.train_data}")
@@ -174,6 +178,7 @@ def main(config_path, early_joint, stage, pretrained_model):
         multispeaker=train.config.model.multispeaker,
         text_cleaner=text_cleaner,
         stage=stage,
+        epoch=train.manifest.current_epoch,
     )
 
     # build model
@@ -208,6 +213,15 @@ def main(config_path, early_joint, stage, pretrained_model):
         scheduler_params_dict=scheduler_params_dict,
         lr=train.config.optimizer.lr,
     )
+
+    if checkpoint:
+        train.accelerator.load_state(checkpoint)
+        # if we are not loading on a epoch boundary we need to resume the loader and skip to the correct step
+        if train.manifest.current_step != 0:
+            train.batch_manager.resume_loader = train.accelerator.skip_first_batches(
+                train.batch_manager.loader, train.manifest.current_step
+            )
+        print(f"Loading last checkpoint at {checkpoint} ...")
 
     # load an existing model for first stage
     if (
@@ -267,13 +281,13 @@ def main(config_path, early_joint, stage, pretrained_model):
     elif stage in ["second", "second_style", "second_joint"]:
         load_defaults(train, train.model)
 
-    train.gl = GeneratorLoss(train.model.mpd, train.model.msd).to(
+    train.generator_loss = GeneratorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
     )
-    train.dl = DiscriminatorLoss(train.model.mpd, train.model.msd).to(
+    train.discriminator_loss = DiscriminatorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
     )
-    train.wl = WavLMLoss(
+    train.wavlm_loss = WavLMLoss(
         train.config.slm.model,
         train.model.wd,
         train.config.preprocess.sample_rate,
@@ -285,7 +299,7 @@ def main(config_path, early_joint, stage, pretrained_model):
     # train.wl = MyDataParallel(train.wl)
 
     # TODO: How to access model diffusion?
-    train.sampler = DiffusionSampler(
+    train.diffusion_sampler = DiffusionSampler(
         kdiffusion,
         sampler=ADPM2Sampler(),
         sigma_schedule=KarrasSchedule(
@@ -321,7 +335,7 @@ def main(config_path, early_joint, stage, pretrained_model):
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
-    train.best_loss = float("inf")  # best test loss
+    train.manifest.best_loss = float("inf")  # best test loss
 
     torch.cuda.empty_cache()
 
@@ -333,12 +347,12 @@ def main(config_path, early_joint, stage, pretrained_model):
     train.start_ds = False
 
     # TODO: This value is calculated inconsistently based on whether checkpoints are loaded/saved
-    train.running_std = []
+    train.manifest.running_std = []
 
-    train.slmadv = SLMAdversarialLoss(
+    train.slm_adversarial_loss = SLMAdversarialLoss(
         train.model,
-        train.wl,
-        train.sampler,
+        train.wavlm_loss,
+        train.diffusion_sampler,
         train.config.slmadv_params.min_len,
         train.config.slmadv_params.max_len,
         batch_percentage=train.config.slmadv_params.batch_percentage,
@@ -401,8 +415,9 @@ def train_val_iterate(batch, train: TrainContext):
     train.manifest.total_trained_audio_seconds += (
         float(len(batch[0][0]) * len(batch[0])) / train.config.preprocess.sample_rate
     )
-
-    num = train.manifest.current_total_step + 1
+    # filenames = batch[8]
+    # print(f"Step {train.manifest.current_step} Processing: {filenames}")
+    num = train.manifest.current_step
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0
     if do_val or do_save:
