@@ -25,6 +25,7 @@ class BatchManager:
         multispeaker: bool = False,
         text_cleaner: TextCleaner = None,
         stage: str = "",
+        epoch: int = 1,
     ):
         self.train_path: str = train_path
         self.probe_batch_max: int = probe_batch_max
@@ -54,7 +55,7 @@ class BatchManager:
         if accelerator is not None:
             self.process_count = accelerator.num_processes
             accelerator.even_batches = False
-        loader: DataLoader = build_dataloader(
+        self.loader: DataLoader = build_dataloader(
             self.dataset,
             self.time_bins,
             batch_size=self.batch_dict,
@@ -62,8 +63,14 @@ class BatchManager:
             device=device,
             drop_last=True,
             multispeaker=multispeaker,
+            epoch=epoch,
         )
-        self.epoch_step_count: int = len(loader.batch_sampler)
+        self.loader = accelerator.prepare(self.loader)
+        self.resume_loader: DataLoader = None
+        self.epoch_step_count: int = len(self.loader.batch_sampler)
+        self.running_loss: float = 0
+        self.last_oom: int = -1
+        self.last_bin: Optional[int] = None
 
     def get_step_count(self) -> int:
         return self.epoch_step_count // self.process_count
@@ -127,7 +134,11 @@ class BatchManager:
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _ = train.train_batch(
-                                0, batch=batch, running_loss=0, iters=0, train=train
+                                current_epoch_step=0,
+                                batch=batch,
+                                running_loss=0,
+                                iters=0,
+                                train=train,
                             )
                             break
                         self.set_batch_size(key, batch_size)
@@ -154,11 +165,16 @@ class BatchManager:
         self.save_batch_dict()
 
     def init_epoch(self, train) -> None:
+        if self.resume_loader:
+            self.loader = self.resume_loader
+            self.resume_loader = None
+            return
         if not self.batch_dict:
             self.probe_loop(train)
         self.running_loss = 0
         self.last_oom = -1
         self.last_bin = None
+
         self.loader = build_dataloader(
             self.dataset,
             self.time_bins,

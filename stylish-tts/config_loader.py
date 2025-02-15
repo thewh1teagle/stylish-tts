@@ -16,9 +16,6 @@ class TrainingConfig(BaseModel):
         ..., description="Interval (in steps) for saving checkpoints."
     )
     val_interval: int = Field(..., description="Interval (in steps) for validation.")
-    save_epoch_interval: int = Field(
-        ..., description="Interval (in epochs) for saving checkpoints."
-    )
     device: str = Field(..., description="Computational device (e.g., 'cuda').")
     mixed_precision: str = Field(..., description="accelerator use bf16 or fp16 or no")
     probe_batch_max: int = Field(
@@ -456,6 +453,12 @@ class Config(BaseModel):
     slmadv_params: SlmAdvConfig = Field(
         ..., description="SLM adversarial training configuration parameters."
     )
+
+    def state_dict(self) -> dict:
+        return self.model_dump()
+
+    def load_state_dict(self, state: dict) -> None:
+        self = self.model_copy(update=state)
 
 
 def load_config_yaml(config_path: str) -> Config:
