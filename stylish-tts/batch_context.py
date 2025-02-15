@@ -29,6 +29,12 @@ class BatchContext:
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
         return self.model.text_encoder(texts, text_lengths, self.text_mask)
 
+    def bert_encoding(self, texts: torch.Tensor):
+        mask = (~self.text_mask).int()
+        bert_encoding = self.model.bert(texts, attention_mask=mask)
+        text_encoding = self.model.bert_encoder(bert_encoding)
+        return text_encoding.transpose(-1, -2)
+
     def acoustic_duration(
         self,
         mels: torch.Tensor,

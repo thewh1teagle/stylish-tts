@@ -222,12 +222,12 @@ def prepare_models(training_set, eval_set, train):
         if key in training_set or key in eval_set:
             result[key] = train.model[key]
             result[key].to(train.config.training.device)
-        else:
-            train.model[key].to("cpu")
-        if key in training_set:
-            result[key].train()
-        elif key in eval_set:
-            result[key].eval()
+        #else:
+        #    train.model[key].to("cpu")
+        #if key in training_set:
+        #    result[key].train()
+        #elif key in eval_set:
+        #    result[key].eval()
     return Munch(**result)
 
 
@@ -235,7 +235,7 @@ def train_acoustic_adapter(
     i: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if i > 0 and i % 10 == 0:
+    if i > 0 and i % train.config.training.log_interval == 0:
         log.broadcast(train.manifest)
     return 0
 
@@ -443,7 +443,6 @@ def train_first(
 
     if train.manifest.stage == "first_tma":
         optimizer_step(train, ["text_aligner", "pitch_extractor"])
-    train.manifest.current_total_step += 1
 
     # --- Logging ---
     # TODO: maybe we should only print what we need based on the stage
@@ -693,7 +692,6 @@ def train_second(
     else:
         d_loss_slm, loss_gen_lm = 0, 0
 
-    train.manifest.current_total_step += 1
     if train.accelerator.is_main_process:
         if (i + 1) % train.config.training.log_interval == 0:
             metrics = {
