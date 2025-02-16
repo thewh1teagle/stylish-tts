@@ -11,7 +11,8 @@ import safetensors.torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
+from torch.nn.utils import remove_weight_norm, spectral_norm
+from torch.nn.utils.parametrizations import weight_norm
 
 
 from .text_aligner import TextAligner
@@ -597,6 +598,7 @@ class ProsodyPredictor(nn.Module):
         self.shared = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
         )
+
         self.F0 = nn.ModuleList()
         self.F0.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
         self.F0.append(
@@ -694,7 +696,7 @@ class DurationEncoder(nn.Module):
                     num_layers=1,
                     batch_first=True,
                     bidirectional=True,
-                    dropout=dropout,
+                    # dropout=dropout,
                 )
             )
             self.lstms.append(AdaLayerNorm(sty_dim, d_model))

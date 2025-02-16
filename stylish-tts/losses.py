@@ -107,11 +107,19 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         return sc_loss
 
 
+mp_window = torch.hann_window(20).to("cuda")
+
+
 def magphase_loss(mag, phase, gt):
     result = 0.0
     if mag is not None and phase is not None:
         y_stft = torch.stft(
-            gt, n_fft=20, hop_length=5, win_length=20, return_complex=True
+            gt,
+            n_fft=20,
+            hop_length=5,
+            win_length=20,
+            return_complex=True,
+            window=mp_window,
         )
         target_mag = torch.abs(y_stft)
         target_phase = torch.angle(y_stft)
