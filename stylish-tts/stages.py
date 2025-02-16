@@ -14,6 +14,8 @@ from losses import magphase_loss
 from batch_context import BatchContext
 from train_context import TrainContext
 from loss_log import LossLog, combine_logs
+import json
+import os
 
 ###############################################
 # Helper Functions
@@ -36,6 +38,7 @@ def prepare_batch(
             "mels",
             "mel_input_length",
             "ref_mels",
+            "paths",
         ]
     index = {
         "waves": 0,
@@ -46,6 +49,7 @@ def prepare_batch(
         "mels": 5,
         "mel_input_length": 6,
         "ref_mels": 7,
+        "paths": 8,
     }
     prepared = tuple()
     for key in keys_to_transfer:
@@ -53,7 +57,11 @@ def prepare_batch(
             raise ValueError(
                 f"Key {key} not found in batch; valid keys: {list(index.keys())}"
             )
-        prepared += (batch[index[key]].to(device),)
+        if key in {"paths"}:
+            prepared += (batch[index[key]],)
+        else:
+            prepared += (batch[index[key]].to(device),)
+
     return prepared
 
 
@@ -189,28 +197,20 @@ def optimizer_step(train: TrainContext, keys: List[str]) -> None:
         train.optimizer.step(key)
 
 
-def log_and_save_checkpoint(
+def save_checkpoint(
     train: TrainContext, current_step: int, prefix: str = "epoch_1st"
 ) -> None:
     """
-    Logs metrics and saves a checkpoint.
+    Saves checkpoint using a checkpoint.
     """
-    state = {
-        "net": {key: train.model[key].state_dict() for key in train.model},
-        "optimizer": train.optimizer.state_dict(),
-        "iters": train.manifest.current_total_step,
-        "val_loss": train.best_loss,
-        "epoch": train.manifest.current_epoch,
-    }
-    if current_step == -1:
-        filename = f"{prefix}_{train.manifest.current_epoch:05d}.pth"
-    else:
-        filename = (
-            f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}.pth"
-        )
-    save_path = osp.join(train.config.training.out_dir, filename)
-    torch.save(state, save_path)
-    print(f"Saving checkpoint to {save_path}")
+    checkpoint_dir = osp.join(
+        train.config.training.out_dir,
+        f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}",
+    )
+    # Let the accelerator save all model/optimizer/LR scheduler/rng states
+    train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
+
+    print(f"Saving checkpoint to {checkpoint_dir}")
 
 
 def prepare_models(training_set, eval_set, train):
@@ -398,7 +398,9 @@ def train_first(
     if train.manifest.stage == "first_tma":
         train.optimizer.zero_grad()
         with train.accelerator.autocast():
-            d_loss = train.dl(wav.detach().unsqueeze(1).float(), y_rec.detach()).mean()
+            d_loss = train.discriminator_loss(
+                wav.detach().unsqueeze(1).float(), y_rec.detach()
+            ).mean()
         train.accelerator.backward(d_loss)
         optimizer_step(train, ["msd", "mpd"])
     else:
@@ -419,8 +421,10 @@ def train_first(
                 )
             loss_s2s /= texts.size(0)
             loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
-            loss_gen_all = train.gl(wav.detach().unsqueeze(1).float(), y_rec).mean()
-            loss_slm = train.wl(wav.detach(), y_rec)  # .mean()
+            loss_gen_all = train.generator_loss(
+                wav.detach().unsqueeze(1).float(), y_rec
+            ).mean()
+            loss_slm = train.wavlm_loss(wav.detach(), y_rec)  # .mean()
             g_loss = (
                 train.config.loss_weight.mel * loss_mel
                 + train.config.loss_weight.mono * loss_mono
@@ -550,13 +554,13 @@ def train_second(
             if train.config.diffusion.dist.estimate_sigma_data:
                 sigma_data = s_trg.std(axis=-1).mean().item()
                 train.model.diffusion.module.diffusion.sigma_data = sigma_data
-                train.running_std.append(sigma_data)
+                train.manifest.running_std.append(sigma_data)
         with train.accelerator.autocast():
             noise = (
                 torch.randn_like(s_trg).unsqueeze(1).to(train.config.training.device)
             )
             if train.config.model.multispeaker:
-                s_preds = train.sampler(
+                s_preds = train.diffusion_sampler(
                     noise=noise,
                     embedding=bert_dur,
                     embedding_scale=1,
@@ -569,7 +573,7 @@ def train_second(
                 ).mean()
                 loss_sty = F.l1_loss(s_preds, s_trg.detach())
             else:
-                s_preds = train.sampler(
+                s_preds = train.diffusion_sampler(
                     noise=noise,
                     embedding=bert_dur,
                     embedding_scale=1,
@@ -615,7 +619,7 @@ def train_second(
 
     if train.start_ds:
         train.optimizer.zero_grad()
-        d_loss = train.dl(wav.detach(), y_rec.detach()).mean()
+        d_loss = train.discriminator_loss(wav.detach(), y_rec.detach()).mean()
         train.accelerator.backward(d_loss)
         optimizer_step(train, ["msd", "mpd"])
     else:
@@ -624,8 +628,8 @@ def train_second(
     train.optimizer.zero_grad()
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec, wav)
-        loss_gen_all = train.gl(wav, y_rec).mean() if train.start_ds else 0
-        loss_lm = train.wl(wav.detach().squeeze(1), y_rec.squeeze(1))  # .mean()
+        loss_gen_all = train.generator_loss(wav, y_rec).mean() if train.start_ds else 0
+        loss_lm = train.wavlm_loss(wav.detach().squeeze(1), y_rec.squeeze(1))  # .mean()
 
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
 
@@ -656,7 +660,7 @@ def train_second(
         if use_ind:
             ref_lengths = input_lengths
             ref_texts = texts
-        slm_out = train.slmadv(
+        slm_out = train.slm_adversarial_loss(
             i,
             y_rec_gt,
             (y_rec_gt_pred if train.manifest.stage == "second_joint" else None),
@@ -774,10 +778,10 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
     if train.accelerator.is_main_process:
         avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
         print(
-            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}"
+            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.manifest.best_loss}"
         )
         log_print(
-            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.best_loss}",
+            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.manifest.best_loss}",
             train.logger,
         )
         log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
@@ -811,21 +815,11 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                     sample_rate=train.config.preprocess.sample_rate,
                 )
 
-        if (
-            train.manifest.current_epoch % train.config.training.save_epoch_interval
-            == 0
-            and save
-            and current_step == -1
-        ):
-            if avg_loss < train.best_loss:
-                train.best_loss = avg_loss
+        if save:
+            if avg_loss < train.manifest.best_loss:
+                train.manifest.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_1st")
-        if save and current_step != -1:
-            if avg_loss < train.best_loss:
-                train.best_loss = avg_loss
-            print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_1st")
+            save_checkpoint(train, current_step, prefix="epoch_1st")
 
     for key in train.model:
         train.model[key].train()
@@ -930,7 +924,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
     if train.accelerator.is_main_process:
         avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
         print(
-            f"Epochs: {train.manifest.current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.best_loss}"
+            f"Epochs: {train.manifest.current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.manifest.best_loss}"
         )
         train.logger.info(
             f"Validation loss: {avg_loss:.3f}, Dur loss: {loss_align / iters_test:.3f}, F0 loss: {loss_f / iters_test:.3f}\n\n\n"
@@ -952,20 +946,10 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                 train.manifest.current_total_step,
                 sample_rate=train.config.preprocess.sample_rate,
             )
-        if (
-            train.manifest.current_epoch % train.config.training.save_epoch_interval
-            == 0
-            and save
-            and current_step == -1
-        ):
-            if avg_loss < train.best_loss:
-                train.best_loss = avg_loss
+        if save:
+            if avg_loss < train.manifest.best_loss:
+                train.manifest.best_loss = avg_loss
             print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_2nd")
-        if save and current_step != -1:
-            if avg_loss < train.best_loss:
-                train.best_loss = avg_loss
-            print("Saving..")
-            log_and_save_checkpoint(train, current_step, prefix="epoch_2nd")
+            save_checkpoint(train, current_step, prefix="epoch_2nd")
     for key in train.model:
         train.model[key].train()

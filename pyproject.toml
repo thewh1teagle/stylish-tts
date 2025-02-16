@@ -5,8 +5,8 @@ requires-python = ">=3.12"
 dependencies = [
     "nltk>=3.9.1",
     "pandas>=2.2.3",
-    "torch>=2.6.0",
-    "torchaudio>=2.6.0",
+    "torch~=2.5.1",
+    "torchaudio~=2.5.1",
     "numba>=0.60.0",
     "numpy>=2.0.2",
     "munch>=4.0.0",
@@ -24,8 +24,9 @@ dependencies = [
     "pydantic>=2.10.6",
     "tensorboard>=2.18.0",
     "ring-attention-pytorch>=0.5.19",
-    "triton>=3.2.0",
+    "triton>=3.1.0",
     "triton-nightly>=3.0.0.post20240716052845",
+    "xlstm>=2.0.2",
 ]
 
 [dependency-groups]

@@ -7,11 +7,13 @@ import copy
 import math
 
 import numpy as np
+import safetensors.torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import remove_weight_norm, spectral_norm
 from torch.nn.utils.parametrizations import weight_norm
+
 
 from .text_aligner import TextAligner
 from .pitch_extractor import PitchExtractor
@@ -31,6 +33,16 @@ from munch import Munch
 import yaml
 import safetensors
 from huggingface_hub import hf_hub_download
+
+from xlstm import (
+    xLSTMBlockStack,
+    xLSTMBlockStackConfig,
+    mLSTMBlockConfig,
+    mLSTMLayerConfig,
+    sLSTMBlockConfig,
+    sLSTMLayerConfig,
+    FeedForwardConfig,
+)
 
 
 class LearnedDownSample(nn.Module):
@@ -387,11 +399,32 @@ class TextEncoder(nn.Module):
                     nn.Dropout(0.2),
                 )
             )
-        # self.cnn = nn.Sequential(*self.cnn)
 
-        self.lstm = nn.LSTM(
-            channels, channels // 2, 1, batch_first=True, bidirectional=True
+        self.prepare_projection = LinearNorm(channels, channels // 2)
+        self.post_projection = LinearNorm(channels // 2, channels)
+
+        cfg = xLSTMBlockStackConfig(
+            mlstm_block=mLSTMBlockConfig(
+                mlstm=mLSTMLayerConfig(
+                    conv1d_kernel_size=4, qkv_proj_blocksize=4, num_heads=4
+                )
+            ),
+            # slstm_block=sLSTMBlockConfig(
+            #     slstm=sLSTMLayerConfig(
+            #         backend="cuda",
+            #         num_heads=4,
+            #         conv1d_kernel_size=4,
+            #         bias_init="powerlaw_blockdependent",
+            #     ),
+            #     feedforward=FeedForwardConfig(proj_factor=1.3, act_fn="gelu"),
+            # ),
+            context_length=channels,
+            num_blocks=8,
+            embedding_dim=channels // 2,
+            # slstm_at=[1],
         )
+
+        self.lstm = xLSTMBlockStack(cfg)
 
     def forward(self, x, input_lengths, m):
         x = self.embedding(x)  # [B, T, emb]
@@ -406,19 +439,12 @@ class TextEncoder(nn.Module):
         x = x.transpose(1, 2)  # [B, T, chn]
 
         input_lengths = input_lengths.cpu().numpy()
-        x = nn.utils.rnn.pack_padded_sequence(
-            x, input_lengths, batch_first=True, enforce_sorted=False
-        )
 
-        self.lstm.flatten_parameters()
-        x, _ = self.lstm(x)
-        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+        x = self.prepare_projection(x)
+        x = self.lstm(x)
+        x = self.post_projection(x)
 
         x = x.transpose(-1, -2)
-        x_pad = torch.zeros([x.shape[0], x.shape[1], m.shape[-1]])
-
-        x_pad[:, :, : x.shape[-1]] = x
-        x = x_pad.to(x.device)
 
         x.masked_fill_(m, 0.0)
 
@@ -429,7 +455,7 @@ class TextEncoder(nn.Module):
         x = x.transpose(1, 2)
         x = self.cnn(x)
         x = x.transpose(1, 2)
-        self.lstm.flatten_parameters()
+
         x, _ = self.lstm(x)
         return x
 
@@ -440,6 +466,7 @@ class TextEncoder(nn.Module):
             .expand(lengths.shape[0], -1)
             .type_as(lengths)
         )
+
         mask = torch.gt(mask + 1, lengths.unsqueeze(1))
         return mask
 
@@ -566,7 +593,7 @@ class ProsodyPredictor(nn.Module):
         self.lstm = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
         )
-        self.duration_proj = LinearNorm(d_hid, max_dur)
+        self.duration_projection = LinearNorm(d_hid, max_dur)
 
         self.shared = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
@@ -637,7 +664,7 @@ class ProsodyPredictor(nn.Module):
             x_pad[:, : x.shape[1], :] = x
             x = x_pad.to(x.device)
 
-            duration = self.duration_proj(
+            duration = self.duration_projection(
                 nn.functional.dropout(x, 0.5, training=self.training)
             )
 
