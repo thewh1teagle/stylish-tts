@@ -571,6 +571,7 @@ class ProsodyPredictor(nn.Module):
         self.shared = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
         )
+
         self.F0 = nn.ModuleList()
         self.F0.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
         self.F0.append(
@@ -668,7 +669,7 @@ class DurationEncoder(nn.Module):
                     num_layers=1,
                     batch_first=True,
                     bidirectional=True,
-                    dropout=dropout,
+                    # dropout=dropout,
                 )
             )
             self.lstms.append(AdaLayerNorm(sty_dim, d_model))
