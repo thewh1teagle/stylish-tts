@@ -230,12 +230,67 @@ def prepare_models(training_set, eval_set, train):
         #    result[key].eval()
     return Munch(**result)
 
+def train_vocoder_adapter(
+    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
+) -> Tuple[float, int]:
+    log = train_vocoder(train, batch)
+    if current_epoch_step > 0 and current_epoch_step % train.config.training.log_interval == 0:
+        log.broadcast(train.manifest)
+    return 0
+
+def train_vocoder(train: TrainContext, inputs):
+    """
+    Pre-train the vocoder alone on the text resynthesis task
+    """
+    mels, audio_gt = prepare_batch(
+        inputs,
+        train.config.training.device,
+        ["mels", "waves"],
+    )
+    training_set = {
+        "decoder", "style_encoder", "pitch_extractor",
+    }
+    eval_set = {"msd", "mpd"}
+    model = prepare_models(training_set, eval_set, train)
+    state = BatchContext(train, model, None)
+    with train.accelerator.autocast():
+        pitch = state.acoustic_pitch(mels)
+        style_embedding = state.acoustic_style_embedding(mels)
+        audio_out, mag, phase = state.pretrain_decoding(pitch, style_embedding, audio_gt)
+
+        train.optimizer.zero_grad()
+        with train.accelerator.autocast():
+            d_loss = train.discriminator_loss(
+                audio_gt.detach().unsqueeze(1).float(),
+                audio_out.detach()
+            ).mean()
+        train.accelerator.backward(d_loss)
+        optimizer_step(train, ["msd", "mpd"])
+
+        log = LossLog(
+            state.train.logger, state.train.writer, state.config.loss_weight.dict()
+        )
+        log.add_loss(
+            "mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt)
+        )
+        log.add_loss("gen", train.generator_loss(
+            audio_gt.detach().unsqueeze(1).float(), audio_out
+        ).mean())
+
+        if mag is not None and phase is not None:
+            log.add_loss(
+                "magphase", magphase_loss(mag, phase, audio_gt)
+            )
+        train.accelerator.backward(log.total())
+    optimizer_step(train, training_set)
+    return log
+
 
 def train_acoustic_adapter(
-    i: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if i > 0 and i % train.config.training.log_interval == 0:
+    if current_epoch_step > 0 and current_epoch_step % train.config.training.log_interval == 0:
         log.broadcast(train.manifest)
     return 0
 
@@ -259,7 +314,7 @@ def train_acoustic(train: TrainContext, inputs, split=False):
     }
     eval_set = {}
     model = prepare_models(training_set, eval_set, train)
-    state = BatchContext(train, model, texts, text_lengths)
+    state = BatchContext(train, model, text_lengths)
     with train.accelerator.autocast():
         text_encoding = state.text_encoding(texts, text_lengths)
         duration = state.acoustic_duration(

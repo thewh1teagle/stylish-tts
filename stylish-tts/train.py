@@ -44,6 +44,7 @@ from stages import (
     train_second,
     validate_second,
     train_acoustic_adapter,
+    train_vocoder_adapter,
 )
 
 
@@ -216,6 +217,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
 
     if checkpoint:
         train.accelerator.load_state(checkpoint)
+        train.manifest.stage = stage
         # if we are not loading on a epoch boundary we need to resume the loader and skip to the correct step
         if train.manifest.current_step != 0:
             train.batch_manager.resume_loader = train.accelerator.skip_first_batches(
@@ -227,7 +229,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
     if (
         pretrained_model
         and osp.exists(pretrained_model)
-        and stage in ["first", "first_tma", "acoustic"]
+        and stage in ["first", "first_tma", "acoustic", "vocoder"]
     ):
         print(f"Loading the first stage model at {pretrained_model} ...")
         (
@@ -260,7 +262,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         train.manifest.current_epoch = 1
         # TODO: This should happen only once when starting stage 2
         # train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
-    elif stage in ["first", "first_tma", "acoustic"]:
+    elif stage in ["first", "first_tma", "acoustic", "vocoder"]:
         load_defaults(train, train.model)
 
     # load models if there is a model for second stage
@@ -376,6 +378,9 @@ def train_val_loop(train: TrainContext):
     if train.manifest.stage in {"first", "first_tma"}:
         train.train_batch = train_first
         train.validate = validate_first
+    elif train.manifest.stage in {"vocoder"}:
+        train.train_batch = train_vocoder_adapter
+        train.validate = validate_first
     elif train.manifest.stage in {"acoustic"}:
         train.train_batch = train_acoustic_adapter
         train.validate = validate_first
@@ -384,7 +389,7 @@ def train_val_loop(train: TrainContext):
         train.validate = validate_second
     else:
         exit(
-            "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint'"
+            "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint', 'acoustic', 'vocoder'"
         )
     while train.manifest.current_epoch <= train.manifest.max_epoch:
         train.batch_manager.init_epoch(train)

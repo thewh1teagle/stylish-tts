@@ -165,12 +165,11 @@ class BatchManager:
         self.save_batch_dict()
 
     def init_epoch(self, train) -> None:
-        if self.resume_loader:
-            self.loader = self.resume_loader
-            self.resume_loader = None
-            return
         if not self.batch_dict:
             self.probe_loop(train)
+        elif self.resume_loader:
+            self.loader = self.resume_loader
+            self.resume_loader = None
         self.running_loss = 0
         self.last_oom = -1
         self.last_bin = None
