@@ -1,4 +1,7 @@
 from train_context import TrainContext
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LossLog:
@@ -31,8 +34,8 @@ class LossLog:
         if key in self.weights:
             return self.weights[key]
         else:
-            print(f"WARNING: Unknown weight for key {key}, defaulting to 1")
-            print(self.weights)
+            logging.error(f"WARNING: Unknown weight for key {key}, defaulting to 1")
+            logging.debug(f"self.weights: {self.weights}")
             return 1
 
     def update_loss(self, key, value, count):

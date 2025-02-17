@@ -7,13 +7,17 @@ import torch.nn.functional as F
 import numpy as np
 from typing import List, Tuple, Any
 
-from utils import length_to_mask, maximum_path, log_norm, log_print, get_image
+from utils import length_to_mask, maximum_path, log_norm, get_image
 from monotonic_align import mask_from_lens
 from munch import Munch
 from losses import magphase_loss
 from batch_context import BatchContext
 from train_context import TrainContext
 from loss_log import LossLog, combine_logs
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 ###############################################
 # Helper Functions
@@ -208,7 +212,7 @@ def save_checkpoint(
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
     train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
 
-    print(f"Saving checkpoint to {checkpoint_dir}")
+    logger.info(f"Saving checkpoint to {checkpoint_dir}")
 
 
 def prepare_models(training_set, eval_set, train):
@@ -435,7 +439,7 @@ def train_first(
         mel_gt.shape[-1] < 80
         and not train.model_config.embedding_encoder.skip_downsamples
     ):
-        log_print("Skipping batch. TOO SHORT", train.logger)
+        logger.error("Skipping batch. TOO SHORT")
         return running_loss
 
     # --- Pitch Extraction ---
@@ -532,7 +536,7 @@ def train_first(
                     f"train/{key}", value, train.manifest.current_total_step
                 )
             running_loss = 0
-            print("Time elapsed:", time.time() - train.start_time)
+            logger.info(f"Time elapsed: {time.time() - train.start_time}")
 
     return running_loss
 
@@ -593,7 +597,7 @@ def train_second(
             use_random_choice=False,
         )
     except Exception as e:
-        print(f"s2s_attn computation failed: {e}")
+        logger.error(f"s2s_attn computation failed: {e}")
         return running_loss
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
@@ -662,7 +666,7 @@ def train_second(
         mels.shape[-1] < 80
         and not train.model_config.embedding_encoder.skip_downsamples
     ):
-        log_print("Skipping batch. TOO SHORT", train.logger)
+        logging.error("Skipping batch. TOO SHORT")
         return running_loss
 
     with torch.no_grad():
@@ -738,7 +742,7 @@ def train_second(
             ref if train.model_config.model.multispeaker else None,
         )
         if slm_out is None:
-            print("slm_out none")
+            logger.error("slm_out none")
             return running_loss
 
         d_loss_slm, loss_gen_lm, y_pred = slm_out
@@ -783,7 +787,7 @@ def train_second(
                     f"train/{key}", value, train.manifest.current_total_step
                 )
             running_loss = 0
-            print("Time elapsed:", time.time() - train.start_time)
+            logging.info("Time elapsed:", time.time() - train.start_time)
 
     return running_loss
 
@@ -829,7 +833,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                 mels.shape[-1] < 80
                 and not train.model_config.embedding_encoder.skip_downsamples
             ):
-                log_print("Skipping batch. TOO SHORT", train.logger)
+                logging.error("Skipping batch. TOO SHORT")
                 continue
 
             F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
@@ -842,14 +846,11 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
 
     if train.accelerator.is_main_process:
         avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
-        print(
+        train.logger.info(
             f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.manifest.best_loss}"
         )
-        log_print(
-            f"Epochs:{train.manifest.current_epoch} Steps:{current_step} Loss:{avg_loss} Best_Loss:{train.manifest.best_loss}",
-            train.logger,
-        )
-        log_print(f"Validation loss: {avg_loss:.3f}\n\n\n\n", train.logger)
+        train.logger.info(f"Validation loss: {avg_loss:.3f}\n\n\n\n")
+
         train.writer.add_scalar(
             "eval/mel_loss", avg_loss, train.manifest.current_total_step
         )
@@ -883,7 +884,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
         if save:
             if avg_loss < train.manifest.best_loss:
                 train.manifest.best_loss = avg_loss
-            print("Saving..")
+            logger.info("Saving..")
             save_checkpoint(train, current_step, prefix="epoch_1st")
 
     for key in train.model:
@@ -947,7 +948,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                     mels.shape[-1] < 80
                     and not train.model_config.embedding_encoder.skip_downsamples
                 ):
-                    log_print("Skipping batch. TOO SHORT", train.logger)
+                    logging.error("Skipping batch. TOO SHORT")
                     continue
                 s = train.model.predictor_encoder(mels.unsqueeze(1))
                 gs = train.model.style_encoder(mels.unsqueeze(1))
@@ -982,13 +983,13 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                 loss_f += loss_F0.mean()
                 iters_test += 1
             except Exception as e:
-                print(f"Encountered exception: {e}")
+                logging.error(f"Encountered exception: {e}")
                 traceback.print_exc()
                 continue
 
     if train.accelerator.is_main_process:
         avg_loss = loss_test / iters_test if iters_test > 0 else float("inf")
-        print(
+        logger.info(
             f"Epochs: {train.manifest.current_epoch}, Steps: {current_step}, Loss: {avg_loss}, Best_Loss: {train.manifest.best_loss}"
         )
         train.logger.info(
@@ -1014,7 +1015,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
         if save:
             if avg_loss < train.manifest.best_loss:
                 train.manifest.best_loss = avg_loss
-            print("Saving..")
+            logging.info("Saving..")
             save_checkpoint(train, current_step, prefix="epoch_2nd")
     for key in train.model:
         train.model[key].train()

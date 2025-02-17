@@ -7,6 +7,9 @@ from torch import nn
 from torch.optim import Optimizer
 from functools import reduce
 from torch.optim import AdamW
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MultiOptimizer:
@@ -30,7 +33,7 @@ class MultiOptimizer:
             try:
                 self.optimizers[key].load_state_dict(val)
             except:
-                print("Unloaded %s" % key)
+                logger.info("Unloaded %s" % key)
 
     def step(self, key=None, scaler=None):
         keys = [key] if key is not None else self.keys
