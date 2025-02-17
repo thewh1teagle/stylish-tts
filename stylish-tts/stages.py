@@ -222,21 +222,26 @@ def prepare_models(training_set, eval_set, train):
         if key in training_set or key in eval_set:
             result[key] = train.model[key]
             result[key].to(train.config.training.device)
-        #else:
+        # else:
         #    train.model[key].to("cpu")
-        #if key in training_set:
+        # if key in training_set:
         #    result[key].train()
-        #elif key in eval_set:
+        # elif key in eval_set:
         #    result[key].eval()
     return Munch(**result)
+
 
 def train_vocoder_adapter(
     current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_vocoder(train, batch)
-    if current_epoch_step > 0 and current_epoch_step % train.config.training.log_interval == 0:
+    if (
+        current_epoch_step > 0
+        and current_epoch_step % train.config.training.log_interval == 0
+    ):
         log.broadcast(train.manifest)
     return 0
+
 
 def train_vocoder(train: TrainContext, inputs):
     """
@@ -248,7 +253,9 @@ def train_vocoder(train: TrainContext, inputs):
         ["mels", "waves"],
     )
     training_set = {
-        "decoder", "style_encoder", "pitch_extractor",
+        "decoder",
+        "style_encoder",
+        "pitch_extractor",
     }
     eval_set = {"msd", "mpd"}
     model = prepare_models(training_set, eval_set, train)
@@ -256,13 +263,19 @@ def train_vocoder(train: TrainContext, inputs):
     with train.accelerator.autocast():
         pitch = state.acoustic_pitch(mels)
         style_embedding = state.acoustic_style_embedding(mels)
-        audio_out, mag, phase = state.pretrain_decoding(pitch, style_embedding, audio_gt)
+        if mels.shape[-1] > 80:
+            start = random.randint(0, mels.shape[-1] - 80)
+            end = start + 80
+            pitch = pitch[:, start:end]
+            audio_gt = audio_gt[:, start * 300 : end * 300]
+        audio_out, mag, phase = state.pretrain_decoding(
+            pitch, style_embedding, audio_gt
+        )
 
         train.optimizer.zero_grad()
         with train.accelerator.autocast():
             d_loss = train.discriminator_loss(
-                audio_gt.detach().unsqueeze(1).float(),
-                audio_out.detach()
+                audio_gt.detach().unsqueeze(1).float(), audio_out.detach()
             ).mean()
         train.accelerator.backward(d_loss)
         optimizer_step(train, ["msd", "mpd"])
@@ -270,17 +283,16 @@ def train_vocoder(train: TrainContext, inputs):
         log = LossLog(
             state.train.logger, state.train.writer, state.config.loss_weight.dict()
         )
+        log.add_loss("mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt))
         log.add_loss(
-            "mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt)
+            "gen",
+            train.generator_loss(
+                audio_gt.detach().unsqueeze(1).float(), audio_out
+            ).mean(),
         )
-        log.add_loss("gen", train.generator_loss(
-            audio_gt.detach().unsqueeze(1).float(), audio_out
-        ).mean())
 
         if mag is not None and phase is not None:
-            log.add_loss(
-                "magphase", magphase_loss(mag, phase, audio_gt)
-            )
+            log.add_loss("magphase", magphase_loss(mag, phase, audio_gt))
         train.accelerator.backward(log.total())
     optimizer_step(train, training_set)
     return log
@@ -290,7 +302,10 @@ def train_acoustic_adapter(
     current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if current_epoch_step > 0 and current_epoch_step % train.config.training.log_interval == 0:
+    if (
+        current_epoch_step > 0
+        and current_epoch_step % train.config.training.log_interval == 0
+    ):
         log.broadcast(train.manifest)
     return 0
 
