@@ -3,6 +3,9 @@ from typing import List, Union, Literal
 from pathlib import Path
 import yaml
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingConfig(BaseModel):
@@ -547,8 +550,8 @@ if __name__ == "__main__":
 
     # For Pydantic v2, use model_dump_json (or use json.dumps(config.model_dump(), indent=2))
     test = dump_to_string(config)
-    print(test)
+    logging.debug(test)
 
     # Load a configuration object from a JSON string
     config_loaded = load_from_string(test)
-    print(config_loaded)
+    logging.debug(config_loaded)

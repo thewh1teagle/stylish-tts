@@ -85,7 +85,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.multispeaker = multispeaker
 
     def time_bins(self):
-        print("Calculating sample lengths")
+        logger.info("Calculating sample lengths")
         sample_lengths = []
         for data in self.data_list:
             wave_path = data[0]
@@ -101,7 +101,7 @@ class FilePathDataset(torch.utils.data.Dataset):
                 if bin_num not in time_bins:
                     time_bins[bin_num] = []
                 time_bins[bin_num].append(i)
-        print("Finished sample lengths")
+        logger.info("Finished sample lengths")
         return time_bins
 
     def __len__(self):
@@ -159,7 +159,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave = wave[:, 0].squeeze()
         if sr != 24000:
             wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
-            print(wave_path, sr)
+            logger.debug(f"{wave_path}, {sr}")
 
         pad_start = 5000
         pad_end = 5000
@@ -405,7 +405,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
             sampler = torch.utils.data.sampler.BatchSampler(
                 dist, self.get_batch_size(key), self.drop_last
             )
-            # print(key, self.get_batch_size(key))
+            # logger.debug(f"{key}:{self.get_batch_size(key)}")
             for item_list in sampler:
                 self.last_bin = key
                 yield [current_bin[i] for i in item_list]

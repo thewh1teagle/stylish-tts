@@ -45,6 +45,34 @@ from stages import (
     train_vocoder_adapter,
 )
 
+logging.basicConfig(
+    level=logging.INFO,  # Set the logging level (DEBUG, INFO, WARNING, etc.)
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # Customize the log message format
+)
+
+logger = logging.getLogger(__name__)  # Create a logger for the current module
+
+
+def setup_logger(logger, out_dir):
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False  # Prevent messages from being passed to the root logger
+
+    # Always add a stream handler
+    err_handler = StreamHandler()
+    err_handler.setLevel(logging.DEBUG)
+    err_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(err_handler)
+
+    # Always add a file handler
+    file_handler = logging.FileHandler(osp.join(out_dir, "train.log"))
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(file_handler)
+
 
 # simple fix for dataparallel that allows access to class attributes
 # class MyDataParallel(torch.nn.DataParallel):
@@ -73,13 +101,15 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
         train.config = train_config
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
-        exit(f"Config file not found at {config_path}")
+        logger.error(f"Config file not found at {config_path}")
+        exit(1)
 
     if osp.exists(model_config_path):
         train.model_config = load_model_config_yaml(model_config_path)
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
-        exit(f"Config file not found at {model_config_path}")
+        logger.error(f"Config file not found at {model_config_path}")
+        exit(1)
 
     train.early_joint = early_joint
     train.base_output_dir = out_dir
@@ -96,18 +126,7 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
     )
 
     train.logger = logging.getLogger(__name__)
-    train.logger.setLevel(logging.DEBUG)
-    err_handler = StreamHandler()
-    err_handler.setLevel(logging.DEBUG)
-    err_handler.setFormatter(logging.Formatter("%(asctime)s: %(message)s"))
-    train.logger.addHandler(err_handler)
-
-    file_handler = logging.FileHandler(osp.join(train.out_dir, "train.log"))
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(
-        logging.Formatter("%(levelname)s:%(asctime)s: %(message)s")
-    )
-    train.logger.addHandler(file_handler)
+    setup_logger(train.logger, train.out_dir)
 
     train.manifest.max_epoch = sum(
         [
@@ -168,9 +187,6 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
 
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
 
-    def log_print_function(s):
-        train.logger.info(s)
-
     train.batch_manager = BatchManager(
         train.config.dataset.train_data,
         train.out_dir,
@@ -180,7 +196,6 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
         min_length=train.config.dataset.min_length,
         device=train.config.training.device,
         accelerator=train.accelerator,
-        log_print=log_print_function,
         multispeaker=train.model_config.model.multispeaker,
         text_cleaner=text_cleaner,
         stage=stage,
@@ -228,7 +243,7 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
             train.batch_manager.resume_loader = train.accelerator.skip_first_batches(
                 train.batch_manager.loader, train.manifest.current_step
             )
-        print(f"Loading last checkpoint at {checkpoint} ...")
+        logger.info(f"Loading last checkpoint at {checkpoint} ...")
     else:
         # TODO: do we need this? We used to do it always before?
         load_defaults(train, train.model)
@@ -246,7 +261,7 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
     #     and osp.exists(pretrained_model)
     #     and stage in ["first", "first_tma", "acoustic", "vocoder"]
     # ):
-    #     print(f"Loading the first stage model at {pretrained_model} ...")
+    #     logger.info(f"Loading the first stage model at {pretrained_model} ...")
     #     (
     #         train.model,
     #         train.optimizer,
@@ -358,8 +373,8 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
 
     train.stft_loss = MultiResolutionSTFTLoss().to(train.config.training.device)
 
-    # print("BERT", optimizer.optimizers["bert"])
-    # print("decoder", optimizer.optimizers["decoder"])
+    # logger.debug(f"BERT {optimizer.optimizers['bert']}")
+    # logger.debug(f"decoder {optimizer.optimizers['decoder']}")
 
     train.start_ds = False
 
@@ -437,7 +452,7 @@ def train_val_iterate(batch, train: TrainContext):
         / train.model_config.preprocess.sample_rate
     )
     # filenames = batch[8]
-    # print(f"Step {train.manifest.current_step} Processing: {filenames}")
+    # logger.info(f"Step {train.manifest.current_step} Processing: {filenames}")
     num = train.manifest.current_step
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0

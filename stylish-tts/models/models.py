@@ -45,6 +45,10 @@ from xlstm import (
     FeedForwardConfig,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class LearnedDownSample(nn.Module):
     def __init__(self, layer_type, dim_in):
@@ -963,7 +967,7 @@ def load_checkpoint(model, optimizer, path, ignore_modules=[]):
 
                 state_dict = params[key]
                 new_state_dict = OrderedDict()
-                print(
+                logger.info(
                     f"{key} key length: {len(model[key].state_dict().keys())}, state_dict key length: {len(state_dict.keys())}"
                 )
                 for k, v in state_dict.items():
@@ -971,10 +975,10 @@ def load_checkpoint(model, optimizer, path, ignore_modules=[]):
                 # for (k_m, v_m), (k_c, v_c) in zip(
                 #    model[key].state_dict().items(), state_dict.items()
                 # ):
-                #    print(k_m, k_c)
+                #    logger.debug(f"{k_m}, {k_c}")
                 #    new_state_dict[k_m] = v_c
                 model[key].load_state_dict(new_state_dict, strict=True)
-            print("%s loaded" % key)
+            logger.info("%s loaded" % key)
 
     epoch = state["epoch"]
     iters = state["iters"]

@@ -8,6 +8,9 @@ import utils
 from accelerate.accelerator import Accelerator
 from text_utils import TextCleaner
 from torch.utils.data import DataLoader
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BatchManager:
@@ -21,7 +24,6 @@ class BatchManager:
         min_length: int = 50,
         device: str = "cpu",
         accelerator: Optional["Accelerator"] = None,
-        log_print: Optional[Callable[..., None]] = None,
         multispeaker: bool = False,
         text_cleaner: TextCleaner = None,
         stage: str = "",
@@ -30,7 +32,6 @@ class BatchManager:
         self.train_path: str = train_path
         self.probe_batch_max: int = probe_batch_max
         self.log_dir: str = log_dir
-        self.log_print: Optional[Callable[..., None]] = log_print
         self.device: str = device
         self.multispeaker: bool = multispeaker
         self.stage: int = stage
@@ -39,7 +40,7 @@ class BatchManager:
 
         train_list = utils.get_data_path_list(self.train_path)
         if len(train_list) == 0:
-            print("Could not open train_list", self.train_path)
+            logger.error(f"Could not open train_list {self.train_path}")
             exit()
         self.dataset: FilePathDataset = FilePathDataset(
             train_list,
@@ -115,7 +116,7 @@ class BatchManager:
                         self.set_batch_size(key, 1)
                         done = True
                     elif batch_size > 0:
-                        print(
+                        logger.info(
                             "Attempting %d/%d @ %d"
                             % (frame_count, max_frame_size, batch_size)
                         )
@@ -146,10 +147,10 @@ class BatchManager:
                 except Exception as e:
                     if "out of memory" in str(e):
                         audio_length = (last_bin * 0.25) + 0.25
-                        self.log_print(
+                        train.logger.info(
                             f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
-                        print("Probe saw OOM -- backing off")
+                        logger.info("Probe saw OOM -- backing off")
                         import gc
 
                         train.optimizer.zero_grad()
@@ -159,8 +160,8 @@ class BatchManager:
                         if batch_size > 1:
                             batch_size -= 1
                     else:
-                        print("UNKNOWN EXCEPTION")
-                        print("".join(traceback.format_exception(e)))
+                        logger.error("UNKNOWN EXCEPTION")
+                        logger.error("".join(traceback.format_exception(e)))
                         raise e
         self.save_batch_dict()
 
@@ -196,7 +197,7 @@ class BatchManager:
                 if debug:
                     batch_size = self.get_batch_size(self.last_bin)
                     audio_length = (self.last_bin * 0.25) + 0.25
-                    self.log_print(
+                    train.logger.info(
                         f"train_batch(i={train.manifest.current_step}, batch={batch_size}, running_loss={self.running_loss}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                     )
                 self.running_loss = train.train_batch(
@@ -216,7 +217,7 @@ class BatchManager:
                         + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size} "
                         + str(batch[2])
                     )
-                    # self.log_print(e)
+                    # train.logger.info(e)
                     train.optimizer.zero_grad()
                     if self.last_oom != self.last_bin:
                         self.last_oom = self.last_bin
@@ -227,6 +228,6 @@ class BatchManager:
                     gc.collect()
                     torch.cuda.empty_cache()
                 else:
-                    print("".join(traceback.format_exception(e)))
+                    logger.error("".join(traceback.format_exception(e)))
                     raise e
         # train.optimizer.scale(1.0 / math.sqrt(batch[0].shape[0]))
