@@ -54,6 +54,7 @@ class MultiOptimizer:
             self.schedulers[key].step(*args)
         else:
             _ = [self.schedulers[key].step(*args) for key in self.keys]
+
     def scale(self, scale, key_in=None):
         keys = [key_in]
         if key_in is None:
@@ -62,12 +63,13 @@ class MultiOptimizer:
             self.scale_schedulers[key].set_factor(scale)
             self.scale_schedulers[key].step()
 
+
 class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
     def __init__(
         self,
         optimizer: Optimizer,
         factor: float = 1.0,
-    ):  
+    ):
         self.factor = factor
         super().__init__(optimizer)
 
@@ -77,6 +79,7 @@ class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
     def get_lr(self):
         """Compute the learning rate of each parameter group."""
         return [group["lr"] * self.factor for group in self.optimizer.param_groups]
+
 
 def define_scheduler(optimizer, params):
     scheduler = torch.optim.lr_scheduler.OneCycleLR(

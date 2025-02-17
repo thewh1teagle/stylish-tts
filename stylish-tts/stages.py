@@ -14,8 +14,6 @@ from losses import magphase_loss
 from batch_context import BatchContext
 from train_context import TrainContext
 from loss_log import LossLog, combine_logs
-import json
-import os
 
 ###############################################
 # Helper Functions
@@ -204,7 +202,7 @@ def save_checkpoint(
     Saves checkpoint using a checkpoint.
     """
     checkpoint_dir = osp.join(
-        train.config.training.out_dir,
+        train.out_dir,
         f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}",
     )
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
@@ -222,21 +220,26 @@ def prepare_models(training_set, eval_set, train):
         if key in training_set or key in eval_set:
             result[key] = train.model[key]
             result[key].to(train.config.training.device)
-        #else:
+        # else:
         #    train.model[key].to("cpu")
-        #if key in training_set:
+        # if key in training_set:
         #    result[key].train()
-        #elif key in eval_set:
+        # elif key in eval_set:
         #    result[key].eval()
     return Munch(**result)
+
 
 def train_vocoder_adapter(
     current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_vocoder(train, batch)
-    if current_epoch_step > 0 and current_epoch_step % train.config.training.log_interval == 0:
+    if (
+        current_epoch_step > 0
+        and current_epoch_step % train.config.training.log_interval == 0
+    ):
         log.broadcast(train.manifest)
     return 0
+
 
 def train_vocoder(train: TrainContext, inputs):
     """
@@ -248,7 +251,9 @@ def train_vocoder(train: TrainContext, inputs):
         ["mels", "waves"],
     )
     training_set = {
-        "decoder", "style_encoder", "pitch_extractor",
+        "decoder",
+        "style_encoder",
+        "pitch_extractor",
     }
     eval_set = {"msd", "mpd"}
     model = prepare_models(training_set, eval_set, train)
@@ -256,13 +261,14 @@ def train_vocoder(train: TrainContext, inputs):
     with train.accelerator.autocast():
         pitch = state.acoustic_pitch(mels)
         style_embedding = state.acoustic_style_embedding(mels)
-        audio_out, mag, phase = state.pretrain_decoding(pitch, style_embedding, audio_gt)
+        audio_out, mag, phase = state.pretrain_decoding(
+            pitch, style_embedding, audio_gt
+        )
 
         train.optimizer.zero_grad()
         with train.accelerator.autocast():
             d_loss = train.discriminator_loss(
-                audio_gt.detach().unsqueeze(1).float(),
-                audio_out.detach()
+                audio_gt.detach().unsqueeze(1).float(), audio_out.detach()
             ).mean()
         train.accelerator.backward(d_loss)
         optimizer_step(train, ["msd", "mpd"])
@@ -270,17 +276,16 @@ def train_vocoder(train: TrainContext, inputs):
         log = LossLog(
             state.train.logger, state.train.writer, state.config.loss_weight.dict()
         )
+        log.add_loss("mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt))
         log.add_loss(
-            "mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt)
+            "gen",
+            train.generator_loss(
+                audio_gt.detach().unsqueeze(1).float(), audio_out
+            ).mean(),
         )
-        log.add_loss("gen", train.generator_loss(
-            audio_gt.detach().unsqueeze(1).float(), audio_out
-        ).mean())
 
         if mag is not None and phase is not None:
-            log.add_loss(
-                "magphase", magphase_loss(mag, phase, audio_gt)
-            )
+            log.add_loss("magphase", magphase_loss(mag, phase, audio_gt))
         train.accelerator.backward(log.total())
     optimizer_step(train, training_set)
     return log
@@ -290,7 +295,10 @@ def train_acoustic_adapter(
     current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     log = train_acoustic(train, batch, split=False)
-    if current_epoch_step > 0 and current_epoch_step % train.config.training.log_interval == 0:
+    if (
+        current_epoch_step > 0
+        and current_epoch_step % train.config.training.log_interval == 0
+    ):
         log.broadcast(train.manifest)
     return 0
 
@@ -424,7 +432,8 @@ def train_first(
     mel_gt = mels  # Ground truth mel spectrogram
 
     if mel_gt.shape[-1] < 40 or (
-        mel_gt.shape[-1] < 80 and not train.config.embedding_encoder.skip_downsamples
+        mel_gt.shape[-1] < 80
+        and not train.model_config.embedding_encoder.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
         return running_loss
@@ -438,7 +447,7 @@ def train_first(
     with train.accelerator.autocast():
         style_emb = train.model.style_encoder(
             mels.unsqueeze(1)
-            if train.config.model.multispeaker
+            if train.model_config.model.multispeaker
             else mel_gt.unsqueeze(1)
         )
         y_rec, mag_rec, phase_rec = train.model.decoder(
@@ -534,7 +543,7 @@ def train_first(
 
 
 def train_second(
-    i: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
 ) -> Tuple[float, int]:
     """
     Training function for the second stage.
@@ -588,7 +597,7 @@ def train_second(
         return running_loss
 
     d_gt = s2s_attn_mono.sum(axis=-1).detach()
-    if train.config.model.multispeaker and train.manifest.stage == "second_style":
+    if train.model_config.model.multispeaker and train.manifest.stage == "second_style":
         with train.accelerator.autocast():
             ref_ss = train.model.style_encoder(ref_mels.unsqueeze(1))
             ref_sp = train.model.predictor_encoder(ref_mels.unsqueeze(1))
@@ -606,7 +615,7 @@ def train_second(
     if train.manifest.stage == "second_style":
         num_steps = np.random.randint(3, 5)
         with torch.no_grad():
-            if train.config.diffusion.dist.estimate_sigma_data:
+            if train.model_config.diffusion.dist.estimate_sigma_data:
                 sigma_data = s_trg.std(axis=-1).mean().item()
                 train.model.diffusion.module.diffusion.sigma_data = sigma_data
                 train.manifest.running_std.append(sigma_data)
@@ -614,7 +623,7 @@ def train_second(
             noise = (
                 torch.randn_like(s_trg).unsqueeze(1).to(train.config.training.device)
             )
-            if train.config.model.multispeaker:
+            if train.model_config.model.multispeaker:
                 s_preds = train.diffusion_sampler(
                     noise=noise,
                     embedding=bert_dur,
@@ -650,7 +659,8 @@ def train_second(
 
     wav = waves  # Assume already on train.config.training.device
     if mels.shape[-1] < 40 or (
-        mels.shape[-1] < 80 and not train.config.embedding_encoder.skip_downsamples
+        mels.shape[-1] < 80
+        and not train.model_config.embedding_encoder.skip_downsamples
     ):
         log_print("Skipping batch. TOO SHORT", train.logger)
         return running_loss
@@ -716,7 +726,7 @@ def train_second(
             ref_lengths = input_lengths
             ref_texts = texts
         slm_out = train.slm_adversarial_loss(
-            i,
+            current_epoch_step,
             y_rec_gt,
             (y_rec_gt_pred if train.manifest.stage == "second_joint" else None),
             waves,
@@ -725,7 +735,7 @@ def train_second(
             ref_lengths,
             use_ind,
             s_trg.detach(),
-            ref if train.config.model.multispeaker else None,
+            ref if train.model_config.model.multispeaker else None,
         )
         if slm_out is None:
             print("slm_out none")
@@ -736,8 +746,8 @@ def train_second(
         train.accelerator.backward(loss_gen_lm)
         scale_gradients(
             train.model,
-            train.config.slmadv_params.thresh,
-            train.config.slmadv_params.scale,
+            train.model_config.slmadv_params.thresh,
+            train.model_config.slmadv_params.scale,
         )
         optimizer_step(train, ["bert_encoder", "bert", "predictor", "diffusion"])
         if d_loss_slm != 0:
@@ -748,7 +758,7 @@ def train_second(
         d_loss_slm, loss_gen_lm = 0, 0
 
     if train.accelerator.is_main_process:
-        if (i + 1) % train.config.training.log_interval == 0:
+        if (current_epoch_step + 1) % train.config.training.log_interval == 0:
             metrics = {
                 "mel_loss": running_loss / train.config.training.log_interval,
                 "d_loss": d_loss,
@@ -765,7 +775,7 @@ def train_second(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{i+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
+                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
@@ -817,7 +827,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
 
             if mels.shape[-1] < 40 or (
                 mels.shape[-1] < 80
-                and not train.config.embedding_encoder.skip_downsamples
+                and not train.model_config.embedding_encoder.skip_downsamples
             ):
                 log_print("Skipping batch. TOO SHORT", train.logger)
                 continue
@@ -861,13 +871,13 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                     f"eval/y{bib}",
                     y_rec.cpu().numpy().squeeze(),
                     train.manifest.current_total_step,
-                    sample_rate=train.config.preprocess.sample_rate,
+                    sample_rate=train.model_config.preprocess.sample_rate,
                 )
                 train.writer.add_audio(
                     f"gt/y{bib}",
                     waves[bib].squeeze(),
                     train.manifest.current_total_step,
-                    sample_rate=train.config.preprocess.sample_rate,
+                    sample_rate=train.model_config.preprocess.sample_rate,
                 )
 
         if save:
@@ -935,7 +945,7 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                 d_gt = s2s_attn_mono.sum(axis=-1).detach()
                 if mels.shape[-1] < 40 or (
                     mels.shape[-1] < 80
-                    and not train.config.embedding_encoder.skip_downsamples
+                    and not train.model_config.embedding_encoder.skip_downsamples
                 ):
                     log_print("Skipping batch. TOO SHORT", train.logger)
                     continue
@@ -993,13 +1003,13 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                 f"eval/y{i}",
                 samples[i],
                 train.manifest.current_total_step,
-                sample_rate=train.config.preprocess.sample_rate,
+                sample_rate=train.model_config.preprocess.sample_rate,
             )
             train.writer.add_audio(
                 f"gt/y{i}",
                 samples_gt[i],
                 train.manifest.current_total_step,
-                sample_rate=train.config.preprocess.sample_rate,
+                sample_rate=train.model_config.preprocess.sample_rate,
             )
         if save:
             if avg_loss < train.manifest.best_loss:
