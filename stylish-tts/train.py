@@ -205,9 +205,9 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
     scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
-    scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
-    scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
-    scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+    # scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
+    # scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+    # scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
 
     train.optimizer = build_optimizer(
         {key: train.model[key].parameters() for key in train.model},
@@ -319,21 +319,21 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         )
 
     # adjust BERT learning rate
-    for g in train.optimizer.optimizers["bert"].param_groups:
-        g["betas"] = (0.9, 0.99)
-        g["lr"] = train.config.optimizer.bert_lr
-        g["initial_lr"] = train.config.optimizer.bert_lr
-        g["min_lr"] = 0
-        g["weight_decay"] = 0.01
+    # for g in train.optimizer.optimizers["bert"].param_groups:
+    #    g["betas"] = (0.9, 0.99)
+    #    g["lr"] = train.config.optimizer.bert_lr
+    #    g["initial_lr"] = train.config.optimizer.bert_lr
+    #    g["min_lr"] = 0
+    #    g["weight_decay"] = 0.01
 
     # adjust acoustic module learning rate
-    for module in ["decoder", "style_encoder"]:
-        for g in train.optimizer.optimizers[module].param_groups:
-            g["betas"] = (0.0, 0.99)
-            g["lr"] = train.config.optimizer.ft_lr
-            g["initial_lr"] = train.config.optimizer.ft_lr
-            g["min_lr"] = 0
-            g["weight_decay"] = 1e-4
+    # for module in ["decoder", "style_encoder"]:
+    #    for g in train.optimizer.optimizers[module].param_groups:
+    #        g["betas"] = (0.0, 0.99)
+    #        g["lr"] = train.config.optimizer.ft_lr
+    #        g["initial_lr"] = train.config.optimizer.ft_lr
+    #        g["min_lr"] = 0
+    #        g["weight_decay"] = 1e-4
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
