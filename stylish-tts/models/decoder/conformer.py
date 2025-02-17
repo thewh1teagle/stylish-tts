@@ -4,7 +4,9 @@ import torch.nn.functional as F
 
 from einops.layers.torch import Rearrange
 from ring_attention_pytorch import RingAttention
+import logging
 
+logger = logging.getLogger(__name__)
 # helper functions
 
 
@@ -74,7 +76,7 @@ class PreNorm(nn.Module):
         try:
             result = self.fn(x.to(x.device), **kwargs)
         except Exception as e:
-            print(e)
+            logger.error(e)
             exit(str(e))
         return result
 

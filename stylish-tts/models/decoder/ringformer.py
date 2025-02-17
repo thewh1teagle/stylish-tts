@@ -18,6 +18,9 @@ import math
 import random
 import numpy as np
 from scipy.signal import get_window
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AdaIN1d(nn.Module):
@@ -530,7 +533,7 @@ class Generator(torch.nn.Module):
         return out, spec, phase
 
     def remove_weight_norm(self):
-        print("Removing weight norm...")
+        logger.info("Removing weight norm...")
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:
@@ -630,9 +633,7 @@ class Decoder(nn.Module):
     ):
         super().__init__()
 
-        self.conv_pretrain = Conv1d(
-           dim_out, upsample_initial_channel, 7, 1, padding=3
-        )
+        self.conv_pretrain = Conv1d(dim_out, upsample_initial_channel, 7, 1, padding=3)
 
         self.decode = nn.ModuleList()
 

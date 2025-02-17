@@ -1,5 +1,8 @@
 # IPA Phonemizer: https://github.com/bootphon/phonemizer
 from config_loader import SymbolConfig
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TextCleaner:
@@ -13,7 +16,7 @@ class TextCleaner:
             symbols.letters_ipa
         )  # "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
         self.word_index_dictionary = self.build_text_cleaner()
-        # print(len(dicts))
+        # logger.debug(len(dicts))
 
     def __call__(self, text):
         indexes = []
@@ -21,7 +24,7 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print("Meld " + char + ": " + text)
+                logger.error("Meld " + char + ": " + text)
         return indexes
 
     def build_text_cleaner(self):

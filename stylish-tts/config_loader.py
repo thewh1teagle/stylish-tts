@@ -3,6 +3,9 @@ from typing import List, Union, Literal
 from pathlib import Path
 import yaml
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingConfig(BaseModel):
@@ -10,7 +13,6 @@ class TrainingConfig(BaseModel):
     Training configuration parameters.
     """
 
-    out_dir: str = Field(..., description="Directory for output files.")
     log_interval: int = Field(..., description="Interval (in steps) for logging.")
     save_interval: int = Field(
         ..., description="Interval (in steps) for saving checkpoints."
@@ -409,6 +411,21 @@ class Config(BaseModel):
         ..., description="Training plan configuration parameters."
     )
     dataset: DatasetConfig = Field(..., description="Dataset configuration parameters.")
+    loss_weight: LossWeightConfig = Field(
+        ..., description="Loss weight configuration for various loss components."
+    )
+    optimizer: OptimizerConfig = Field(
+        ..., description="Optimizer configuration parameters."
+    )
+
+    def state_dict(self) -> dict:
+        return self.model_dump()
+
+    def load_state_dict(self, state: dict) -> None:
+        self = self.model_copy(update=state)
+
+
+class ModelConfig(BaseModel):
     symbol: SymbolConfig = Field(..., description="Text processing symbols")
     preprocess: PreprocessConfig = Field(
         ..., description="Preprocessing configuration parameters."
@@ -444,12 +461,6 @@ class Config(BaseModel):
     diffusion: DiffusionConfig = Field(
         ..., description="Style diffusion model configuration parameters."
     )
-    loss_weight: LossWeightConfig = Field(
-        ..., description="Loss weight configuration for various loss components."
-    )
-    optimizer: OptimizerConfig = Field(
-        ..., description="Optimizer configuration parameters."
-    )
     slmadv_params: SlmAdvConfig = Field(
         ..., description="SLM adversarial training configuration parameters."
     )
@@ -478,6 +489,25 @@ def load_config_yaml(config_path: str) -> Config:
 
     # Parse and validate the configuration dictionary
     return Config.model_validate(config_dict)
+
+
+def load_model_config_yaml(config_path: str) -> ModelConfig:
+    """
+    Load a configuration file from the specified path.
+
+    Args:
+        config_path (Path): Path to the configuration file.
+
+    Returns:
+        Config: Parsed configuration object.
+    """
+    path = Path(config_path)
+    # Load the YAML file into a dictionary
+    with path.open("r", encoding="utf-8") as file:
+        config_dict = yaml.safe_load(file)
+
+    # Parse and validate the configuration dictionary
+    return ModelConfig.model_validate(config_dict)
 
 
 def dump_to_string(config: Config) -> str:
@@ -520,8 +550,8 @@ if __name__ == "__main__":
 
     # For Pydantic v2, use model_dump_json (or use json.dumps(config.model_dump(), indent=2))
     test = dump_to_string(config)
-    print(test)
+    logging.debug(test)
 
     # Load a configuration object from a JSON string
     config_loaded = load_from_string(test)
-    print(config_loaded)
+    logging.debug(config_loaded)

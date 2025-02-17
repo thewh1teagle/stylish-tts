@@ -10,6 +10,9 @@ import math
 import random
 import numpy as np
 from scipy.signal import get_window
+import logging
+
+logger = logging.getLogger(__name__)
 
 LRELU_SLOPE = 0.1
 
@@ -543,7 +546,7 @@ class Generator(torch.nn.Module):
         return spec, phase
 
     def remove_weight_norm(self):
-        print("Removing weight norm...")
+        logger.info("Removing weight norm...")
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:
