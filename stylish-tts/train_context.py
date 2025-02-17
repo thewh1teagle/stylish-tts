@@ -1,4 +1,4 @@
-from config_loader import Config
+from config_loader import Config, ModelConfig
 from batch_manager import BatchManager
 from typing import Callable, Optional, Any, List
 from accelerate import Accelerator
@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from models.diffusion.sampler import DiffusionSampler
 from models.slmadv import SLMAdversarialLoss
-import json
 
 
 class Manifest:
@@ -34,7 +33,10 @@ class Manifest:
 
 class TrainContext:
     def __init__(self) -> None:
+        self.base_output_dir: Optional[str] = None
+        self.out_dir: Optional[str] = None
         self.config: Optional[Config] = None
+        self.model_config: Optional[ModelConfig] = None
         self.batch_manager: Optional[BatchManager] = None
         self.manifest: Manifest = Manifest()
 

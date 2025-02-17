@@ -630,9 +630,7 @@ class Decoder(nn.Module):
     ):
         super().__init__()
 
-        self.conv_pretrain = Conv1d(
-           dim_out, upsample_initial_channel, 7, 1, padding=3
-        )
+        self.conv_pretrain = Conv1d(dim_out, upsample_initial_channel, 7, 1, padding=3)
 
         self.decode = nn.ModuleList()
 
