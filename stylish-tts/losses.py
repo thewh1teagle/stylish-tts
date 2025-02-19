@@ -228,9 +228,11 @@ class DiscriminatorLoss(torch.nn.Module):
         x = abs(self.last_loss - ideal_loss)
         result = 1.0
         if self.last_loss > ideal_loss:
+            x = min(x, x_max)
             result = min(math.pow(f_max, x / x_max), f_max)
             # f_x = tf.clip_by_value(tf.math.pow(f_max, x/x_max), 1.0, f_max)
         else:
+            x = max(x, x_min)
             result = max(math.pow(h_min, x / x_min), h_min)
             # h_x = tf.clip_by_value(tf.math.pow(h_min, x/x_min), h_min, 1.0)
         # return tf.cond(loss > ideal_loss, lambda: f_x, lambda: h_x)

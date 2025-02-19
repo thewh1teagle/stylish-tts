@@ -454,7 +454,7 @@ def train_val_iterate(batch, train: TrainContext):
     )
     # filenames = batch[8]
     # logger.info(f"Step {train.manifest.current_step} Processing: {filenames}")
-    num = train.manifest.current_step
+    num = train.manifest.current_total_step
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0
     if do_val or do_save:
