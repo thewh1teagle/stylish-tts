@@ -236,6 +236,14 @@ class VocosDecoderConfig(BaseModel):
     gen_istft_hop_size: int = Field(..., description="Hop size for iSTFT generator.")
 
 
+class FreevDecoderConfig(BaseModel):
+    """
+    Configuration for FreeV decoder.
+    """
+
+    type: Literal["freev"] = "freev"
+
+
 class TextEncoderConfig(BaseModel):
     """
     Text encoder configuration parameters.
@@ -445,6 +453,7 @@ class ModelConfig(BaseModel):
         ISTFTNetDecoderConfig,
         RingformerDecoderConfig,
         VocosDecoderConfig,
+        FreevDecoderConfig,
     ] = Field(..., description="Decoder (vocoder) configuration parameters.")
     text_encoder: TextEncoderConfig = Field(
         ..., description="Text encoder configuration parameters."
