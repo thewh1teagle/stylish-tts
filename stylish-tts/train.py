@@ -325,6 +325,7 @@ def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint
         train.model_config.preprocess.sample_rate,
         train.model_config.slm.sr,
     ).to(train.config.training.device)
+    train.optimizer.add_discriminator_schedulers(train.discriminator_loss)
 
     # train.gl = MyDataParallel(train.gl)
     # train.dl = MyDataParallel(train.dl)

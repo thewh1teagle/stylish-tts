@@ -17,12 +17,23 @@ class MultiOptimizer:
         self.optimizers = optimizers
         self.schedulers = schedulers
         self.scale_schedulers = {}
+        self.disc_schedulers = {}
         self.keys = list(optimizers.keys())
         self.param_groups = reduce(
             lambda x, y: x + y, [v.param_groups for v in self.optimizers.values()]
         )
         for key in self.keys:
             self.scale_schedulers[key] = ScaleLR(self.optimizers[key])
+
+    def add_discriminator_schedulers(self, discriminator_loss):
+        for key in ["msd", "mpd"]:
+            self.disc_schedulers[key] = torch.optim.lr_scheduler.MultiplicativeLR(
+                self.optimizers[key], discriminator_loss.get_disc_lambda()
+            )
+
+    def step_discriminator_schedulers(self):
+        for key in ["msd", "mpd"]:
+            self.disc_schedulers[key].step()
 
     def state_dict(self):
         state_dicts = [(key, self.optimizers[key].state_dict()) for key in self.keys]
