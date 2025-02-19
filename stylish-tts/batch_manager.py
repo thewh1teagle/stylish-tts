@@ -231,3 +231,4 @@ class BatchManager:
                     logger.error("".join(traceback.format_exception(e)))
                     raise e
         # train.optimizer.scale(1.0 / math.sqrt(batch[0].shape[0]))
+        train.optimizer.scheduler()

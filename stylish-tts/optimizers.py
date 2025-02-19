@@ -8,6 +8,7 @@ from torch.optim import Optimizer
 from functools import reduce
 from torch.optim import AdamW
 import logging
+import transformers
 
 logger = logging.getLogger(__name__)
 
@@ -85,16 +86,11 @@ class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
 
 
 def define_scheduler(optimizer, params):
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    scheduler = transformers.get_cosine_schedule_with_warmup(
         optimizer,
-        max_lr=params.get("max_lr", 2e-4),
-        epochs=params.get("epochs", 200),
-        steps_per_epoch=params.get("steps_per_epoch", 1000),
-        pct_start=params.get("pct_start", 0.0),
-        div_factor=1,
-        final_div_factor=1,
+        num_warmup_steps=200,
+        num_training_steps=params["steps_per_epoch"] * params["epochs"],
     )
-
     return scheduler
 
 
