@@ -780,6 +780,7 @@ def build_model(model_config: ModelConfig):
         "hifigan",
         "ringformer",
         "vocos",
+        "freev",
     ], "Decoder type unknown"
 
     if model_config.decoder.type == "istftnet":
@@ -824,6 +825,10 @@ def build_model(model_config: ModelConfig):
             gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
             gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
         )
+    elif model_config.decoder.type == "freev":
+        from .decoder.freev import Decoder
+
+        decoder = Decoder()
     else:
         from .decoder.hifigan import Decoder
 
