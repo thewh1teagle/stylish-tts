@@ -5,7 +5,8 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
-from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
+from torch.nn.utils import remove_weight_norm, spectral_norm
+from torch.nn.utils.parametrizations import weight_norm
 from ..common import init_weights, get_padding
 
 from .stft import stft
@@ -17,6 +18,9 @@ import math
 import random
 import numpy as np
 from scipy.signal import get_window
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AdaIN1d(nn.Module):
@@ -529,7 +533,7 @@ class Generator(torch.nn.Module):
         return out, spec, phase
 
     def remove_weight_norm(self):
-        print("Removing weight norm...")
+        logger.info("Removing weight norm...")
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:
@@ -629,6 +633,8 @@ class Decoder(nn.Module):
     ):
         super().__init__()
 
+        self.conv_pretrain = Conv1d(dim_out, upsample_initial_channel, 7, 1, padding=3)
+
         self.decode = nn.ModuleList()
 
         self.encode = AdainResBlk1d(dim_in + 2, 1024, style_dim)
@@ -661,46 +667,49 @@ class Decoder(nn.Module):
             gen_istft_hop_size,
         )
 
-    def forward(self, asr, F0_curve, N, s):
-        if self.training:
-            downlist = [0, 3, 7]
-            F0_down = downlist[random.randint(0, 2)]
-            downlist = [0, 3, 7, 15]
-            N_down = downlist[random.randint(0, 3)]
-            if F0_down:
-                F0_curve = (
-                    nn.functional.conv1d(
-                        F0_curve.unsqueeze(1),
-                        torch.ones(1, 1, F0_down).to("cuda"),
-                        padding=F0_down // 2,
-                    ).squeeze(1)
-                    / F0_down
-                )
-            if N_down:
-                N = (
-                    nn.functional.conv1d(
-                        N.unsqueeze(1),
-                        torch.ones(1, 1, N_down).to("cuda"),
-                        padding=N_down // 2,
-                    ).squeeze(1)
-                    / N_down
-                )
+    def forward(self, asr, F0_curve, N, s, pretrain=False):
+        if not pretrain:
+            if self.training:
+                downlist = [0, 3, 7]
+                F0_down = downlist[random.randint(0, 2)]
+                downlist = [0, 3, 7, 15]
+                N_down = downlist[random.randint(0, 3)]
+                if F0_down:
+                    F0_curve = (
+                        nn.functional.conv1d(
+                            F0_curve.unsqueeze(1),
+                            torch.ones(1, 1, F0_down).to("cuda"),
+                            padding=F0_down // 2,
+                        ).squeeze(1)
+                        / F0_down
+                    )
+                if N_down:
+                    N = (
+                        nn.functional.conv1d(
+                            N.unsqueeze(1),
+                            torch.ones(1, 1, N_down).to("cuda"),
+                            padding=N_down // 2,
+                        ).squeeze(1)
+                        / N_down
+                    )
 
-        F0 = self.F0_conv(F0_curve.unsqueeze(1))
-        N = self.N_conv(N.unsqueeze(1))
+            F0 = self.F0_conv(F0_curve.unsqueeze(1))
+            N = self.N_conv(N.unsqueeze(1))
 
-        x = torch.cat([asr, F0, N], axis=1)
-        x = self.encode(x, s)
+            x = torch.cat([asr, F0, N], axis=1)
+            x = self.encode(x, s)
 
-        asr_res = self.asr_res(asr)
+            asr_res = self.asr_res(asr)
 
-        res = True
-        for block in self.decode:
-            if res:
-                x = torch.cat([x, asr_res, F0, N], axis=1)
-            x = block(x, s)
-            if block.upsample_type != "none":
-                res = False
+            res = True
+            for block in self.decode:
+                if res:
+                    x = torch.cat([x, asr_res, F0, N], axis=1)
+                x = block(x, s)
+                if block.upsample_type != "none":
+                    res = False
+        else:
+            x = self.conv_pretrain(asr)
 
         x, mag, phase = self.generator(x, s, F0_curve)
         return x, mag, phase

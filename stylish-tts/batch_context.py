@@ -15,20 +15,24 @@ class BatchContext:
         self,
         train: TrainContext,
         model,
-        texts: torch.Tensor,
-        text_lengths: torch.Tensor,
+        text_lengths: torch.Tensor = None,
     ):
         self.train: TrainContext = train
         self.config: Config = train.config
         # This is a subset containing only those models used this batch
         self.model = model
 
-        self.text_mask: torch.Tensor = length_to_mask(text_lengths).to(
-            self.config.training.device
-        )
+        self.text_mask = None
+        if text_lengths is not None:
+            self.text_mask: torch.Tensor = length_to_mask(text_lengths).to(
+                self.config.training.device
+            )
         self.duration_results = None
         self.resample = torchaudio.transforms.Resample(
             self.config.preprocess.sample_rate, 16000
+        ).to(self.config.training.device)
+        self.to_mel = torchaudio.transforms.MelSpectrogram(
+            n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
         ).to(self.config.training.device)
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
@@ -167,3 +171,7 @@ class BatchContext:
                 yield (audio_out, mag, phase, audio_gt_slice)
                 text_start += text_hop
                 text_end += text_hop
+
+    def pretrain_decoding(self, pitch, style, audio_gt):
+        mels = self.to_mel(audio_gt)[:, :, :-1]
+        return self.model.decoder(mels, pitch, None, style, pretrain=True)

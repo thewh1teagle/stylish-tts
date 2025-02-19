@@ -11,7 +11,9 @@ import safetensors.torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
+from torch.nn.utils import remove_weight_norm, spectral_norm
+from torch.nn.utils.parametrizations import weight_norm
+from config_loader import ModelConfig
 
 
 from .text_aligner import TextAligner
@@ -42,6 +44,10 @@ from xlstm import (
     sLSTMLayerConfig,
     FeedForwardConfig,
 )
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LearnedDownSample(nn.Module):
@@ -597,6 +603,7 @@ class ProsodyPredictor(nn.Module):
         self.shared = nn.LSTM(
             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
         )
+
         self.F0 = nn.ModuleList()
         self.F0.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
         self.F0.append(
@@ -694,7 +701,7 @@ class DurationEncoder(nn.Module):
                     num_layers=1,
                     batch_first=True,
                     bidirectional=True,
-                    dropout=dropout,
+                    # dropout=dropout,
                 )
             )
             self.lstms.append(AdaLayerNorm(sty_dim, d_model))
@@ -757,136 +764,143 @@ class DurationEncoder(nn.Module):
         return mask
 
 
-def build_model(config):
+def build_model(model_config: ModelConfig):
     text_aligner = TextAligner(
-        input_dim=config.model.n_mels,
-        n_token=config.text_encoder.n_token,
-        **(config.text_aligner.dict()),
+        input_dim=model_config.model.n_mels,
+        n_token=model_config.text_encoder.n_token,
+        **(model_config.text_aligner.dict()),
     )
-    pitch_extractor = PitchExtractor(**(config.pitch_extractor.dict()))
-    bert = PLBERT(vocab_size=config.text_encoder.n_token, **(config.plbert.dict()))
+    pitch_extractor = PitchExtractor(**(model_config.pitch_extractor.dict()))
+    bert = PLBERT(
+        vocab_size=model_config.text_encoder.n_token, **(model_config.plbert.dict())
+    )
 
-    assert config.decoder.type in [
+    assert model_config.decoder.type in [
         "istftnet",
         "hifigan",
         "ringformer",
         "vocos",
+        "freev",
     ], "Decoder type unknown"
 
-    if config.decoder.type == "istftnet":
+    if model_config.decoder.type == "istftnet":
         from .decoder.istftnet import Decoder
 
         decoder = Decoder(
-            dim_in=config.decoder.hidden_dim,
-            style_dim=config.model.style_dim,
-            dim_out=config.model.n_mels,
-            resblock_kernel_sizes=config.decoder.resblock_kernel_sizes,
-            upsample_rates=config.decoder.upsample_rates,
-            upsample_initial_channel=config.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=config.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=config.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=config.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=config.decoder.gen_istft_hop_size,
+            dim_in=model_config.decoder.hidden_dim,
+            style_dim=model_config.model.style_dim,
+            dim_out=model_config.model.n_mels,
+            resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
+            upsample_rates=model_config.decoder.upsample_rates,
+            upsample_initial_channel=model_config.decoder.upsample_initial_channel,
+            resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
+            upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
+            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
+            gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
         )
-    elif config.decoder.type == "ringformer":
+    elif model_config.decoder.type == "ringformer":
         from .decoder.ringformer import Decoder
 
         decoder = Decoder(
-            dim_in=config.decoder.hidden_dim,
-            style_dim=config.model.style_dim,
-            dim_out=config.model.n_mels,
-            resblock_kernel_sizes=config.decoder.resblock_kernel_sizes,
-            upsample_rates=config.decoder.upsample_rates,
-            upsample_initial_channel=config.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=config.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=config.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=config.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=config.decoder.gen_istft_hop_size,
+            dim_in=model_config.decoder.hidden_dim,
+            style_dim=model_config.model.style_dim,
+            dim_out=model_config.model.n_mels,
+            resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
+            upsample_rates=model_config.decoder.upsample_rates,
+            upsample_initial_channel=model_config.decoder.upsample_initial_channel,
+            resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
+            upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
+            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
+            gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
         )
-    elif config.decoder.type == "vocos":
+    elif model_config.decoder.type == "vocos":
         from .decoder.vocos import Decoder
 
         decoder = Decoder(
-            dim_in=config.decoder.hidden_dim,
-            style_dim=config.model.style_dim,
-            dim_out=config.model.n_mels,
-            intermediate_dim=config.decoder.intermediate_dim,
-            num_layers=config.decoder.num_layers,
-            gen_istft_n_fft=config.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=config.decoder.gen_istft_hop_size,
+            dim_in=model_config.decoder.hidden_dim,
+            style_dim=model_config.model.style_dim,
+            dim_out=model_config.model.n_mels,
+            intermediate_dim=model_config.decoder.intermediate_dim,
+            num_layers=model_config.decoder.num_layers,
+            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
+            gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
         )
+    elif model_config.decoder.type == "freev":
+        from .decoder.freev import Decoder
+
+        decoder = Decoder()
     else:
         from .decoder.hifigan import Decoder
 
         decoder = Decoder(
-            dim_in=config.decoder.hidden_dim,
-            style_dim=config.model.style_dim,
-            dim_out=config.model.n_mels,
-            resblock_kernel_sizes=config.decoder.resblock_kernel_sizes,
-            upsample_rates=config.decoder.upsample_rates,
-            upsample_initial_channel=config.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=config.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=config.decoder.upsample_kernel_sizes,
+            dim_in=model_config.decoder.hidden_dim,
+            style_dim=model_config.model.style_dim,
+            dim_out=model_config.model.n_mels,
+            resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
+            upsample_rates=model_config.decoder.upsample_rates,
+            upsample_initial_channel=model_config.decoder.upsample_initial_channel,
+            resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
+            upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
         )
 
     text_encoder = TextEncoder(
-        channels=config.text_encoder.hidden_dim,
-        kernel_size=config.text_encoder.kernel_size,
-        depth=config.text_encoder.n_layer,
-        n_symbols=config.text_encoder.n_token,
+        channels=model_config.text_encoder.hidden_dim,
+        kernel_size=model_config.text_encoder.kernel_size,
+        depth=model_config.text_encoder.n_layer,
+        n_symbols=model_config.text_encoder.n_token,
     )
 
     predictor = ProsodyPredictor(
-        style_dim=config.model.style_dim,
-        d_hid=config.prosody_predictor.hidden_dim,
-        nlayers=config.prosody_predictor.n_layer,
-        max_dur=config.prosody_predictor.max_dur,
-        dropout=config.prosody_predictor.dropout,
+        style_dim=model_config.model.style_dim,
+        d_hid=model_config.prosody_predictor.hidden_dim,
+        nlayers=model_config.prosody_predictor.n_layer,
+        max_dur=model_config.prosody_predictor.max_dur,
+        dropout=model_config.prosody_predictor.dropout,
     )
 
     style_encoder = StyleEncoder(
-        dim_in=config.embedding_encoder.dim_in,
-        style_dim=config.model.style_dim,
-        max_conv_dim=config.embedding_encoder.hidden_dim,
-        skip_downsamples=config.embedding_encoder.skip_downsamples,
+        dim_in=model_config.embedding_encoder.dim_in,
+        style_dim=model_config.model.style_dim,
+        max_conv_dim=model_config.embedding_encoder.hidden_dim,
+        skip_downsamples=model_config.embedding_encoder.skip_downsamples,
     )  # acoustic style encoder
     predictor_encoder = StyleEncoder(
-        dim_in=config.embedding_encoder.dim_in,
-        style_dim=config.model.style_dim,
-        max_conv_dim=config.embedding_encoder.hidden_dim,
-        skip_downsamples=config.embedding_encoder.skip_downsamples,
+        dim_in=model_config.embedding_encoder.dim_in,
+        style_dim=model_config.model.style_dim,
+        max_conv_dim=model_config.embedding_encoder.hidden_dim,
+        skip_downsamples=model_config.embedding_encoder.skip_downsamples,
     )  # prosodic style encoder
 
     # define diffusion model
-    if config.model.multispeaker:
+    if model_config.model.multispeaker:
         transformer = StyleTransformer1d(
-            channels=config.model.style_dim * 2,
+            channels=model_config.model.style_dim * 2,
             context_embedding_features=bert.config.hidden_size,
-            context_features=config.model.style_dim * 2,
-            **config.diffusion.transformer,
+            context_features=model_config.model.style_dim * 2,
+            **model_config.diffusion.transformer,
         )
     else:
         transformer = Transformer1d(
-            channels=config.model.style_dim * 2,
+            channels=model_config.model.style_dim * 2,
             context_embedding_features=bert.config.hidden_size,
-            **config.diffusion.transformer.dict(),
+            **model_config.diffusion.transformer.dict(),
         )
 
     diffusion = AudioDiffusionConditional(
         in_channels=1,
         embedding_max_length=bert.config.max_position_embeddings,
         embedding_features=bert.config.hidden_size,
-        embedding_mask_proba=config.diffusion.embedding_mask_proba,  # Conditional dropout of batch elements,
-        channels=config.model.style_dim * 2,
-        context_features=config.model.style_dim * 2,
+        embedding_mask_proba=model_config.diffusion.embedding_mask_proba,  # Conditional dropout of batch elements,
+        channels=model_config.model.style_dim * 2,
+        context_features=model_config.model.style_dim * 2,
     )
 
     diffusion.diffusion = KDiffusion(
         net=diffusion.unet,
         sigma_distribution=LogNormalDistribution(
-            mean=config.diffusion.dist.mean, std=config.diffusion.dist.std
+            mean=model_config.diffusion.dist.mean, std=model_config.diffusion.dist.std
         ),
-        sigma_data=config.diffusion.dist.sigma_data,  # a placeholder, will be changed dynamically when start training diffusion model
+        sigma_data=model_config.diffusion.dist.sigma_data,  # a placeholder, will be changed dynamically when start training diffusion model
         dynamic_threshold=0.0,
     )
     diffusion.diffusion.net = transformer
@@ -896,7 +910,7 @@ def build_model(config):
     nets = Munch(
         bert=bert,
         bert_encoder=nn.Linear(
-            bert.config.hidden_size, config.prosody_predictor.hidden_dim
+            bert.config.hidden_size, model_config.prosody_predictor.hidden_dim
         ),
         predictor=predictor,
         decoder=decoder,
@@ -910,7 +924,9 @@ def build_model(config):
         msd=MultiScaleSubbandCQTDiscriminator(),
         # slm discriminator head
         wd=WavLMDiscriminator(
-            config.slm.hidden, config.slm.nlayers, config.slm.initial_channel
+            model_config.slm.hidden,
+            model_config.slm.nlayers,
+            model_config.slm.initial_channel,
         ),
     )
 
@@ -956,7 +972,7 @@ def load_checkpoint(model, optimizer, path, ignore_modules=[]):
 
                 state_dict = params[key]
                 new_state_dict = OrderedDict()
-                print(
+                logger.info(
                     f"{key} key length: {len(model[key].state_dict().keys())}, state_dict key length: {len(state_dict.keys())}"
                 )
                 for k, v in state_dict.items():
@@ -964,10 +980,10 @@ def load_checkpoint(model, optimizer, path, ignore_modules=[]):
                 # for (k_m, v_m), (k_c, v_c) in zip(
                 #    model[key].state_dict().items(), state_dict.items()
                 # ):
-                #    print(k_m, k_c)
+                #    logger.debug(f"{k_m}, {k_c}")
                 #    new_state_dict[k_m] = v_c
                 model[key].load_state_dict(new_state_dict, strict=True)
-            print("%s loaded" % key)
+            logger.info("%s loaded" % key)
 
     epoch = state["epoch"]
     iters = state["iters"]

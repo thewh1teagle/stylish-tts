@@ -1,3 +1,4 @@
+import math
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -107,11 +108,19 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         return sc_loss
 
 
+mp_window = torch.hann_window(20).to("cuda")
+
+
 def magphase_loss(mag, phase, gt):
     result = 0.0
     if mag is not None and phase is not None:
         y_stft = torch.stft(
-            gt, n_fft=20, hop_length=5, win_length=20, return_complex=True
+            gt,
+            n_fft=20,
+            hop_length=5,
+            win_length=20,
+            return_complex=True,
+            window=mp_window,
         )
         target_mag = torch.abs(y_stft)
         target_phase = torch.angle(y_stft)
@@ -208,6 +217,29 @@ class DiscriminatorLoss(torch.nn.Module):
         super(DiscriminatorLoss, self).__init__()
         self.mpd = mpd
         self.msd = msd
+        self.last_loss = 4
+
+    def get_disc_lr_multiplier(self):
+        ideal_loss = 4.0
+        f_max = 2.0
+        h_min = 0.1
+        x_max = 4.5
+        x_min = 3.5
+        x = abs(self.last_loss - ideal_loss)
+        result = 1.0
+        if self.last_loss > ideal_loss:
+            x = min(x, x_max)
+            result = min(math.pow(f_max, x / x_max), f_max)
+            # f_x = tf.clip_by_value(tf.math.pow(f_max, x/x_max), 1.0, f_max)
+        else:
+            x = max(x, x_min)
+            result = max(math.pow(h_min, x / x_min), h_min)
+            # h_x = tf.clip_by_value(tf.math.pow(h_min, x/x_min), h_min, 1.0)
+        # return tf.cond(loss > ideal_loss, lambda: f_x, lambda: h_x)
+        return result
+
+    def get_disc_lambda(self):
+        return lambda epoch: self.get_disc_lr_multiplier()
 
     def forward(self, y, y_hat):
         # MPD
@@ -227,7 +259,9 @@ class DiscriminatorLoss(torch.nn.Module):
 
         d_loss = loss_disc_s + loss_disc_f + loss_rel
 
-        return d_loss.mean()
+        mean = d_loss.mean()
+        self.last_loss = mean.item()
+        return mean
 
 
 class WavLMLoss(torch.nn.Module):

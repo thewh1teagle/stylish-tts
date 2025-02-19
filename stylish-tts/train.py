@@ -8,13 +8,11 @@ import random
 from logging import StreamHandler
 from accelerate import Accelerator
 from accelerate import DistributedDataParallelKwargs
-from config_loader import load_config_yaml
+from config_loader import load_config_yaml, load_model_config_yaml
 from train_context import TrainContext
 from text_utils import TextCleaner
-from typing import Callable
 
 import numpy as np
-import safetensors
 
 #  warnings.simplefilter("ignore")
 from torch.utils.tensorboard import SummaryWriter
@@ -22,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
 
-from models.models import load_checkpoint, build_model, load_defaults
+from models.models import build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from utils import get_data_path_list
 
@@ -44,7 +42,36 @@ from stages import (
     train_second,
     validate_second,
     train_acoustic_adapter,
+    train_vocoder_adapter,
 )
+
+logging.basicConfig(
+    level=logging.INFO,  # Set the logging level (DEBUG, INFO, WARNING, etc.)
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # Customize the log message format
+)
+
+logger = logging.getLogger(__name__)  # Create a logger for the current module
+
+
+def setup_logger(logger, out_dir):
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False  # Prevent messages from being passed to the root logger
+
+    # Always add a stream handler
+    err_handler = StreamHandler()
+    err_handler.setLevel(logging.DEBUG)
+    err_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(err_handler)
+
+    # Always add a file handler
+    file_handler = logging.FileHandler(osp.join(out_dir, "train.log"))
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(file_handler)
 
 
 # simple fix for dataparallel that allows access to class attributes
@@ -57,52 +84,49 @@ from stages import (
 
 
 @click.command()
-@click.option("-p", "--config_path", default="Configs/new.config.yml", type=str)
+@click.option("-p", "--config_path", default="configs/new.config.yml", type=str)
+@click.option("-cp", "--model_config_path", default="config/model.config.yml", type=str)
+@click.option("--out_dir", type=str)
 @click.option("--early_joint/--no_early_joint", default=False, type=bool)
 @click.option(
     "--stage", default="first_tma", type=str
 )  # "first", "first_tma", "second", "second_style", "second_joint"
-@click.option("--pretrained_model", default="", type=str)
 @click.option("--checkpoint", default="", type=str)
-def main(config_path, early_joint, stage, pretrained_model, checkpoint):
+def main(config_path, model_config_path, out_dir, early_joint, stage, checkpoint):
     train = TrainContext()
     np.random.seed(1)
     random.seed(1)
     if osp.exists(config_path):
-        train.config = load_config_yaml(config_path)
+        train_config = load_config_yaml(config_path)
+        train.config = train_config
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
-        exit(f"Config file not found at {config_path}")
+        logger.error(f"Config file not found at {config_path}")
+        exit(1)
 
-    train.config_path = config_path
+    if osp.exists(model_config_path):
+        train.model_config = load_model_config_yaml(model_config_path)
+    else:
+        # TODO: we may be able to pull it out of the model if a model is passed in instead
+        logger.error(f"Config file not found at {model_config_path}")
+        exit(1)
+
     train.early_joint = early_joint
-    train.manifest.stage = stage
+    train.base_output_dir = out_dir
+    train.out_dir = osp.join(out_dir, stage)
 
-    if not osp.exists(train.config.training.out_dir):
-        os.makedirs(train.config.training.out_dir, exist_ok=True)
-    if not osp.exists(train.config.training.out_dir):
-        exit(
-            f"Failed to create or find log directory at {train.config.training.out_dir}."
-        )
+    if not osp.exists(train.out_dir):
+        os.makedirs(train.out_dir, exist_ok=True)
+
+    if not osp.exists(train.out_dir):
+        exit(f"Failed to create or find log directory at {train.out_dir}.")
+    shutil.copy(config_path, osp.join(train.out_dir, osp.basename(config_path)))
     shutil.copy(
-        config_path, osp.join(train.config.training.out_dir, osp.basename(config_path))
+        model_config_path, osp.join(train.out_dir, osp.basename(model_config_path))
     )
 
     train.logger = logging.getLogger(__name__)
-    train.logger.setLevel(logging.DEBUG)
-    err_handler = StreamHandler()
-    err_handler.setLevel(logging.DEBUG)
-    err_handler.setFormatter(logging.Formatter("%(asctime)s: %(message)s"))
-    train.logger.addHandler(err_handler)
-
-    file_handler = logging.FileHandler(
-        osp.join(train.config.training.out_dir, "train.log")
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(
-        logging.Formatter("%(levelname)s:%(asctime)s: %(message)s")
-    )
-    train.logger.addHandler(file_handler)
+    setup_logger(train.logger, train.out_dir)
 
     train.manifest.max_epoch = sum(
         [
@@ -118,7 +142,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         broadcast_buffers=False, find_unused_parameters=True
     )
     train.accelerator = Accelerator(
-        project_dir=train.config.training.out_dir,
+        project_dir=train.out_dir,
         split_batches=True,
         kwargs_handlers=[ddp_kwargs],
         mixed_precision=train.config.training.mixed_precision,
@@ -126,9 +150,10 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
     train.accelerator.even_batches = False
 
     if train.accelerator.is_main_process:
-        train.writer = SummaryWriter(train.config.training.out_dir + "/tensorboard")
+        train.writer = SummaryWriter(train.out_dir + "/tensorboard")
 
     train.accelerator.register_for_checkpointing(train.config)
+    train.accelerator.register_for_checkpointing(train.model_config)
     train.accelerator.register_for_checkpointing(train.manifest)
 
     # Set up data loaders and batch manager
@@ -139,7 +164,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
     if not osp.exists(train.config.dataset.wav_path):
         exit(f"Root path not found at {train.config.dataset.wav_path}")
 
-    text_cleaner = TextCleaner(train.config.symbol)
+    text_cleaner = TextCleaner(train.model_config.symbol)
     val_list = get_data_path_list(train.config.dataset.val_data)
     val_dataset = FilePathDataset(
         val_list,
@@ -147,7 +172,7 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         OOD_data=train.config.dataset.OOD_data,
         min_length=train.config.dataset.min_length,
         validation=True,
-        multispeaker=train.config.model.multispeaker,
+        multispeaker=train.model_config.model.multispeaker,
         text_cleaner=text_cleaner,
     )
     train.val_dataloader = build_dataloader(
@@ -157,32 +182,28 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         batch_size={},
         num_workers=4,
         device=train.config.training.device,
-        multispeaker=train.config.model.multispeaker,
+        multispeaker=train.model_config.model.multispeaker,
     )
 
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
 
-    def log_print_function(s):
-        train.logger.info(s)
-
     train.batch_manager = BatchManager(
         train.config.dataset.train_data,
-        train.config.training.out_dir,
+        train.out_dir,
         probe_batch_max=train.config.training.probe_batch_max,
         root_path=train.config.dataset.wav_path,
         OOD_data=train.config.dataset.OOD_data,
         min_length=train.config.dataset.min_length,
         device=train.config.training.device,
         accelerator=train.accelerator,
-        log_print=log_print_function,
-        multispeaker=train.config.model.multispeaker,
+        multispeaker=train.model_config.model.multispeaker,
         text_cleaner=text_cleaner,
         stage=stage,
         epoch=train.manifest.current_epoch,
     )
 
     # build model
-    train.model, kdiffusion = build_model(train.config)
+    train.model, kdiffusion = build_model(train.model_config)
     for key in train.model:
         train.model[key] = train.accelerator.prepare(train.model[key])
         train.model[key].to(train.config.training.device)
@@ -204,9 +225,9 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         "steps_per_epoch": train.batch_manager.get_step_count(),
     }
     scheduler_params_dict = {key: scheduler_params.copy() for key in train.model}
-    scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
-    scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
-    scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+    # scheduler_params_dict["bert"]["max_lr"] = train.config.optimizer.bert_lr * 2
+    # scheduler_params_dict["decoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
+    # scheduler_params_dict["style_encoder"]["max_lr"] = train.config.optimizer.ft_lr * 2
 
     train.optimizer = build_optimizer(
         {key: train.model[key].parameters() for key in train.model},
@@ -216,70 +237,81 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
 
     if checkpoint:
         train.accelerator.load_state(checkpoint)
+        train.config = train_config
         # if we are not loading on a epoch boundary we need to resume the loader and skip to the correct step
-        if train.manifest.current_step != 0:
+        if train.manifest.current_step != 0 and train.manifest.stage == stage:
             train.batch_manager.resume_loader = train.accelerator.skip_first_batches(
                 train.batch_manager.loader, train.manifest.current_step
             )
-        print(f"Loading last checkpoint at {checkpoint} ...")
-
-    # load an existing model for first stage
-    if (
-        pretrained_model
-        and osp.exists(pretrained_model)
-        and stage in ["first", "first_tma", "acoustic"]
-    ):
-        print(f"Loading the first stage model at {pretrained_model} ...")
-        (
-            train.model,
-            train.optimizer,
-            train.manifest.current_epoch,
-            train.manifest.current_total_step,
-        ) = load_checkpoint(
-            train.model,
-            train.optimizer,
-            pretrained_model,
-            # load_only_params=True,
-            ignore_modules=[
-                "bert",
-                "bert_encoder",
-                "predictor",
-                "predictor_encoder",
-                "msd",
-                "mpd",
-                "wd",
-                "diffusion",
-            ],
-        )  # keep starting epoch for tensorboard log
-
-        # TODO: what epoch are we on?
-        # these epochs should be counted from the start epoch
-        # diff_epoch += start_epoch
-        # joint_epoch += start_epoch
-        # epochs += start_epoch
-        train.manifest.current_epoch = 1
-        # TODO: This should happen only once when starting stage 2
-        # train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
-    elif stage in ["first", "first_tma", "acoustic"]:
+        logger.info(f"Loading last checkpoint at {checkpoint} ...")
+    else:
+        # TODO: do we need this? We used to do it always before?
         load_defaults(train, train.model)
 
-    # load models if there is a model for second stage
-    if (
-        pretrained_model
-        and osp.exists(pretrained_model)
-        and stage in {"second", "second_style", "second_joint"}
-    ):
-        (
-            train.model,
-            train.optimizer,
-            train.manifest.current_epoch,
-            train.manifest.current_total_step,
-        ) = load_checkpoint(
-            train.model, train.optimizer, pretrained_model, ignore_modules=[]
-        )
+    # if we are changing stages we need to bump the epoch and reset the step
+    if train.manifest.stage != stage:
         train.manifest.current_epoch += 1
-    elif stage in ["second", "second_style", "second_joint"]:
-        load_defaults(train, train.model)
+        train.manifest.current_step = 0
+
+    train.manifest.stage = stage
+
+    # # load an existing model for first stage
+    # if (
+    #     pretrained_model
+    #     and osp.exists(pretrained_model)
+    #     and stage in ["first", "first_tma", "acoustic", "vocoder"]
+    # ):
+    #     logger.info(f"Loading the first stage model at {pretrained_model} ...")
+    #     (
+    #         train.model,
+    #         train.optimizer,
+    #         train.manifest.current_epoch,
+    #         train.manifest.current_total_step,
+    #     ) = load_checkpoint(
+    #         train.model,
+    #         train.optimizer,
+    #         pretrained_model,
+    #         # load_only_params=True,
+    #         ignore_modules=[
+    #             "bert",
+    #             "bert_encoder",
+    #             "predictor",
+    #             "predictor_encoder",
+    #             "msd",
+    #             "mpd",
+    #             "wd",
+    #             "diffusion",
+    #         ],
+    #     )  # keep starting epoch for tensorboard log
+
+    #     # TODO: what epoch are we on?
+    #     # these epochs should be counted from the start epoch
+    #     # diff_epoch += start_epoch
+    #     # joint_epoch += start_epoch
+    #     # epochs += start_epoch
+    #     train.manifest.current_epoch = 1
+    #     # TODO: This should happen only once when starting stage 2
+    #     # train.model.predictor_encoder = copy.deepcopy(train.model.style_encoder)
+    # elif stage in ["first", "first_tma", "acoustic", "vocoder"]:
+    #     load_defaults(train, train.model)
+
+    # # load models if there is a model for second stage
+    # if (
+    #     pretrained_model
+    #     and osp.exists(pretrained_model)
+    #     and stage in {"second", "second_style", "second_joint"}
+    # ):
+    #     (
+    #         train.model,
+    #         train.optimizer,
+    #         train.manifest.current_epoch,
+    #         train.manifest.current_total_step,
+    #     ) = load_checkpoint(
+    #         train.model, train.optimizer, pretrained_model, ignore_modules=[]
+    #     )
+    #     train.manifest.current_epoch += 1
+    # elif stage in ["second", "second_style", "second_joint"]:
+    #     load_defaults(train, train.model)
 
     train.generator_loss = GeneratorLoss(train.model.mpd, train.model.msd).to(
         train.config.training.device
@@ -288,11 +320,12 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         train.config.training.device
     )
     train.wavlm_loss = WavLMLoss(
-        train.config.slm.model,
+        train.model_config.slm.model,
         train.model.wd,
-        train.config.preprocess.sample_rate,
-        train.config.slm.sr,
+        train.model_config.preprocess.sample_rate,
+        train.model_config.slm.sr,
     ).to(train.config.training.device)
+    train.optimizer.add_discriminator_schedulers(train.discriminator_loss)
 
     # train.gl = MyDataParallel(train.gl)
     # train.dl = MyDataParallel(train.dl)
@@ -317,21 +350,21 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         )
 
     # adjust BERT learning rate
-    for g in train.optimizer.optimizers["bert"].param_groups:
-        g["betas"] = (0.9, 0.99)
-        g["lr"] = train.config.optimizer.bert_lr
-        g["initial_lr"] = train.config.optimizer.bert_lr
-        g["min_lr"] = 0
-        g["weight_decay"] = 0.01
+    # for g in train.optimizer.optimizers["bert"].param_groups:
+    #    g["betas"] = (0.9, 0.99)
+    #    g["lr"] = train.config.optimizer.bert_lr
+    #    g["initial_lr"] = train.config.optimizer.bert_lr
+    #    g["min_lr"] = 0
+    #    g["weight_decay"] = 0.01
 
     # adjust acoustic module learning rate
-    for module in ["decoder", "style_encoder"]:
-        for g in train.optimizer.optimizers[module].param_groups:
-            g["betas"] = (0.0, 0.99)
-            g["lr"] = train.config.optimizer.ft_lr
-            g["initial_lr"] = train.config.optimizer.ft_lr
-            g["min_lr"] = 0
-            g["weight_decay"] = 1e-4
+    # for module in ["decoder", "style_encoder"]:
+    #    for g in train.optimizer.optimizers[module].param_groups:
+    #        g["betas"] = (0.0, 0.99)
+    #        g["lr"] = train.config.optimizer.ft_lr
+    #        g["initial_lr"] = train.config.optimizer.ft_lr
+    #        g["min_lr"] = 0
+    #        g["weight_decay"] = 1e-4
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
@@ -341,8 +374,8 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
 
     train.stft_loss = MultiResolutionSTFTLoss().to(train.config.training.device)
 
-    # print("BERT", optimizer.optimizers["bert"])
-    # print("decoder", optimizer.optimizers["decoder"])
+    # logger.debug(f"BERT {optimizer.optimizers['bert']}")
+    # logger.debug(f"decoder {optimizer.optimizers['decoder']}")
 
     train.start_ds = False
 
@@ -353,11 +386,11 @@ def main(config_path, early_joint, stage, pretrained_model, checkpoint):
         train.model,
         train.wavlm_loss,
         train.diffusion_sampler,
-        train.config.slmadv_params.min_len,
-        train.config.slmadv_params.max_len,
-        batch_percentage=train.config.slmadv_params.batch_percentage,
-        skip_update=train.config.slmadv_params.iter,
-        sig=train.config.slmadv_params.sig,
+        train.model_config.slmadv_params.min_len,
+        train.model_config.slmadv_params.max_len,
+        batch_percentage=train.model_config.slmadv_params.batch_percentage,
+        skip_update=train.model_config.slmadv_params.iter,
+        sig=train.model_config.slmadv_params.sig,
     )
 
     # for model in train.model:
@@ -376,6 +409,9 @@ def train_val_loop(train: TrainContext):
     if train.manifest.stage in {"first", "first_tma"}:
         train.train_batch = train_first
         train.validate = validate_first
+    elif train.manifest.stage in {"vocoder"}:
+        train.train_batch = train_vocoder_adapter
+        train.validate = validate_first
     elif train.manifest.stage in {"acoustic"}:
         train.train_batch = train_acoustic_adapter
         train.validate = validate_first
@@ -384,7 +420,7 @@ def train_val_loop(train: TrainContext):
         train.validate = validate_second
     else:
         exit(
-            "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint'"
+            "Invalid training stage. --stage must be one of: 'first', 'first_tma', 'second', 'second_style', 'second_joint', 'acoustic', 'vocoder'"
         )
     while train.manifest.current_epoch <= train.manifest.max_epoch:
         train.batch_manager.init_epoch(train)
@@ -413,11 +449,12 @@ def train_val_iterate(batch, train: TrainContext):
     train.manifest.current_total_step += 1
     train.manifest.current_step += 1
     train.manifest.total_trained_audio_seconds += (
-        float(len(batch[0][0]) * len(batch[0])) / train.config.preprocess.sample_rate
+        float(len(batch[0][0]) * len(batch[0]))
+        / train.model_config.preprocess.sample_rate
     )
     # filenames = batch[8]
-    # print(f"Step {train.manifest.current_step} Processing: {filenames}")
-    num = train.manifest.current_step
+    # logger.info(f"Step {train.manifest.current_step} Processing: {filenames}")
+    num = train.manifest.current_total_step
     do_val = num % train.config.training.val_interval == 0
     do_save = num % train.config.training.save_interval == 0
     if do_val or do_save:
