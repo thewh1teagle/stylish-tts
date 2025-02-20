@@ -134,7 +134,7 @@ class BatchManager:
 
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
-                            _ = train.train_batch(
+                            _ = train.stage.train_batch(
                                 current_epoch_step=0,
                                 batch=batch,
                                 running_loss=0,
@@ -153,7 +153,7 @@ class BatchManager:
                         logger.info("Probe saw OOM -- backing off")
                         import gc
 
-                        train.optimizer.zero_grad()
+                        train.stage.optimizer.zero_grad()
                         gc.collect()
                         torch.cuda.empty_cache()
                         counting_up = False
@@ -190,7 +190,6 @@ class BatchManager:
 
     def train_iterate(self, batch, train, debug=False) -> None:
         max_attempts = 3
-        # train.optimizer.scale(math.sqrt(batch[0].shape[0]))
         self.last_bin = get_time_bin(batch[0].shape[-1])
         for attempt in range(1, max_attempts + 1):
             try:
@@ -200,7 +199,7 @@ class BatchManager:
                     train.logger.info(
                         f"train_batch(i={train.manifest.current_step}, batch={batch_size}, running_loss={self.running_loss}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                     )
-                self.running_loss = train.train_batch(
+                self.running_loss = train.stage.train_batch(
                     train.manifest.current_step,
                     batch,
                     self.running_loss,
@@ -218,7 +217,7 @@ class BatchManager:
                         + str(batch[2])
                     )
                     # train.logger.info(e)
-                    train.optimizer.zero_grad()
+                    train.stage.optimizer.zero_grad()
                     if self.last_oom != self.last_bin:
                         self.last_oom = self.last_bin
                         if batch_size > 1:
@@ -231,5 +230,5 @@ class BatchManager:
                     logger.error("".join(traceback.format_exception(e)))
                     raise e
         # train.optimizer.scale(1.0 / math.sqrt(batch[0].shape[0]))
-        train.optimizer.scheduler()
-        train.optimizer.step_discriminator_schedulers()
+        train.stage.optimizer.scheduler()
+        train.stage.optimizer.step_discriminator_schedulers()

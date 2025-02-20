@@ -18,7 +18,6 @@ class Manifest:
         self.total_trained_audio_seconds: float = 0.0
         self.stage: str = "first"
         self.best_loss: float = float("inf")
-        self.max_epoch: int = 0
         self.training_log: list = []
         self.running_std: List[float] = []
 
@@ -38,17 +37,13 @@ class TrainContext:
         self.config: Optional[Config] = None
         self.model_config: Optional[ModelConfig] = None
         self.batch_manager: Optional[BatchManager] = None
+        self.stage: "Optional[StageContext]" = None
         self.manifest: Manifest = Manifest()
-
-        # Training functions
-        self.train_batch: Optional[Callable] = None
-        self.validate: Optional[Callable] = None
 
         self.accelerator: Optional[Accelerator] = None
         self.val_dataloader: Optional[DataLoader] = None
 
         self.model: Optional[Any] = None
-        self.optimizer: Optional[Any] = None  # e.g., torch.optim.Optimizer
 
         self.logger: Optional[logging.Logger] = None
 
@@ -65,5 +60,3 @@ class TrainContext:
 
         # Run parameters
         self.n_down: Optional[int] = None
-        self.start_ds: Optional[int] = None
-        self.early_joint: bool = False

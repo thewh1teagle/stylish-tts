@@ -17,14 +17,28 @@ class MultiOptimizer:
     def __init__(self, optimizers={}, schedulers={}):
         self.optimizers = optimizers
         self.schedulers = schedulers
-        self.scale_schedulers = {}
+        # self.scale_schedulers = {}
         self.disc_schedulers = {}
         self.keys = list(optimizers.keys())
         self.param_groups = reduce(
             lambda x, y: x + y, [v.param_groups for v in self.optimizers.values()]
         )
-        for key in self.keys:
-            self.scale_schedulers[key] = ScaleLR(self.optimizers[key])
+        # for key in self.keys:
+        #    self.scale_schedulers[key] = ScaleLR(self.optimizers[key])
+
+    def prepare(self, accelerator):
+        for key in self.optimizers.keys():
+            self.optimizers[key] = accelerator.prepare(self.optimizers[key])
+            self.schedulers[key] = accelerator.prepare(self.schedulers[key])
+        for key in self.disc_schedulers.keys():
+            self.disc_schedulers[key] = accelerator.prepare(self.disc_schedulers[key])
+
+    def free_memory(self, accelerator):
+        for key in self.optimizers.keys():
+            accelerator.free_memory(self.optimizers[key])
+            accelerator.free_memory(self.schedulers[key])
+        for key in self.disc_schedulers.keys():
+            accelerator.free_memory(self.disc_schedulers[key])
 
     def add_discriminator_schedulers(self, discriminator_loss):
         for key in ["msd", "mpd"]:
@@ -70,13 +84,13 @@ class MultiOptimizer:
         else:
             _ = [self.schedulers[key].step(*args) for key in self.keys]
 
-    def scale(self, scale, key_in=None):
-        keys = [key_in]
-        if key_in is None:
-            keys = self.keys
-        for key in keys:
-            self.scale_schedulers[key].set_factor(scale)
-            self.scale_schedulers[key].step()
+    # def scale(self, scale, key_in=None):
+    #    keys = [key_in]
+    #    if key_in is None:
+    #        keys = self.keys
+    #    for key in keys:
+    #        self.scale_schedulers[key].set_factor(scale)
+    #        self.scale_schedulers[key].step()
 
 
 class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
@@ -96,29 +110,33 @@ class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
         return [group["lr"] * self.factor for group in self.optimizer.param_groups]
 
 
-def define_scheduler(optimizer, params):
-    scheduler = transformers.get_cosine_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=200,
-        num_training_steps=params["steps_per_epoch"] * params["epochs"],
-    )
-    return scheduler
-
-
-def build_optimizer(parameters_dict, scheduler_params_dict, lr):
-    optim = dict(
-        [
-            (key, AdamW(params, lr=lr, weight_decay=1e-4, betas=(0.0, 0.99), eps=1e-9))
-            for key, params in parameters_dict.items()
-        ]
-    )
-
-    schedulers = dict(
-        [
-            (key, define_scheduler(opt, scheduler_params_dict[key]))
-            for key, opt in optim.items()
-        ]
-    )
+def build_optimizer(max_epoch, steps_per_epoch, is_second=False, train=None):
+    optim = {}
+    schedulers = {}
+    for key in train.model.keys():
+        lr = train.config.optimizer.lr
+        weight_decay = 1e-4
+        betas = (0.0, 0.99)
+        if is_second:
+            if key == "bert":
+                lr = train.config.optimizer.bert_lr
+                weight_decay = 1e-2
+                betas = (0.9, 0.99)
+            elif key in {"decoder", "style_encoder"}:
+                lr = train.config.optimizer.ft_lr
+        optim[key] = AdamW(
+            train.model[key].parameters(),
+            lr=lr,
+            weight_decay=weight_decay,
+            betas=betas,
+            eps=1e-9,
+        )
+        schedulers[key] = transformers.get_cosine_schedule_with_warmup(
+            optim[key],
+            num_warmup_steps=200,
+            num_training_steps=steps_per_epoch * max_epoch,
+        )
 
     multi_optim = MultiOptimizer(optim, schedulers)
+    multi_optim.add_discriminator_schedulers(train.discriminator_loss)
     return multi_optim

@@ -196,7 +196,7 @@ def optimizer_step(train: TrainContext, keys: List[str]) -> None:
     Steps the optimizer for each module key in keys.
     """
     for key in keys:
-        train.optimizer.step(key)
+        train.stage.optimizer.step(key)
 
 
 def save_checkpoint(
@@ -241,7 +241,7 @@ def train_vocoder_adapter(
         current_epoch_step > 0
         and current_epoch_step % train.config.training.log_interval == 0
     ):
-        log.broadcast(train.manifest)
+        log.broadcast(train.manifest, train.stage)
     return 0
 
 
@@ -274,7 +274,7 @@ def train_vocoder(train: TrainContext, inputs):
             pitch, style_embedding, audio_gt
         )
 
-        train.optimizer.zero_grad()
+        train.stage.optimizer.zero_grad()
         with train.accelerator.autocast():
             d_loss = train.discriminator_loss(
                 audio_gt.detach().unsqueeze(1).float(), audio_out.detach()
@@ -354,7 +354,7 @@ def train_acoustic(train: TrainContext, inputs, split=False):
             audio_gt,
             split=split_count,
         )
-        train.optimizer.zero_grad()
+        train.stage.optimizer.zero_grad()
         loglist = []
         for audio_out, mag, phase, audio_gt_slice in decoding:
             log = incremental_loss_acoustic(
@@ -469,7 +469,7 @@ def train_first(
 
     # --- Discriminator Loss ---
     if train.manifest.stage == "first_tma":
-        train.optimizer.zero_grad()
+        train.stage.optimizer.zero_grad()
         with train.accelerator.autocast():
             d_loss = train.discriminator_loss(
                 wav.detach().unsqueeze(1).float(), y_rec.detach()
@@ -480,7 +480,7 @@ def train_first(
         d_loss = 0
 
     # --- Generator Loss ---
-    train.optimizer.zero_grad()
+    train.stage.optimizer.zero_grad()
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
@@ -533,7 +533,7 @@ def train_first(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
+                f"Epoch [{train.manifest.current_epoch}/{train.stage.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
@@ -691,18 +691,22 @@ def train_second(
     loss_F0_rec = F.smooth_l1_loss(F0_real, F0_fake) / 10
     loss_norm_rec = F.smooth_l1_loss(N_real, N_fake)
 
-    if train.start_ds:
-        train.optimizer.zero_grad()
+    if train.manifest.stage == "second_style":
+        train.stage.optimizer.zero_grad()
         d_loss = train.discriminator_loss(wav.detach(), y_rec.detach()).mean()
         train.accelerator.backward(d_loss)
         optimizer_step(train, ["msd", "mpd"])
     else:
         d_loss = 0
 
-    train.optimizer.zero_grad()
+    train.stage.optimizer.zero_grad()
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec, wav)
-        loss_gen_all = train.generator_loss(wav, y_rec).mean() if train.start_ds else 0
+        loss_gen_all = (
+            train.generator_loss(wav, y_rec).mean()
+            if train.manifest.stage == "second_style"
+            else 0
+        )
         loss_lm = train.wavlm_loss(wav.detach().squeeze(1), y_rec.squeeze(1))  # .mean()
 
     loss_ce, loss_dur = compute_duration_ce_loss(d, d_gt, input_lengths)
@@ -726,7 +730,7 @@ def train_second(
     optimizer_step(train, ["bert_encoder", "bert", "predictor", "predictor_encoder"])
     if train.manifest.stage == "second_style":
         optimizer_step(train, ["diffusion"])
-    if train.manifest.stage == "second_joint" or train.early_joint:
+    if train.manifest.stage == "second_joint":
         optimizer_step(train, ["style_encoder", "decoder"])
 
     if train.manifest.stage == "second_joint":
@@ -751,7 +755,7 @@ def train_second(
             return running_loss
 
         d_loss_slm, loss_gen_lm, y_pred = slm_out
-        train.optimizer.zero_grad()
+        train.stage.optimizer.zero_grad()
         train.accelerator.backward(loss_gen_lm)
         scale_gradients(
             train.model,
@@ -760,9 +764,9 @@ def train_second(
         )
         optimizer_step(train, ["bert_encoder", "bert", "predictor", "diffusion"])
         if d_loss_slm != 0:
-            train.optimizer.zero_grad()
+            train.stage.optimizer.zero_grad()
             train.accelerator.backward(d_loss_slm, retain_graph=True)
-            train.optimizer.step("wd")
+            train.stage.optimizer.step("wd")
     else:
         d_loss_slm, loss_gen_lm = 0, 0
 
@@ -784,7 +788,7 @@ def train_second(
                 "mp_loss": loss_magphase,
             }
             train.logger.info(
-                f"Epoch [{train.manifest.current_epoch}/{train.manifest.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
+                f"Epoch [{train.manifest.current_epoch}/{train.stage.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
                 + ", ".join(f"{k}: {v:.5f}" for k, v in metrics.items())
             )
             for key, value in metrics.items():
