@@ -30,15 +30,15 @@ class MultiOptimizer:
         for key in self.optimizers.keys():
             self.optimizers[key] = accelerator.prepare(self.optimizers[key])
             self.schedulers[key] = accelerator.prepare(self.schedulers[key])
-        for key in self.disc_schedulers.keys():
-            self.disc_schedulers[key] = accelerator.prepare(self.disc_schedulers[key])
+        # for key in self.disc_schedulers.keys():
+        #    self.disc_schedulers[key] = accelerator.prepare(self.disc_schedulers[key])
 
     def free_memory(self, accelerator):
         for key in self.optimizers.keys():
             accelerator.free_memory(self.optimizers[key])
             accelerator.free_memory(self.schedulers[key])
-        for key in self.disc_schedulers.keys():
-            accelerator.free_memory(self.disc_schedulers[key])
+        # for key in self.disc_schedulers.keys():
+        #    accelerator.free_memory(self.disc_schedulers[key])
 
     def add_discriminator_schedulers(self, discriminator_loss):
         for key in ["msd", "mpd"]:

@@ -211,7 +211,9 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
                     )
                 )
         else:
-            train.stage.begin_stage(name, train)
+            train.manifest.current_epoch = 1
+            train.manifest.current_step = 0
+            train.stage.begin_stage(stage, train)
         logger.info(f"Loading last checkpoint at {checkpoint} ...")
     else:
         load_defaults(train, train.model)
