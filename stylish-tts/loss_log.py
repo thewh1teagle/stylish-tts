@@ -17,11 +17,11 @@ class LossLog:
             self.calculate_metrics()
         return self.total_loss
 
-    def broadcast(self, manifest):
+    def broadcast(self, manifest, stage):
         if self.total_loss is None:
             self.calculate_metrics()
         self.logger.info(
-            f"Epoch [{manifest.current_epoch}/{manifest.max_epoch}], Step [{manifest.current_step}/{manifest.steps_per_epoch}], loss: {self.total_loss:.3f}, "
+            f"Epoch [{manifest.current_epoch}/{stage.max_epoch}], Step [{manifest.current_step}/{stage.steps_per_epoch}], loss: {self.total_loss:.3f}, "
             + ", ".join(f"{k}: {v:.3f}" for k, v in self.metrics.items())
         )
         self.writer.add_scalar(
