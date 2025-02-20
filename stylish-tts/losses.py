@@ -4,6 +4,7 @@ from torch import nn
 import torch.nn.functional as F
 import torchaudio
 from transformers import AutoModel
+import numpy as np
 
 
 class SpectralConvergengeLoss(torch.nn.Module):
@@ -136,6 +137,46 @@ def amplitude_loss(log_amplitude_r, log_amplitude_g):
     amplitude_loss = MSELoss(log_amplitude_r, log_amplitude_g)
 
     return amplitude_loss
+
+
+def anti_wrapping_function(x):
+    return torch.abs(x - torch.round(x / (2 * np.pi)) * 2 * np.pi)
+
+
+def phase_loss(phase_r, phase_g, n_fft, frames):
+    GD_matrix = (
+        torch.triu(torch.ones(n_fft // 2 + 1, n_fft // 2 + 1), diagonal=1)
+        - torch.triu(torch.ones(n_fft // 2 + 1, n_fft // 2 + 1), diagonal=2)
+        - torch.eye(n_fft // 2 + 1)
+    )
+    GD_matrix = GD_matrix.to(phase_g.device)
+
+    GD_r = torch.matmul(phase_r.permute(0, 2, 1), GD_matrix)
+    GD_g = torch.matmul(phase_g.permute(0, 2, 1), GD_matrix)
+
+    PTD_matrix = (
+        torch.triu(torch.ones(frames, frames), diagonal=1)
+        - torch.triu(torch.ones(frames, frames), diagonal=2)
+        - torch.eye(frames)
+    )
+    PTD_matrix = PTD_matrix.to(phase_g.device)
+
+    PTD_r = torch.matmul(phase_r, PTD_matrix)
+    PTD_g = torch.matmul(phase_g, PTD_matrix)
+
+    IP_loss = torch.mean(anti_wrapping_function(phase_r - phase_g))
+    GD_loss = torch.mean(anti_wrapping_function(GD_r - GD_g))
+    PTD_loss = torch.mean(anti_wrapping_function(PTD_r - PTD_g))
+
+    return IP_loss, GD_loss, PTD_loss
+
+
+def stft_consistency_loss(rea_r, rea_g, imag_r, imag_g):
+    C_loss = torch.mean(
+        torch.mean((rea_r - rea_g) ** 2 + (imag_r - imag_g) ** 2, (1, 2))
+    )
+
+    return C_loss
 
 
 def feature_loss(fmap_r, fmap_g):
