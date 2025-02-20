@@ -10,7 +10,7 @@ from typing import List, Tuple, Any
 from utils import length_to_mask, maximum_path, log_norm, get_image
 from monotonic_align import mask_from_lens
 from munch import Munch
-from losses import magphase_loss
+from losses import magphase_loss, amplitude_loss
 from batch_context import BatchContext
 from train_context import TrainContext
 from loss_log import LossLog, combine_logs
@@ -41,6 +41,10 @@ def prepare_batch(
             "mel_input_length",
             "ref_mels",
             "paths",
+            "log_amplitudes",
+            "phases",
+            "reals",
+            "images",
         ]
     index = {
         "waves": 0,
@@ -52,6 +56,10 @@ def prepare_batch(
         "mel_input_length": 6,
         "ref_mels": 7,
         "paths": 8,
+        "log_amplitudes": 9,
+        "phases": 10,
+        "reals": 11,
+        "images": 12,
     }
     prepared = tuple()
     for key in keys_to_transfer:
@@ -421,11 +429,12 @@ def train_first(
     """
     Training function for the first stage.
     """
+
     # --- Batch Preparation ---
-    texts, input_lengths, mels, mel_input_length = prepare_batch(
+    texts, input_lengths, mels, mel_input_length, log_amplitudes = prepare_batch(
         batch,
         train.config.training.device,
-        ["texts", "input_lengths", "mels", "mel_input_length"],
+        ["texts", "input_lengths", "mels", "mel_input_length", "log_amplitudes"],
     )
 
     # --- Alignment Computation ---
@@ -459,8 +468,8 @@ def train_first(
             if train.model_config.model.multispeaker
             else mel_gt.unsqueeze(1)
         )
-        y_rec, mag_rec, phase_rec = train.model.decoder(
-            asr, F0_real, real_norm, style_emb
+        y_rec, mag_rec, phase_rec, logamp_generated, pha, rea, imag = (
+            train.model.decoder(asr, F0_real, real_norm, style_emb)
         )
 
     # --- Waveform Preparation ---
@@ -484,6 +493,7 @@ def train_first(
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
+        loss_amplitude = amplitude_loss(log_amplitudes, logamp_generated)
         if train.manifest.stage == "first_tma":
             loss_s2s = 0
             for _s2s_pred, _text_input, _text_length in zip(

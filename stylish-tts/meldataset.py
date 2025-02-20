@@ -41,6 +41,27 @@ def preprocess(wave):
     return mel_tensor
 
 
+def amp_pha_specturm(y, n_fft, hop_size, win_size):
+    hann_window = torch.hann_window(win_size).to(y.device)
+
+    stft_spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window,
+        center=True,
+        return_complex=True,
+    )  # [batch_size, n_fft//2+1, frames, 2]
+
+    log_amplitude = torch.log(
+        stft_spec.abs() + 1e-5
+    )  # [batch_size, n_fft//2+1, frames]
+    phase = stft_spec.angle()  # [batch_size, n_fft//2+1, frames]
+
+    return log_amplitude, phase, stft_spec.real, stft_spec.imag
+
+
 class FilePathDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -247,6 +268,10 @@ class Collater(object):
         waves = torch.zeros(
             (batch_size, batch[0][7].shape[-1])
         ).float()  # [None for _ in range(batch_size)]
+        log_amplitudes = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        phases = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        reals = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        imags = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
 
         for bid, (
             label,
@@ -274,6 +299,14 @@ class Collater(object):
                 ref_mels[bid, :, :ref_mel_size] = ref_mel
                 ref_labels[bid] = ref_label
             waves[bid] = wave
+            # TODO: hard coded fix
+            log_amplitude, phase, rea, imag = amp_pha_specturm(
+                wave, n_fft=2048, hop_size=300, win_size=1200
+            )
+            log_amplitudes[bid] = log_amplitude
+            phases[bid] = phase
+            reals[bid] = rea
+            imags[bid] = imag
 
         return (
             waves,
@@ -285,6 +318,10 @@ class Collater(object):
             output_lengths,
             ref_mels,
             paths,
+            log_amplitudes,
+            phases,
+            reals,
+            imags,
         )
 
 

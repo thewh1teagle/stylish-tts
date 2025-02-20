@@ -293,7 +293,15 @@ class Generator(torch.nn.Module):
         )
 
         # return logamp, pha, rea, imag, audio.unsqueeze(1)
-        return torch.cat([audio, audio[:, -300:]], dim=-1).unsqueeze(1), None, None
+        return (
+            torch.cat([audio, audio[:, -300:]], dim=-1).unsqueeze(1),
+            None,
+            None,
+            logamp,
+            pha,
+            rea,
+            imag,
+        )
 
 
 ###################################################################

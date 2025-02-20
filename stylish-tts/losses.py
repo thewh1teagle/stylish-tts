@@ -130,6 +130,14 @@ def magphase_loss(mag, phase, gt):
     return result
 
 
+def amplitude_loss(log_amplitude_r, log_amplitude_g):
+    MSELoss = torch.nn.MSELoss()
+
+    amplitude_loss = MSELoss(log_amplitude_r, log_amplitude_g)
+
+    return amplitude_loss
+
+
 def feature_loss(fmap_r, fmap_g):
     loss = 0
     for dr, dg in zip(fmap_r, fmap_g):
