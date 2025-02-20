@@ -50,7 +50,6 @@ def amp_pha_specturm(y, n_fft, hop_size, win_size):
         hop_length=hop_size,
         win_length=win_size,
         window=hann_window,
-        # TODO: did this break something else where. Trying to get padding to match up.
         center=True,
         return_complex=True,
     )  # [batch_size, n_fft//2+1, frames, 2]

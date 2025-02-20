@@ -548,6 +548,11 @@ def train_first(
         loss_consistency = stft_consistency_loss(
             real_rec, rea_g_final, imaginary_rec, imag_g_final
         )
+        loss_real_part = F.l1_loss(reals, real_rec)
+        loss_imaginary_part = F.l1_loss(imaginearies, imaginary_rec)
+        loss_stft_reconstruction = (
+            loss_consistency * 2.25 * (loss_real_part + loss_imaginary_part)
+        )
         if train.manifest.stage == "first_tma":
             loss_s2s = 0
             for _s2s_pred, _text_input, _text_length in zip(
@@ -569,17 +574,17 @@ def train_first(
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
-                + loss_amplitude
-                + loss_phase
-                + loss_consistency
+                + loss_amplitude * 5
+                + loss_phase * 10
+                + loss_stft_reconstruction * 2.5
             )
         else:
             g_loss = (
                 loss_mel
                 + loss_magphase
-                + loss_amplitude
-                + loss_phase
-                + loss_consistency
+                + loss_amplitude * 5
+                + loss_phase * 10
+                + loss_stft_reconstruction * 2.5
             )
     running_loss += loss_mel.item()
     train.accelerator.backward(g_loss)
@@ -606,7 +611,8 @@ def train_first(
                 "mp_loss": loss_magphase,
                 "amp_loss": loss_amplitude,
                 "phase_loss": loss_phase,
-                "consistency_loss": loss_consistency,
+                "consistency_loss": loss_stft_reconstruction,
+                "lr": train.stage.optimizer.param_groups[0]["lr"],
             }
             train.logger.info(
                 f"Epoch [{train.manifest.current_epoch}/{train.stage.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
