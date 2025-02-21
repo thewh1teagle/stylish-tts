@@ -5,6 +5,7 @@ from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 import numpy as np
 from munch import Munch
 from librosa.filters import mel as librosa_mel_fn
+import random
 
 import math
 
@@ -538,9 +539,9 @@ class Decoder(nn.Module):
                 downlist = [0, 3, 7, 15]
                 N_down = downlist[random.randint(0, 3)]
                 if F0_down:
-                    F0_curve = (
+                    F0 = (
                         nn.functional.conv1d(
-                            F0_curve.unsqueeze(1),
+                            F0.unsqueeze(1),
                             torch.ones(1, 1, F0_down).to("cuda"),
                             padding=F0_down // 2,
                         ).squeeze(1)
