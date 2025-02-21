@@ -29,7 +29,7 @@ import pandas as pd
 
 
 to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300
+    n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
 )
 mean, std = -4, 4
 
