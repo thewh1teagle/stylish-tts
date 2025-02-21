@@ -530,21 +530,46 @@ class Decoder(nn.Module):
 
         self.generator = Generator()
 
-    def forward(self, asr, F0, N, s):
-        F0 = self.F0_conv(F0.unsqueeze(1))
-        N = self.N_conv(N.unsqueeze(1))
+    def forward(self, asr, F0, N, s, pretrain=False):
+        if not pretrain:
+            if self.training:
+                downlist = [0, 3, 7]
+                F0_down = downlist[random.randint(0, 2)]
+                downlist = [0, 3, 7, 15]
+                N_down = downlist[random.randint(0, 3)]
+                if F0_down:
+                    F0_curve = (
+                        nn.functional.conv1d(
+                            F0_curve.unsqueeze(1),
+                            torch.ones(1, 1, F0_down).to("cuda"),
+                            padding=F0_down // 2,
+                        ).squeeze(1)
+                        / F0_down
+                    )
+                if N_down:
+                    N = (
+                        nn.functional.conv1d(
+                            N.unsqueeze(1),
+                            torch.ones(1, 1, N_down).to("cuda"),
+                            padding=N_down // 2,
+                        ).squeeze(1)
+                        / N_down
+                    )
 
-        x = torch.cat([asr, F0, N], axis=1)
-        x = self.encode(x)
+            F0 = self.F0_conv(F0.unsqueeze(1))
+            N = self.N_conv(N.unsqueeze(1))
 
-        asr_res = self.asr_res(asr)
+            x = torch.cat([asr, F0, N], axis=1)
+            x = self.encode(x)
 
-        res = True
-        for block in self.decode:
-            if res:
-                x = torch.cat([x, asr_res, F0, N], axis=1)
-            x = block(x, s)
-            if block.upsample_type != "none":
-                res = False
-        x = self.to_out(x)
+            asr_res = self.asr_res(asr)
+
+            res = True
+            for block in self.decode:
+                if res:
+                    x = torch.cat([x, asr_res, F0, N], axis=1)
+                x = block(x, s)
+                if block.upsample_type != "none":
+                    res = False
+            x = self.to_out(x)
         return self.generator(x)
