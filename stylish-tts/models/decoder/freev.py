@@ -258,6 +258,7 @@ class Generator(torch.nn.Module):
         else:
             inv_amp = inv_mel
         logamp = inv_amp.log()
+        logamp = F.pad(logamp, pad=(0, 1), mode="replicate")
         # logamp = self.ASP_input_conv(logamp)
         for conv_block in self.convnext2:
             logamp = conv_block(logamp, cond_embedding_id=None)
@@ -276,8 +277,10 @@ class Generator(torch.nn.Module):
         I = self.PSP_output_I_conv(pha)
 
         pha = torch.atan2(I, R)
-
+        pha = F.pad(pha, pad=(0, 1), mode="replicate")
+        # rea is the real part of the complex number
         rea = torch.exp(logamp) * torch.cos(pha)
+        # imag is the imaginary part of the complex number
         imag = torch.exp(logamp) * torch.sin(pha)
 
         spec = torch.complex(rea, imag)
@@ -293,7 +296,15 @@ class Generator(torch.nn.Module):
         )
 
         # return logamp, pha, rea, imag, audio.unsqueeze(1)
-        return torch.cat([audio, audio[:, -300:]], dim=-1).unsqueeze(1), None, None
+        return (
+            audio.unsqueeze(1),
+            None,
+            None,
+            logamp,
+            pha,
+            rea,
+            imag,
+        )
 
 
 ###################################################################

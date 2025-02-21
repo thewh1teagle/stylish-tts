@@ -10,7 +10,7 @@ from typing import List, Tuple, Any
 from utils import length_to_mask, maximum_path, log_norm, get_image
 from monotonic_align import mask_from_lens
 from munch import Munch
-from losses import magphase_loss
+from losses import magphase_loss, amplitude_loss, phase_loss, stft_consistency_loss
 from batch_context import BatchContext
 from train_context import TrainContext
 from loss_log import LossLog, combine_logs
@@ -42,6 +42,10 @@ def prepare_batch(
             "ref_mels",
             "paths",
             "pitches",
+            "log_amplitudes",
+            "phases",
+            "reals",
+            "imaginearies",
         ]
     index = {
         "waves": 0,
@@ -54,6 +58,10 @@ def prepare_batch(
         "ref_mels": 7,
         "paths": 8,
         "pitches": 9,
+        "log_amplitudes": 10,
+        "phases": 11,
+        "reals": 12,
+        "imaginearies": 13,
     }
     prepared = tuple()
     for key in keys_to_transfer:
@@ -413,6 +421,27 @@ def global_loss_acoustic(texts, text_lengths, state):
     return log
 
 
+def amp_pha_specturm(y, n_fft, hop_size, win_size):
+    hann_window = torch.hann_window(win_size).to(y.device)
+
+    stft_spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window,
+        center=True,
+        return_complex=True,
+    )  # [batch_size, n_fft//2+1, frames, 2]
+
+    log_amplitude = torch.log(
+        stft_spec.abs() + 1e-5
+    )  # [batch_size, n_fft//2+1, frames]
+    phase = stft_spec.angle()  # [batch_size, n_fft//2+1, frames]
+
+    return log_amplitude, phase, stft_spec.real, stft_spec.imag
+
+
 ###############################################
 # train_first
 ###############################################
@@ -424,11 +453,30 @@ def train_first(
     """
     Training function for the first stage.
     """
+
     # --- Batch Preparation ---
-    texts, input_lengths, mels, mel_input_length = prepare_batch(
+    (
+        texts,
+        input_lengths,
+        mels,
+        mel_input_length,
+        log_amplitudes,
+        phases,
+        reals,
+        imaginearies,
+    ) = prepare_batch(
         batch,
         train.config.training.device,
-        ["texts", "input_lengths", "mels", "mel_input_length"],
+        [
+            "texts",
+            "input_lengths",
+            "mels",
+            "mel_input_length",
+            "log_amplitudes",
+            "phases",
+            "reals",
+            "imaginearies",
+        ],
     )
 
     # --- Alignment Computation ---
@@ -462,8 +510,8 @@ def train_first(
             if train.model_config.model.multispeaker
             else mel_gt.unsqueeze(1)
         )
-        y_rec, mag_rec, phase_rec = train.model.decoder(
-            asr, F0_real, real_norm, style_emb
+        y_rec, mag_rec, phase_rec, logamp_rec, pha_rec, real_rec, imaginary_rec = (
+            train.model.decoder(asr, F0_real, real_norm, style_emb)
         )
 
     # --- Waveform Preparation ---
@@ -487,6 +535,27 @@ def train_first(
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
+        loss_amplitude = amplitude_loss(log_amplitudes, logamp_rec)
+
+        L_IP, L_GD, L_PTD = phase_loss(
+            phases, pha_rec, train.model_config.preprocess.n_fft, phases.size()[-1]
+        )
+        # Losses defined on phase spectra
+        loss_phase = L_IP + L_GD + L_PTD
+        _, _, rea_g_final, imag_g_final = amp_pha_specturm(
+            y_rec.squeeze(1),
+            train.model_config.preprocess.n_fft,
+            train.model_config.preprocess.hop_length,
+            train.model_config.preprocess.win_length,
+        )
+        loss_consistency = stft_consistency_loss(
+            real_rec, rea_g_final, imaginary_rec, imag_g_final
+        )
+        loss_real_part = F.l1_loss(reals, real_rec)
+        loss_imaginary_part = F.l1_loss(imaginearies, imaginary_rec)
+        loss_stft_reconstruction = (
+            loss_consistency * 2.25 * (loss_real_part + loss_imaginary_part)
+        )
         if train.manifest.stage == "first_tma":
             loss_s2s = 0
             for _s2s_pred, _text_input, _text_length in zip(
@@ -508,9 +577,18 @@ def train_first(
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
+                + loss_amplitude * 5
+                + loss_phase * 10
+                + loss_stft_reconstruction * 2.5
             )
         else:
-            g_loss = loss_mel + loss_magphase
+            g_loss = (
+                loss_mel
+                + loss_magphase
+                + loss_amplitude * 5
+                + loss_phase * 10
+                + loss_stft_reconstruction * 2.5
+            )
     running_loss += loss_mel.item()
     train.accelerator.backward(g_loss)
 
@@ -534,6 +612,10 @@ def train_first(
                 "s2s_loss": (loss_s2s if train.manifest.stage == "first_tma" else 0),
                 "slm_loss": (loss_slm if train.manifest.stage == "first_tma" else 0),
                 "mp_loss": loss_magphase,
+                "amp_loss": loss_amplitude,
+                "phase_loss": loss_phase,
+                "consistency_loss": loss_stft_reconstruction,
+                "lr": train.stage.optimizer.param_groups[0]["lr"],
             }
             train.logger.info(
                 f"Epoch [{train.manifest.current_epoch}/{train.stage.max_epoch}], Step [{current_epoch_step+1}/{train.batch_manager.get_step_count()}], Audio_Seconds_Trained: {train.manifest.total_trained_audio_seconds}, "
@@ -851,7 +933,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
             F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
             s = train.model.style_encoder(mels.unsqueeze(1))
             real_norm = log_norm(mels.unsqueeze(1)).squeeze(1)
-            y_rec, _, _ = train.model.decoder(asr, F0_real, real_norm, s)
+            y_rec, _, _, _, _, _, _ = train.model.decoder(asr, F0_real, real_norm, s)
             loss_mel = train.stft_loss(y_rec.squeeze(), waves.detach())
             loss_test += loss_mel.item()
             iters_test += 1
@@ -879,7 +961,7 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                 F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
                 s = train.model.style_encoder(gt.unsqueeze(1))
                 real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
-                y_rec, _, _ = train.model.decoder(en, F0_real, real_norm, s)
+                y_rec, _, _, _, _, _, _ = train.model.decoder(en, F0_real, real_norm, s)
                 train.writer.add_audio(
                     f"eval/y{bib}",
                     y_rec.cpu().numpy().squeeze(),
