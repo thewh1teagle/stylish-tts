@@ -577,17 +577,17 @@ def train_first(
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
-                + loss_amplitude * 5
-                + loss_phase * 10
-                + loss_stft_reconstruction * 2.5
+                + loss_amplitude * 0.5
+                + loss_phase * 1.0
+                + loss_stft_reconstruction * 0.25
             )
         else:
             g_loss = (
                 loss_mel
                 + loss_magphase
-                + loss_amplitude * 5
-                + loss_phase * 10
-                + loss_stft_reconstruction * 2.5
+                + loss_amplitude * 0.5
+                + loss_phase * 1.0
+                + loss_stft_reconstruction * 0.25
             )
     running_loss += loss_mel.item()
     train.accelerator.backward(g_loss)

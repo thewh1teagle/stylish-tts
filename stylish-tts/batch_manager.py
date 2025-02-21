@@ -72,6 +72,7 @@ class BatchManager:
         self.running_loss: float = 0
         self.last_oom: int = -1
         self.last_bin: Optional[int] = None
+        self.skip_forward: bool = False
 
     def get_step_count(self) -> int:
         return self.epoch_step_count // self.process_count
@@ -174,6 +175,7 @@ class BatchManager:
         self.running_loss = 0
         self.last_oom = -1
         self.last_bin = None
+        self.skip_forward = False
 
         self.loader = build_dataloader(
             self.dataset,
@@ -191,6 +193,10 @@ class BatchManager:
     def train_iterate(self, batch, train, debug=False) -> None:
         max_attempts = 3
         self.last_bin = get_time_bin(batch[0].shape[-1])
+        if self.last_bin == self.last_oom and self.skip_forward:
+            return
+        elif self.last_bin != self.last_oom:
+            self.skip_forward = False
         for attempt in range(1, max_attempts + 1):
             try:
                 if debug:
@@ -216,6 +222,8 @@ class BatchManager:
                         + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size} "
                         + str(batch[2])
                     )
+                    if attempt >= max_attempts:
+                        self.skip_forward = True
                     # train.logger.info(e)
                     train.stage.optimizer.zero_grad()
                     if self.last_oom != self.last_bin:
