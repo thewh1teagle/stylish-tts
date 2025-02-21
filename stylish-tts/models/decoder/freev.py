@@ -572,4 +572,6 @@ class Decoder(nn.Module):
                 if block.upsample_type != "none":
                     res = False
             x = self.to_out(x)
+        else:
+            x = asr
         return self.generator(x)

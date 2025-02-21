@@ -30,6 +30,9 @@ class TrainingPlanConfig(BaseModel):
     Training plan configuration that defines the number of epochs for different stages.
     """
 
+    vocoder: int = Field(
+        ..., description="Number of epochs for the vocoder pretraining stage."
+    )
     first: int = Field(
         ..., description="Number of epochs for the first training stage."
     )

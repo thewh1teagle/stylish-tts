@@ -29,7 +29,7 @@ class BatchContext:
             )
         self.duration_results = None
         self.resample = torchaudio.transforms.Resample(
-            self.config.preprocess.sample_rate, 16000
+            self.train.model_config.preprocess.sample_rate, 16000
         ).to(self.config.training.device)
         self.to_mel = torchaudio.transforms.MelSpectrogram(
             n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
