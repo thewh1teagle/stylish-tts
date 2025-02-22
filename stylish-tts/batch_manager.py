@@ -140,6 +140,7 @@ class BatchManager:
                                 batch=batch,
                                 running_loss=0,
                                 iters=0,
+                                probing=True,
                                 train=train,
                             )
                             break

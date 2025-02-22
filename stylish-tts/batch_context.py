@@ -140,11 +140,19 @@ class BatchContext:
         return self.model.style_encoder(mels.unsqueeze(1))
 
     def decoding(
-        self, text_encoding, duration, pitch, energy, style, audio_gt, split=1
+        self,
+        text_encoding,
+        duration,
+        pitch,
+        energy,
+        style,
+        audio_gt,
+        split=1,
+        probing=False,
     ):
         if split == 1 or text_encoding.shape[0] != 1:
             audio_out, mag, phase = self.model.decoder(
-                text_encoding @ duration, pitch, energy, style
+                text_encoding @ duration, pitch, energy, style, probing=probing
             )
             yield (audio_out, mag, phase, audio_gt)
         else:
@@ -166,7 +174,11 @@ class BatchContext:
                     :, mel_start * 300 * 2 : mel_end * 300 * 2
                 ].detach()
                 audio_out, mag, phase = self.train.model.decoder(
-                    text_slice @ duration_slice, pitch_slice, energy_slice, style
+                    text_slice @ duration_slice,
+                    pitch_slice,
+                    energy_slice,
+                    style,
+                    probing=probing,
                 )
                 yield (audio_out, mag, phase, audio_gt_slice)
                 text_start += text_hop
@@ -174,4 +186,6 @@ class BatchContext:
 
     def pretrain_decoding(self, pitch, style, audio_gt):
         mels = self.to_mel(audio_gt)[:, :, :-1]
-        return self.model.decoder(mels, pitch, None, style, pretrain=True)
+        return self.model.decoder(
+            mels, pitch, None, style, pretrain=True, probing=probing
+        )
