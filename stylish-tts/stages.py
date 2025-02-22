@@ -244,9 +244,14 @@ def prepare_models(training_set, eval_set, train):
 
 
 def train_vocoder_adapter(
-    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int,
+    batch,
+    running_loss: float,
+    iters: int,
+    train: TrainContext,
+    probing: bool = False,
 ) -> Tuple[float, int]:
-    log = train_vocoder(train, batch)
+    log = train_vocoder(train, batch, probing=probing)
     if (
         current_epoch_step > 0
         and current_epoch_step % train.config.training.log_interval == 0
@@ -255,7 +260,7 @@ def train_vocoder_adapter(
     return 0
 
 
-def train_vocoder(train: TrainContext, inputs):
+def train_vocoder(train: TrainContext, inputs, probing=False):
     """
     Pre-train the vocoder alone on the text resynthesis task
     """
@@ -263,10 +268,10 @@ def train_vocoder(train: TrainContext, inputs):
         mels,
         audio_gt,
         pitches,
-        log_amplitudes,
-        phases,
-        reals,
-        imaginearies,
+        # log_amplitudes,
+        # phases,
+        # reals,
+        # imaginearies,
     ) = prepare_batch(
         inputs,
         train.config.training.device,
@@ -274,10 +279,10 @@ def train_vocoder(train: TrainContext, inputs):
             "mels",
             "waves",
             "pitches",
-            "log_amplitudes",
-            "phases",
-            "reals",
-            "imaginearies",
+            # "log_amplitudes",
+            # "phases",
+            # "reals",
+            # "imaginearies",
         ],
     )
     training_set = {
@@ -291,19 +296,19 @@ def train_vocoder(train: TrainContext, inputs):
     with train.accelerator.autocast():
         # pitch = state.acoustic_pitch(mels)
         style_embedding = state.acoustic_style_embedding(mels)
-        if mels.shape[-1] > 80:
-            start = random.randint(0, mels.shape[-1] - 80)
-            end = start + 80
-            pitches = pitches[:, start:end]
-            log_amplitudes = log_amplitudes[:, :, start:end]
-            phases = phases[:, :, start:end]
-            reals = reals[:, :, start:end]
-            imaginearies = imaginearies[:, :, start:end]
-            audio_gt = audio_gt[:, start * 300 : (end - 1) * 300]
+        # if mels.shape[-1] > 80:
+        #    start = random.randint(0, mels.shape[-1] - 80)
+        #    end = start + 80
+        #    pitches = pitches[:, start:end]
+        #    log_amplitudes = log_amplitudes[:, :, start:end]
+        #    phases = phases[:, :, start:end]
+        #    reals = reals[:, :, start:end]
+        #    imaginearies = imaginearies[:, :, start:end]
+        #    audio_gt = audio_gt[:, start * 300 : (end - 1) * 300]
 
         # audio_out, mag, phase = state.pretrain_decoding(
         audio_out, mag_rec, phase_rec, logamp_rec, pha_rec, real_rec, imaginary_rec = (
-            state.pretrain_decoding(pitches, style_embedding, audio_gt)
+            state.pretrain_decoding(pitches, style_embedding, audio_gt, probing=probing)
         )
         # audio_out = audio_out[:, :, :-300]
 
@@ -318,31 +323,31 @@ def train_vocoder(train: TrainContext, inputs):
         log = LossLog(
             state.train.logger, state.train.writer, state.config.loss_weight.dict()
         )
-        loss_amplitude = amplitude_loss(log_amplitudes, logamp_rec)
+        # loss_amplitude = amplitude_loss(log_amplitudes, logamp_rec)
 
-        L_IP, L_GD, L_PTD = phase_loss(
-            phases, pha_rec, train.model_config.preprocess.n_fft, phases.size()[-1]
-        )
+        # L_IP, L_GD, L_PTD = phase_loss(
+        #    phases, pha_rec, train.model_config.preprocess.n_fft, phases.size()[-1]
+        # )
         # Losses defined on phase spectra
-        loss_phase = L_IP + L_GD + L_PTD
-        _, _, rea_g_final, imag_g_final = amp_pha_specturm(
-            audio_gt.squeeze(1),
-            train.model_config.preprocess.n_fft,
-            train.model_config.preprocess.hop_length,
-            train.model_config.preprocess.win_length,
-        )
-        loss_consistency = stft_consistency_loss(
-            real_rec, rea_g_final, imaginary_rec, imag_g_final
-        )
-        loss_real_part = F.l1_loss(reals, real_rec)
-        loss_imaginary_part = F.l1_loss(imaginearies, imaginary_rec)
-        loss_stft_reconstruction = (
-            loss_consistency * 2.25 * (loss_real_part + loss_imaginary_part)
-        )
+        # loss_phase = L_IP + L_GD + L_PTD
+        # _, _, rea_g_final, imag_g_final = amp_pha_specturm(
+        #    audio_gt.squeeze(1),
+        #    train.model_config.preprocess.n_fft,
+        #    train.model_config.preprocess.hop_length,
+        #    train.model_config.preprocess.win_length,
+        # )
+        # loss_consistency = stft_consistency_loss(
+        #    real_rec, rea_g_final, imaginary_rec, imag_g_final
+        # )
+        # loss_real_part = F.l1_loss(reals, real_rec)
+        # loss_imaginary_part = F.l1_loss(imaginearies, imaginary_rec)
+        # loss_stft_reconstruction = (
+        #    loss_consistency * 2.25 * (loss_real_part + loss_imaginary_part)
+        # )
         log.add_loss("mel", state.train.stft_loss(audio_out.squeeze(1), audio_gt))
-        log.add_loss("reconstruction", loss_stft_reconstruction * 0.25)
-        log.add_loss("amplitude", loss_amplitude * 0.5)
-        log.add_loss("phase", loss_phase)
+        # log.add_loss("reconstruction", loss_stft_reconstruction * 0.25)
+        # log.add_loss("amplitude", loss_amplitude * 0.5)
+        # log.add_loss("phase", loss_phase)
         log.add_loss(
             "gen",
             train.generator_loss(
@@ -358,9 +363,14 @@ def train_vocoder(train: TrainContext, inputs):
 
 
 def train_acoustic_adapter(
-    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int,
+    batch,
+    running_loss: float,
+    iters: int,
+    train: TrainContext,
+    probing: bool = False,
 ) -> Tuple[float, int]:
-    log = train_acoustic(train, batch, split=False)
+    log = train_acoustic(train, batch, split=False, probing=probing)
     if (
         current_epoch_step > 0
         and current_epoch_step % train.config.training.log_interval == 0
@@ -369,7 +379,7 @@ def train_acoustic_adapter(
     return 0
 
 
-def train_acoustic(train: TrainContext, inputs, split=False):
+def train_acoustic(train: TrainContext, inputs, split=False, probing=False):
     """
     Train the acoustic models, the text encoder, and the decoder
     """
@@ -411,6 +421,7 @@ def train_acoustic(train: TrainContext, inputs, split=False):
             style_embedding,
             audio_gt,
             split=split_count,
+            probing=probing,
         )
         train.stage.optimizer.zero_grad()
         loglist = []
@@ -495,7 +506,12 @@ def amp_pha_specturm(y, n_fft, hop_size, win_size):
 
 
 def train_first(
-    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int,
+    batch,
+    running_loss: float,
+    iters: int,
+    train: TrainContext,
+    probing: bool = False,
 ) -> Tuple[float, int]:
     """
     Training function for the first stage.
@@ -558,7 +574,7 @@ def train_first(
             else mel_gt.unsqueeze(1)
         )
         y_rec, mag_rec, phase_rec, logamp_rec, pha_rec, real_rec, imaginary_rec = (
-            train.model.decoder(asr, F0_real, real_norm, style_emb)
+            train.model.decoder(asr, F0_real, real_norm, style_emb, probing=probing)
         )
 
     # --- Waveform Preparation ---
@@ -684,7 +700,12 @@ def train_first(
 
 
 def train_second(
-    current_epoch_step: int, batch, running_loss: float, iters: int, train: TrainContext
+    current_epoch_step: int,
+    batch,
+    running_loss: float,
+    iters: int,
+    train: TrainContext,
+    probing: bool = False,
 ) -> Tuple[float, int]:
     """
     Training function for the second stage.
@@ -813,11 +834,15 @@ def train_second(
         y_rec_gt = wav
         if train.manifest.stage == "second_joint":
             with train.accelerator.autocast():
-                y_rec_gt_pred, _, _ = train.model.decoder(asr, F0_real, N_real, gs)
+                y_rec_gt_pred, _, _ = train.model.decoder(
+                    asr, F0_real, N_real, gs, probing=probing
+                )
 
     with train.accelerator.autocast():
         F0_fake, N_fake = train.model.predictor((p_en, s_dur), predict_F0N=True)
-        y_rec, mag_rec, phase_rec = train.model.decoder(asr, F0_fake, N_fake, gs)
+        y_rec, mag_rec, phase_rec = train.model.decoder(
+            asr, F0_fake, N_fake, gs, probing=probing
+        )
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.squeeze(1).detach())
 
     loss_F0_rec = F.smooth_l1_loss(F0_real, F0_fake) / 10

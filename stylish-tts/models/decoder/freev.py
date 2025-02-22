@@ -531,13 +531,16 @@ class Decoder(nn.Module):
 
         self.generator = Generator()
 
-    def forward(self, asr, F0, N, s, pretrain=False):
+    def forward(self, asr, F0, N, s, pretrain=False, probing=False):
         if not pretrain:
             if self.training:
                 downlist = [0, 3, 7]
                 F0_down = downlist[random.randint(0, 2)]
                 downlist = [0, 3, 7, 15]
                 N_down = downlist[random.randint(0, 3)]
+                if probing:
+                    F0_down = 0
+                    N_down = 0
                 if F0_down:
                     F0 = (
                         nn.functional.conv1d(
