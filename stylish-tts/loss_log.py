@@ -51,6 +51,11 @@ class LossLog:
             total_weight += weight
         self.total_loss = total / total_weight
 
+    def detach(self):
+        for key, value in self.metrics.items():
+            if torch.is_tensor(value):
+                self.metrics[key] = value.item()
+
     def add_loss(self, key, value):
         self.metrics[key] = value
 
