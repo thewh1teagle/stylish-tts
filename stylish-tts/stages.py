@@ -640,9 +640,9 @@ def train_first(
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
-                + loss_amplitude * 10.0
-                + loss_phase * 20.0
-                + loss_stft_reconstruction * 5.0
+                + loss_amplitude * 1.0
+                + loss_phase * 2.0
+                + loss_stft_reconstruction * 0.5
             )
         else:
             g_loss = (
