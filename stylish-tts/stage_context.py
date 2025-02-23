@@ -99,18 +99,23 @@ class StageContext:
         self.optimizer = None
 
     def begin_stage(self, name, train):
-        if self.name is not None:
-            self.optimizer.free_memory(train.accelerator)
+        # if self.name is not None:
+        #    for key in train.model:
+        #        train.model[key] = train.accelerator.free_memory(train.model[key])
+        #    for key in train.model:
+        #        train.model[key] = train.accelerator.prepare(train.model[key])
+        #    self.optimizer.free_memory(train.accelerator)
         is_second = name in {"second", "second_style", "second_joint"}
         self.max_epoch = train.config.training_plan.dict()[name]
         self.steps_per_epoch = train.batch_manager.get_step_count()
         self.name = name
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
-        self.optimizer = build_optimizer(
-            self.max_epoch, self.steps_per_epoch, is_second=is_second, train=train
-        )
-        self.optimizer.prepare(train.accelerator)
+        if self.optimizer is None:
+            self.optimizer = build_optimizer(
+                self.max_epoch, self.steps_per_epoch, is_second=is_second, train=train
+            )
+            self.optimizer.prepare(train.accelerator)
 
     def train_batch(self, *args, **kwargs):
         return self.train_fn(*args, **kwargs)

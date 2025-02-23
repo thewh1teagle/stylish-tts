@@ -33,12 +33,12 @@ class MultiOptimizer:
         # for key in self.disc_schedulers.keys():
         #    self.disc_schedulers[key] = accelerator.prepare(self.disc_schedulers[key])
 
-    def free_memory(self, accelerator):
-        for key in self.optimizers.keys():
-            accelerator.free_memory(self.optimizers[key])
-            accelerator.free_memory(self.schedulers[key])
-        # for key in self.disc_schedulers.keys():
-        #    accelerator.free_memory(self.disc_schedulers[key])
+    # def free_memory(self, accelerator):
+    #    for key in self.optimizers.keys():
+    #        accelerator.free_memory(self.optimizers[key])
+    #        accelerator.free_memory(self.schedulers[key])
+    #    # for key in self.disc_schedulers.keys():
+    #    #    accelerator.free_memory(self.disc_schedulers[key])
 
     def add_discriminator_schedulers(self, discriminator_loss):
         for key in ["msd", "mpd"]:
@@ -79,10 +79,11 @@ class MultiOptimizer:
             _ = [self.optimizers[key].zero_grad() for key in self.keys]
 
     def scheduler(self, *args, key=None):
-        if key is not None:
-            self.schedulers[key].step(*args)
-        else:
-            _ = [self.schedulers[key].step(*args) for key in self.keys]
+        pass
+        # if key is not None:
+        #    self.schedulers[key].step(*args)
+        # else:
+        #    _ = [self.schedulers[key].step(*args) for key in self.keys]
 
     # def scale(self, scale, key_in=None):
     #    keys = [key_in]
@@ -133,7 +134,7 @@ def build_optimizer(max_epoch, steps_per_epoch, is_second=False, train=None):
         )
         schedulers[key] = transformers.get_cosine_schedule_with_warmup(
             optim[key],
-            num_warmup_steps=200,
+            num_warmup_steps=0,  # 200,
             num_training_steps=steps_per_epoch * max_epoch,
         )
 

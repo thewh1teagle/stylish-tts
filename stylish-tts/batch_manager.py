@@ -56,17 +56,20 @@ class BatchManager:
         if accelerator is not None:
             self.process_count = accelerator.num_processes
             accelerator.even_batches = False
-        self.loader: DataLoader = build_dataloader(
+        # TODO: This should be unnecessary but the order of initialization means that the optimizer relies on this. Need to figure that out and make the optimizer be reset after a probe_batch
+        self.loader = build_dataloader(
             self.dataset,
             self.time_bins,
             batch_size=self.batch_dict,
             num_workers=32,
-            device=device,
+            device=self.device,
             drop_last=True,
-            multispeaker=multispeaker,
+            multispeaker=self.multispeaker,
             epoch=epoch,
         )
-        self.loader = accelerator.prepare(self.loader)
+        if accelerator is not None:
+            self.loader = accelerator.prepare(self.loader)
+        # self.loader: DataLoader = None
         self.resume_loader: DataLoader = None
         self.epoch_step_count: int = len(self.loader.batch_sampler)
         self.running_loss: float = 0
@@ -170,26 +173,30 @@ class BatchManager:
     def init_epoch(self, train) -> None:
         if not self.batch_dict:
             self.probe_loop(train)
-        elif self.resume_loader:
-            self.loader = self.resume_loader
-            self.resume_loader = None
+        else:
+            if self.resume_loader:
+                self.loader = self.resume_loader
+                self.resume_loader = None
+            else:
+                if self.loader is not None:
+                    train.accelerator.free_memory(self.loader)
+                self.loader = build_dataloader(
+                    self.dataset,
+                    self.time_bins,
+                    batch_size=self.batch_dict,
+                    num_workers=32,
+                    device=self.device,
+                    drop_last=True,
+                    multispeaker=self.multispeaker,
+                    epoch=train.manifest.current_epoch,
+                )
+                self.loader = train.accelerator.prepare(self.loader)
         self.running_loss = 0
         self.last_oom = -1
         self.last_bin = None
         self.skip_forward = False
 
-        self.loader = build_dataloader(
-            self.dataset,
-            self.time_bins,
-            batch_size=self.batch_dict,
-            num_workers=32,
-            device=self.device,
-            drop_last=True,
-            multispeaker=self.multispeaker,
-            epoch=train.manifest.current_epoch,
-        )
         self.epoch_step_count = len(self.loader.batch_sampler)
-        self.loader = train.accelerator.prepare(self.loader)
 
     def train_iterate(self, batch, train, debug=False) -> None:
         max_attempts = 3
