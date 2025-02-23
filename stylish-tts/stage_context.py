@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, List
 
 from stages import (
     train_first,
@@ -112,8 +112,8 @@ class StageContext:
         )
         self.optimizer.prepare(train.accelerator)
 
-    def train_batch(self, *args):
-        return self.train_fn(*args)
+    def train_batch(self, *args, **kwargs):
+        return self.train_fn(*args, **kwargs)
 
-    def validate(self, *args):
-        return self.validate(*args)
+    def validate(self, *args, **kwargs):
+        return self.validate_fn(*args, **kwargs)

@@ -18,6 +18,7 @@ import torch.utils.data
 import torch.distributed as dist
 from huggingface_hub import hf_hub_download
 from safetensors import safe_open
+from librosa.filters import mel as librosa_mel_fn
 
 import logging
 import utils
@@ -27,17 +28,77 @@ logger.setLevel(logging.DEBUG)
 
 import pandas as pd
 
+mel_window = {}
 
-to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
-)
+
+def param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device):
+    return f"{sampling_rate}-{n_fft}-{num_mels}-{fmin}-{fmax}-{win_size}-{device}"
+
+
+def mel_spectrogram(
+    y,
+    n_fft,
+    num_mels,
+    sampling_rate,
+    hop_size,
+    win_size,
+    fmin,
+    fmax,
+    center=True,
+    in_dataset=False,
+):
+    global mel_window
+    # device = torch.device("cpu") if in_dataset else y.device
+    device = "cpu"
+    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
+    if ps in mel_window:
+        mel_basis, hann_window = mel_window[ps]
+        # print(mel_basis, hann_window)
+        # mel_basis, hann_window = mel_basis.to(y.device), hann_window.to(y.device)
+    else:
+        mel = librosa_mel_fn(
+            sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
+        )
+        mel_basis = torch.from_numpy(mel).float().to(device)
+        hann_window = torch.hann_window(win_size).to(device)
+        mel_window[ps] = (mel_basis.clone(), hann_window.clone())
+
+    spec = torch.stft(
+        y.to(device),
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window.to(device),
+        center=True,
+        return_complex=True,
+    )
+
+    spec = mel_basis.to(device) @ spec.abs()
+    # spec = spectral_normalize_torch(spec)
+
+    return spec  # [batch_size,n_fft/2+1,frames]
+
+
+# to_mel = torchaudio.transforms.MelSpectrogram(
+#    n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
+# )
 mean, std = -4, 4
 
 
 def preprocess(wave):
     # wave_tensor = torch.from_numpy(wave).float()
     wave_tensor = wave
-    mel_tensor = to_mel(wave_tensor)
+    # mel_tensor = to_mel(wave_tensor)
+    mel_tensor = mel_spectrogram(
+        y=wave_tensor,
+        n_fft=2048,
+        num_mels=80,
+        sampling_rate=24000,
+        hop_size=300,
+        win_size=1200,
+        fmin=50,
+        fmax=550,
+    )
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
 
