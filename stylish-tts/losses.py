@@ -255,7 +255,9 @@ class GeneratorLoss(torch.nn.Module):
             y_ds_hat_r, y_ds_hat_g
         )
 
-        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_rel
+        loss_gen_all = (
+            loss_gen_s * 0.1 + loss_gen_f + loss_fm_s * 0.1 + loss_fm_f + loss_rel
+        )
 
         return loss_gen_all.mean()
 

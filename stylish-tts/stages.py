@@ -616,8 +616,8 @@ def train_first(
         )
         loss_real_part = F.l1_loss(reals, real_rec)
         loss_imaginary_part = F.l1_loss(imaginearies, imaginary_rec)
-        loss_stft_reconstruction = (
-            loss_consistency * 2.25 * (loss_real_part + loss_imaginary_part)
+        loss_stft_reconstruction = loss_consistency + 2.25 * (
+            loss_real_part + loss_imaginary_part
         )
         if train.manifest.stage == "first_tma":
             loss_s2s = 0
@@ -640,17 +640,17 @@ def train_first(
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
-                + loss_amplitude * 0.5
-                + loss_phase * 1.0
-                + loss_stft_reconstruction * 0.25
+                + loss_amplitude * 10.0
+                + loss_phase * 20.0
+                + loss_stft_reconstruction * 5.0
             )
         else:
             g_loss = (
                 loss_mel
                 + loss_magphase
-                + loss_amplitude * 0.5
-                + loss_phase * 1.0
-                + loss_stft_reconstruction * 0.25
+                + loss_amplitude * 10
+                + loss_phase * 20
+                + loss_stft_reconstruction * 5.0
             )
     running_loss += loss_mel.item()
     train.accelerator.backward(g_loss)

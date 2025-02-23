@@ -173,24 +173,22 @@ class BatchManager:
     def init_epoch(self, train) -> None:
         if not self.batch_dict:
             self.probe_loop(train)
+            self.resume_loader = None
+        if self.resume_loader:
+            self.loader = self.resume_loader
+            self.resume_loader = None
         else:
-            if self.resume_loader:
-                self.loader = self.resume_loader
-                self.resume_loader = None
-            else:
-                if self.loader is not None:
-                    train.accelerator.free_memory(self.loader)
-                self.loader = build_dataloader(
-                    self.dataset,
-                    self.time_bins,
-                    batch_size=self.batch_dict,
-                    num_workers=32,
-                    device=self.device,
-                    drop_last=True,
-                    multispeaker=self.multispeaker,
-                    epoch=train.manifest.current_epoch,
-                )
-                self.loader = train.accelerator.prepare(self.loader)
+            self.loader = build_dataloader(
+                self.dataset,
+                self.time_bins,
+                batch_size=self.batch_dict,
+                num_workers=32,
+                device=self.device,
+                drop_last=True,
+                multispeaker=self.multispeaker,
+                epoch=train.manifest.current_epoch,
+            )
+            self.loader = train.accelerator.prepare(self.loader)
         self.running_loss = 0
         self.last_oom = -1
         self.last_bin = None
