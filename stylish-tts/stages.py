@@ -527,6 +527,7 @@ def train_first(
         phases,
         reals,
         imaginearies,
+        pitches,
     ) = prepare_batch(
         batch,
         train.config.training.device,
@@ -539,6 +540,7 @@ def train_first(
             "phases",
             "reals",
             "imaginearies",
+            "pitches",
         ],
     )
 
@@ -564,7 +566,8 @@ def train_first(
     # --- Pitch Extraction ---
     with torch.no_grad():
         real_norm = log_norm(mel_gt.unsqueeze(1)).squeeze(1)
-        F0_real, _, _ = train.model.pitch_extractor(mel_gt.unsqueeze(1))
+        F0_real = pitches
+        # F0_real, _, _ = train.model.pitch_extractor(mel_gt.unsqueeze(1))
 
     # --- Style Encoding & Decoding ---
     with train.accelerator.autocast():
@@ -597,7 +600,7 @@ def train_first(
     train.stage.optimizer.zero_grad()
     with train.accelerator.autocast():
         loss_mel = train.stft_loss(y_rec.squeeze(), wav.detach())
-        loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
+        # loss_magphase = magphase_loss(mag_rec, phase_rec, wav.detach())
         loss_amplitude = amplitude_loss(log_amplitudes, logamp_rec)
 
         L_IP, L_GD, L_PTD = phase_loss(
@@ -639,18 +642,18 @@ def train_first(
                 + train.config.loss_weight.s2s * loss_s2s
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
-                + loss_magphase
+                # + loss_magphase
                 + loss_amplitude * 0.5
                 + loss_phase * 1.0
                 + loss_stft_reconstruction * 0.25
             )
         else:
             g_loss = (
-                loss_mel * train.config.loss_weight.mel
-                + loss_magphase
-                + loss_amplitude * 0.5
-                + loss_phase * 1.0
-                + loss_stft_reconstruction * 0.25
+                loss_mel
+                # + loss_magphase
+                # + loss_amplitude * 1.0
+                # + loss_phase * 2.0
+                # + loss_stft_reconstruction * 0.5
             )
     running_loss += loss_mel.item()
     train.accelerator.backward(g_loss)
@@ -674,7 +677,7 @@ def train_first(
                 "mono_loss": (loss_mono if train.manifest.stage == "first_tma" else 0),
                 "s2s_loss": (loss_s2s if train.manifest.stage == "first_tma" else 0),
                 "slm_loss": (loss_slm if train.manifest.stage == "first_tma" else 0),
-                "cons_loss": loss_consistency,
+                # "mp_loss": loss_magphase,
                 "amp_loss": loss_amplitude,
                 "phase_loss": loss_phase,
                 "consistency_loss": loss_stft_reconstruction,
@@ -727,6 +730,7 @@ def train_second(
         mels,
         mel_input_length,
         ref_mels,
+        pitches,
     ) = prepare_batch(
         batch,
         train.config.training.device,
@@ -739,6 +743,7 @@ def train_second(
             "mels",
             "mel_input_length",
             "ref_mels",
+            "pitches",
         ],
     )
     with torch.no_grad():
@@ -828,19 +833,20 @@ def train_second(
         return running_loss
 
     with torch.no_grad():
-        F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
+        F0_real = pitches
+        # F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
         N_real = log_norm(mels.unsqueeze(1)).squeeze(1)
         wav = wav.unsqueeze(1)
         y_rec_gt = wav
         if train.manifest.stage == "second_joint":
             with train.accelerator.autocast():
-                y_rec_gt_pred, _, _ = train.model.decoder(
+                y_rec_gt_pred, _, _, _, _, _, _ = train.model.decoder(
                     asr, F0_real, N_real, gs, probing=probing
                 )
 
     with train.accelerator.autocast():
         F0_fake, N_fake = train.model.predictor((p_en, s_dur), predict_F0N=True)
-        y_rec, mag_rec, phase_rec = train.model.decoder(
+        y_rec, mag_rec, phase_rec, _, _, _, _ = train.model.decoder(
             asr, F0_fake, N_fake, gs, probing=probing
         )
         loss_magphase = magphase_loss(mag_rec, phase_rec, wav.squeeze(1).detach())
@@ -953,7 +959,7 @@ def train_second(
                     f"train/{key}", value, train.manifest.current_total_step
                 )
             running_loss = 0
-            logging.info("Time elapsed:", time.time() - train.start_time)
+            # logging.info("Time elapsed:", time.time() - train.start_time)
 
     return running_loss
 
@@ -975,10 +981,19 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
     with torch.no_grad():
         iters_test = 0
         for batch in train.val_dataloader:
-            waves, texts, input_lengths, mels, mel_input_length = prepare_batch(
-                batch,
-                train.config.training.device,
-                ["waves", "texts", "input_lengths", "mels", "mel_input_length"],
+            waves, texts, input_lengths, mels, mel_input_length, pitches = (
+                prepare_batch(
+                    batch,
+                    train.config.training.device,
+                    [
+                        "waves",
+                        "texts",
+                        "input_lengths",
+                        "mels",
+                        "mel_input_length",
+                        "pitches",
+                    ],
+                )
             )
             mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
                 train.config.training.device
@@ -1002,7 +1017,8 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                 logging.error("Skipping batch. TOO SHORT")
                 continue
 
-            F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
+            F0_real = pitches
+            # F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
             s = train.model.style_encoder(mels.unsqueeze(1))
             real_norm = log_norm(mels.unsqueeze(1)).squeeze(1)
             y_rec, _, _, _, _, _, _ = train.model.decoder(asr, F0_real, real_norm, s)
@@ -1030,7 +1046,8 @@ def validate_first(current_step: int, save: bool, train: TrainContext) -> None:
                 mel_length = int(mel_input_length[bib].item())
                 gt = mels[bib, :, :mel_length].unsqueeze(0)
                 en = asr[bib, :, : mel_length // 2].unsqueeze(0)
-                F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
+                pitch = pitches
+                # F0_real, _, _ = train.model.pitch_extractor(gt.unsqueeze(1))
                 s = train.model.style_encoder(gt.unsqueeze(1))
                 real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
                 y_rec, _, _, _, _, _, _ = train.model.decoder(en, F0_real, real_norm, s)
@@ -1078,19 +1095,26 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
         iters_test = 0
         for batch in train.val_dataloader:
             try:
-                waves, texts, input_lengths, mels, mel_input_length, ref_mels = (
-                    prepare_batch(
-                        batch,
-                        train.config.training.device,
-                        [
-                            "waves",
-                            "texts",
-                            "input_lengths",
-                            "mels",
-                            "mel_input_length",
-                            "ref_mels",
-                        ],
-                    )
+                (
+                    waves,
+                    texts,
+                    input_lengths,
+                    mels,
+                    mel_input_length,
+                    ref_mels,
+                    pitches,
+                ) = prepare_batch(
+                    batch,
+                    train.config.training.device,
+                    [
+                        "waves",
+                        "texts",
+                        "input_lengths",
+                        "mels",
+                        "mel_input_length",
+                        "ref_mels",
+                        "pitches",
+                    ],
                 )
                 mask = length_to_mask(mel_input_length // (2**train.n_down)).to(
                     train.config.training.device
@@ -1137,12 +1161,13 @@ def validate_second(current_step: int, save: bool, train: TrainContext) -> None:
                     dur_pred = torch.sigmoid(pred).sum(dim=1)
                     loss_dur += F.l1_loss(dur_pred[1 : length - 1], inp[1 : length - 1])
                 loss_dur /= texts.size(0)
-                y_rec, _, _ = train.model.decoder(asr, F0_fake, N_fake, gs)
+                y_rec, _, _, _, _, _, _ = train.model.decoder(asr, F0_fake, N_fake, gs)
                 if train.accelerator.is_main_process and len(samples) < 5:
                     samples.append(y_rec[0].detach().cpu().numpy())
                     samples_gt.append(waves[0].detach().cpu().numpy())
                 loss_mel = train.stft_loss(y_rec.squeeze(1), waves.detach())
-                F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
+                F0_real = pitches
+                # F0_real, _, _ = train.model.pitch_extractor(mels.unsqueeze(1))
                 loss_F0 = F.l1_loss(F0_real, F0_fake) / 10
                 loss_test += loss_mel.mean()
                 loss_align += loss_dur.mean()
