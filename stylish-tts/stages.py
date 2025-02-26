@@ -640,17 +640,17 @@ def train_first(
                 + train.config.loss_weight.gen * loss_gen_all
                 + train.config.loss_weight.slm * loss_slm
                 + loss_magphase
-                + loss_amplitude * 1.0
-                + loss_phase * 2.0
-                + loss_stft_reconstruction * 0.5
+                + loss_amplitude * 0.5
+                + loss_phase * 1.0
+                + loss_stft_reconstruction * 0.25
             )
         else:
             g_loss = (
-                loss_mel
+                loss_mel * train.config.loss_weight.mel
                 + loss_magphase
-                + loss_amplitude * 10
-                + loss_phase * 20
-                + loss_stft_reconstruction * 5.0
+                + loss_amplitude * 0.5
+                + loss_phase * 1.0
+                + loss_stft_reconstruction * 0.25
             )
     running_loss += loss_mel.item()
     train.accelerator.backward(g_loss)
@@ -674,7 +674,7 @@ def train_first(
                 "mono_loss": (loss_mono if train.manifest.stage == "first_tma" else 0),
                 "s2s_loss": (loss_s2s if train.manifest.stage == "first_tma" else 0),
                 "slm_loss": (loss_slm if train.manifest.stage == "first_tma" else 0),
-                "mp_loss": loss_magphase,
+                "cons_loss": loss_consistency,
                 "amp_loss": loss_amplitude,
                 "phase_loss": loss_phase,
                 "consistency_loss": loss_stft_reconstruction,
