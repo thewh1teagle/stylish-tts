@@ -150,7 +150,7 @@ class BatchManager:
                         self.set_batch_size(key, batch_size)
                     done = True
                 except Exception as e:
-                    if "out of memory" in str(e):
+                    if "out of memory" in str(e) or "cufft" in str(e).lower():
                         audio_length = (last_bin * 0.25) + 0.25
                         train.logger.info(
                             f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
@@ -222,7 +222,7 @@ class BatchManager:
             except Exception as e:
                 batch_size = self.get_batch_size(self.last_bin)
                 audio_length = (self.last_bin * 0.25) + 0.25
-                if "CUDA out of memory" in str(e):
+                if "CUDA out of memory" in str(e) or "cufft" in str(e).lower():
                     train.logger.info(
                         f"{attempt * ('*' if attempt < max_attempts else 'X')} "
                         + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size} "
