@@ -1,14 +1,21 @@
-from train_context import TrainContext
+from __future__ import annotations
 import logging
+import torch
+
+import train_context
 
 logger = logging.getLogger(__name__)
 
 
+def build_loss_log(train: train_context.TrainContext):
+    return LossLog(train.logger, train.writer, train.config.loss_weight)
+
+
 class LossLog:
-    def __init__(self, logger, writer, loss_weights):
+    def __init__(self, logger, writer, loss_weight):
         self.logger = logger
         self.writer = writer
-        self.weights = loss_weights
+        self.weights = loss_weight
         self.metrics = {}
         self.total_loss = None
 
@@ -17,18 +24,38 @@ class LossLog:
             self.calculate_metrics()
         return self.total_loss
 
-    def broadcast(self, manifest, stage):
+    def broadcast(self, manifest, stage, validation=False):
         if self.total_loss is None:
             self.calculate_metrics()
-        self.logger.info(
-            f"Epoch [{manifest.current_epoch}/{stage.max_epoch}], Step [{manifest.current_step}/{stage.steps_per_epoch}], loss: {self.total_loss:.3f}, "
-            + ", ".join(f"{k}: {v:.3f}" for k, v in self.metrics.items())
-        )
+        loss_list = [f"{k}: {v:.3f}" for k, v in self.metrics.items()]
+        loss_string = f"loss: {self.total_loss:.3f}, " + ", ".join(loss_list)
+        if validation:
+            writer_type = "eval"
+            best_string = ""
+            if manifest.best_loss != float("inf"):
+                best_string = f", (best was {manifest.best_loss})"
+            self.logger.info(
+                f"Validation step {manifest.current_total_step}: "
+                + loss_string
+                + best_string
+            )
+        else:
+            writer_type = "train"
+            lr = stage.optimizer.param_groups[0]["lr"]
+            lr_string = f", lr: {lr:.7f}"
+            self.logger.info(
+                f"Epoch [{manifest.current_epoch}/{stage.max_epoch}], "
+                + f"Step [{manifest.current_step}/{stage.steps_per_epoch}], "
+                + loss_string
+                + lr_string
+            )
         self.writer.add_scalar(
-            "train/loss", self.total_loss, manifest.current_total_step
+            f"{writer_type}/loss", self.total_loss, manifest.current_total_step
         )
         for key, value in self.metrics.items():
-            self.writer.add_scalar(f"train/{key}", value, manifest.current_total_step)
+            self.writer.add_scalar(
+                f"{writer_type}/{key}", value, manifest.current_total_step
+            )
 
     def weight(self, key: str):
         if key in self.weights:
@@ -55,6 +82,7 @@ class LossLog:
         for key, value in self.metrics.items():
             if torch.is_tensor(value):
                 self.metrics[key] = value.item()
+        return self
 
     def add_loss(self, key, value):
         self.metrics[key] = value
@@ -69,4 +97,6 @@ def combine_logs(loglist):
                 if key not in result.metrics:
                     result.metrics[key] = 0
                 result.metrics[key] += log.metrics[key]
+        for key in result.metrics.keys():
+            result.metrics[key] /= len(loglist)
     return result

@@ -667,7 +667,7 @@ class Decoder(nn.Module):
             gen_istft_hop_size,
         )
 
-    def forward(self, asr, F0_curve, N, s, pretrain=False):
+    def forward(self, asr, F0_curve, N, s, pretrain=False, probing=False):
         if not pretrain:
             if self.training:
                 downlist = [0, 3, 7]
@@ -712,4 +712,4 @@ class Decoder(nn.Module):
             x = self.conv_pretrain(asr)
 
         x, mag, phase = self.generator(x, s, F0_curve)
-        return x, mag, phase
+        return x, mag, phase, None, None, None, None

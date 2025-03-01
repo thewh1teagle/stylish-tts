@@ -215,6 +215,7 @@ def save_checkpoint(
     """
     Saves checkpoint using a checkpoint.
     """
+    logger.info("Saving...")
     checkpoint_dir = osp.join(
         train.out_dir,
         f"{prefix}_{train.manifest.current_epoch:05d}_step_{current_step:09d}",
@@ -222,7 +223,7 @@ def save_checkpoint(
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
     train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
 
-    logger.info(f"Saving checkpoint to {checkpoint_dir}")
+    logger.info(f"Saved checkpoint to {checkpoint_dir}")
 
 
 def prepare_models(training_set, eval_set, train):

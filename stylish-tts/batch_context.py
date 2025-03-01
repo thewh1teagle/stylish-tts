@@ -106,9 +106,13 @@ class BatchContext:
         else:
             duration = s2s_attn_mono
 
+        self.attention = s2s_attn[0]
         self.duration_results = (s2s_attn, s2s_attn_mono)
         self.s2s_pred = s2s_pred
         return duration
+
+    def get_attention(self):
+        return self.attention
 
     # def acoustic_pitch(self, mels: torch.Tensor):
     def acoustic_pitch(self, audio_gt: torch.Tensor):
@@ -151,10 +155,10 @@ class BatchContext:
         probing=False,
     ):
         if split == 1 or text_encoding.shape[0] != 1:
-            audio_out, mag, phase = self.model.decoder(
+            audio_out, _, _, _, _, _, _ = self.model.decoder(
                 text_encoding @ duration, pitch, energy, style, probing=probing
             )
-            yield (audio_out, mag, phase, audio_gt)
+            yield (audio_out, audio_gt, 0, energy.shape[-1])
         else:
             text_hop = text_encoding.shape[-1] // split
             text_start = 0
@@ -173,19 +177,42 @@ class BatchContext:
                 audio_gt_slice = audio_gt[
                     :, mel_start * 300 * 2 : mel_end * 300 * 2
                 ].detach()
-                audio_out, mag, phase = self.train.model.decoder(
+                audio_out, _, _, _, _, _, _ = self.train.model.decoder(
                     text_slice @ duration_slice,
                     pitch_slice,
                     energy_slice,
                     style,
                     probing=probing,
                 )
-                yield (audio_out, mag, phase, audio_gt_slice)
+                yield (audio_out, audio_gt_slice, mel_start, mel_end)
                 text_start += text_hop
                 text_end += text_hop
 
-    def pretrain_decoding(self, pitch, style, audio_gt, probing=False):
-        mels = self.to_mel(audio_gt)[:, :, :-1]
-        return self.model.decoder(
-            mels, pitch, None, style, pretrain=True, probing=probing
+    def acoustic_prediction(self, batch, split=1):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=True,
+            use_random_choice=True,
         )
+        energy = self.acoustic_energy(batch.mel)
+        style_embedding = self.acoustic_style_embedding(batch.mel)
+        decoding = self.decoding(
+            text_encoding,
+            duration,
+            batch.pitch,
+            energy,
+            style_embedding,
+            batch.audio_gt,
+            split=split,
+        )
+        return decoding
+
+    # def pretrain_decoding(self, pitch, style, audio_gt, probing=False):
+    #    mels = self.to_mel(audio_gt)[:, :, :-1]
+    #    return self.model.decoder(
+    #        mels, pitch, None, style, pretrain=True, probing=probing
+    #    )

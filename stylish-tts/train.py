@@ -24,7 +24,7 @@ from stage_context import StageContext, is_valid_stage, valid_stage_list
 from models.models import build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from utils import get_data_path_list
-
+from loss_log import combine_logs
 
 from models.slmadv import SLMAdversarialLoss
 from models.diffusion.sampler import (
@@ -255,6 +255,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
 
 
 def train_val_loop(train: TrainContext):
+    logs = []
     while train.manifest.current_epoch <= train.stage.max_epoch:
         train.batch_manager.init_epoch(train)
         train.stage.steps_per_epoch = train.batch_manager.get_step_count()
@@ -264,19 +265,33 @@ def train_val_loop(train: TrainContext):
         # TODO: This line should be obsolete soon
         _ = [train.model[key].train() for key in train.model]
         for _, batch in enumerate(train.batch_manager.loader):
-            train_val_iterate(batch, train)
+            next_log = train_val_iterate(batch, train)
+            if next_log is not None:
+                logs.append(next_log)
+            if len(logs) >= train.config.training.log_interval:
+                combine_logs(logs).broadcast(train.manifest, train.stage)
+                logs = []
+            num = train.manifest.current_total_step
+            do_val = num % train.config.training.val_interval == 0
+            do_save = num % train.config.training.save_interval == 0
+            if do_val or do_save:
+                train.stage.validate(train)
+            if do_save:
+                save_checkpoint(train, prefix="checkpoint")
+        if len(logs) > 0:
+            combine_logs(logs).broadcast(train.manifest, train.stage)
+            logs = []
         train.manifest.current_epoch += 1
         train.manifest.current_step = 0
         train.manifest.training_log.append(
             f"Completed 1 epoch of {train.manifest.stage} training"
         )
-    train.stage.validate(
-        current_step=train.manifest.current_total_step, save=True, train=train
-    )
+    train.stage.validate(train)
+    save_checkpoint(train, prefix="checkpoint_final", long=False)
 
 
 def train_val_iterate(batch, train: TrainContext):
-    train.batch_manager.train_iterate(batch, train)
+    result = train.batch_manager.train_iterate(batch, train)
     train.manifest.current_total_step += 1
     train.manifest.current_step += 1
     train.manifest.total_trained_audio_seconds += (
@@ -285,11 +300,28 @@ def train_val_iterate(batch, train: TrainContext):
     )
     # filenames = batch[8]
     # logger.info(f"Step {train.manifest.current_step} Processing: {filenames}")
-    num = train.manifest.current_total_step
-    do_val = num % train.config.training.val_interval == 0
-    do_save = num % train.config.training.save_interval == 0
-    if do_val or do_save:
-        train.stage.validate(current_step=num, save=do_save, train=train)
+    return result
+
+
+def save_checkpoint(
+    train: TrainContext,
+    current_step: int,
+    prefix: str = "checkpoint",
+    long: bool = True,
+) -> None:
+    """
+    Saves checkpoint using a checkpoint.
+    """
+    logger.info("Saving...")
+    checkpoint_dir = osp.join(train.out_dir, f"{prefix}")
+    if long:
+        checkpoint_dir += (
+            f"_{train.manifest.current_epoch:05d}_step_{train.manifest.current_total_step:09d}",
+        )
+    # Let the accelerator save all model/optimizer/LR scheduler/rng states
+    train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
+
+    logger.info(f"Saved checkpoint to {checkpoint_dir}")
 
 
 if __name__ == "__main__":
