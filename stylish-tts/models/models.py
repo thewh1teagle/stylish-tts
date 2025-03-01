@@ -26,8 +26,8 @@ from .diffusion.diffusion import AudioDiffusionConditional
 
 from .discriminators import (
     MultiPeriodDiscriminator,
-    MultiScaleSubbandCQTDiscriminator,
-    # MultiResolutionDiscriminator,
+    # MultiScaleSubbandCQTDiscriminator,
+    MultiResolutionDiscriminator,
     WavLMDiscriminator,
 )
 
@@ -922,8 +922,8 @@ def build_model(model_config: ModelConfig):
         text_aligner=text_aligner,
         pitch_extractor=pitch_extractor,
         mpd=MultiPeriodDiscriminator(),
-        msd=MultiScaleSubbandCQTDiscriminator(),
-        # msd=MultiResolutionDiscriminator(),
+        # msd=MultiScaleSubbandCQTDiscriminator(),
+        msd=MultiResolutionDiscriminator(),
         # slm discriminator head
         wd=WavLMDiscriminator(
             model_config.slm.hidden,

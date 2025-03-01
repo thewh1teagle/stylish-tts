@@ -60,6 +60,10 @@ class DatasetConfig(BaseModel):
     train_data: str = Field(..., description="Path to the training data list.")
     val_data: str = Field(..., description="Path to the validation data list.")
     wav_path: str = Field(..., description="Directory containing WAV files.")
+    pitch_path: str = Field(
+        ...,
+        description="Path to the precomputed pitch safetensor file for your segments.",
+    )
     OOD_data: str = Field(..., description="Path to out-of-domain texts file.")
     min_length: int = Field(
         ..., description="Minimum text length for sampling (used for OOD texts)."
@@ -404,9 +408,12 @@ class LossWeightConfig(BaseModel):
     diffusion: float = Field(
         ..., description="Weight for score matching (diffusion) loss."
     )
+    magphase: float = Field(..., description="Weight for magnitude/phase loss.")
     amplitude: float = Field(..., description="Weight for amplitude loss.")
     phase: float = Field(..., description="Weight for phase loss.")
-    stft: float = Field(..., description="Weight for STFT reconstruction loss")
+    stft_reconstruction: float = Field(
+        ..., description="Weight for stft reconstruction loss."
+    )
 
 
 class OptimizerConfig(BaseModel):
