@@ -155,10 +155,10 @@ class BatchContext:
         probing=False,
     ):
         if split == 1 or text_encoding.shape[0] != 1:
-            audio_out, _, _, _, _, _, _ = self.model.decoder(
+            prediction = self.model.decoder(
                 text_encoding @ duration, pitch, energy, style, probing=probing
             )
-            yield (audio_out, audio_gt, 0, energy.shape[-1])
+            yield (prediction, audio_gt, 0, energy.shape[-1])
         else:
             text_hop = text_encoding.shape[-1] // split
             text_start = 0
@@ -177,14 +177,14 @@ class BatchContext:
                 audio_gt_slice = audio_gt[
                     :, mel_start * 300 * 2 : mel_end * 300 * 2
                 ].detach()
-                audio_out, _, _, _, _, _, _ = self.train.model.decoder(
+                prediction = self.train.model.decoder(
                     text_slice @ duration_slice,
                     pitch_slice,
                     energy_slice,
                     style,
                     probing=probing,
                 )
-                yield (audio_out, audio_gt_slice, mel_start, mel_end)
+                yield (prediction, audio_gt_slice, mel_start, mel_end)
                 text_start += text_hop
                 text_end += text_hop
 
@@ -200,7 +200,7 @@ class BatchContext:
         )
         energy = self.acoustic_energy(batch.mel)
         style_embedding = self.acoustic_style_embedding(batch.mel)
-        decoding = self.decoding(
+        prediction = self.decoding(
             text_encoding,
             duration,
             batch.pitch,
@@ -209,7 +209,7 @@ class BatchContext:
             batch.audio_gt,
             split=split,
         )
-        return decoding
+        return prediction
 
     # def pretrain_decoding(self, pitch, style, audio_gt, probing=False):
     #    mels = self.to_mel(audio_gt)[:, :, :-1]

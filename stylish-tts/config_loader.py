@@ -34,6 +34,10 @@ class TrainingPlanConfig(BaseModel):
         default=10,
         description="Number of epochs for the pretraining of acoustic models.",
     )
+    acoustic: int = Field(
+        default=10,
+        description="Number of epochs for joint training of acoustic models.",
+    )
     vocoder: int = Field(
         default=10, description="Number of epochs for the vocoder pretraining stage."
     )

@@ -13,7 +13,7 @@ from stages import (
 )
 
 from loss_log import combine_logs
-from stage_train import train_pre_acoustic
+from stage_train import train_pre_acoustic, train_acoustic
 from stage_validate import validate_acoustic
 from optimizers import build_optimizer
 from utils import get_image
@@ -87,12 +87,23 @@ stages = {
         inputs=["text", "text_length", "mel", "mel_length", "audio_gt", "pitch"],
     ),
     "acoustic": StageConfig(
-        train_fn=train_acoustic_adapter,
-        validate_fn=validate_first,
-        train_models=[],
+        train_fn=train_acoustic,
+        validate_fn=validate_acoustic,
+        train_models=["text_encoder", "style_encoder", "decoder", "text_aligner"],
         eval_models=[],
-        disc_models=[],
-        inputs=[],
+        disc_models=["msd", "mpd"],
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "mel_length",
+            "audio_gt",
+            "pitch",
+            "log_amplitude",
+            "phase",
+            "real",
+            "imaginary",
+        ],
     ),
     "vocoder": StageConfig(
         train_fn=train_vocoder_adapter,

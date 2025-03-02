@@ -12,6 +12,7 @@ import math
 # import torch
 # from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
+from utils import DecoderPrediction
 
 # import torch.nn.functional as F
 
@@ -299,8 +300,6 @@ class Generator(torch.nn.Module):
         # return logamp, pha, rea, imag, audio.unsqueeze(1)
         return (
             audio.unsqueeze(1),
-            None,
-            None,
             logamp,
             pha,
             rea,
@@ -578,4 +577,7 @@ class Decoder(nn.Module):
             x = self.to_out(x)
         else:
             x = asr
-        return self.generator(x)
+        audio, logamp, phase, real, imaginary = self.generator(x)
+        return DecoderPrediction(
+            audio=audio, log_amplitude=logamp, real=real, imaginary=imaginary
+        )

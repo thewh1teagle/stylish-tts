@@ -13,6 +13,7 @@ from .stft import stft
 from .stft import TorchSTFT
 from .conformer import Conformer
 from einops import rearrange
+from utils import DecoderPrediction
 
 import math
 import random
@@ -712,4 +713,4 @@ class Decoder(nn.Module):
             x = self.conv_pretrain(asr)
 
         x, mag, phase = self.generator(x, s, F0_curve)
-        return x, mag, phase, None, None, None, None
+        return DecoderPrediction(audio=x)

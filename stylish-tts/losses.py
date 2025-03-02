@@ -179,6 +179,58 @@ def stft_consistency_loss(rea_r, rea_g, imag_r, imag_g):
     return C_loss
 
 
+def amp_phase_spectrum(y, n_fft, hop_size, win_size):
+    hann_window = torch.hann_window(win_size).to(y.device)
+
+    stft_spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window,
+        center=True,
+        return_complex=True,
+    )  # [batch_size, n_fft//2+1, frames, 2]
+
+    log_amplitude = torch.log(
+        stft_spec.abs() + 1e-5
+    )  # [batch_size, n_fft//2+1, frames]
+    phase = stft_spec.angle()  # [batch_size, n_fft//2+1, frames]
+
+    return log_amplitude, phase, stft_spec.real, stft_spec.imag
+
+
+def freev_loss(log, batch, pred, begin, end, audio_gt_slice, train):
+    if pred.log_amplitude is not None:
+        loss_amplitude = amplitude_loss(batch.log_amplitude, pred.log_amplitude)
+
+        L_IP, L_GD, L_PTD = phase_loss(
+            batch.phase,
+            pred.phase,
+            train.model_config.preprocess.n_fft,
+            phase.size()[-1],
+        )
+        # Losses defined on phase spectra
+        loss_phase = L_IP + L_GD + L_PTD
+        _, _, rea_g_final, imag_g_final = amp_phase_spectrum(
+            pred.audio.squeeze(1),
+            train.model_config.preprocess.n_fft,
+            train.model_config.preprocess.hop_length,
+            train.model_config.preprocess.win_length,
+        )
+        loss_consistency = stft_consistency_loss(
+            pred.real, rea_g_final, pred.imaginary, imag_g_final
+        )
+        loss_real_part = F.l1_loss(batch.real, pred.real)
+        loss_imaginary_part = F.l1_loss(batch.imagineary, pred.imaginary)
+        loss_stft_reconstruction = loss_consistency + 2.25 * (
+            loss_real_part + loss_imaginary_part
+        )
+        log.add_loss("amplitude", loss_amplitude)
+        log.add_loss("phase", loss_phase)
+        log.add_loss("stft_reconstruction", loss_stft_reconstruction)
+
+
 def feature_loss(fmap_r, fmap_g):
     loss = 0
     for dr, dg in zip(fmap_r, fmap_g):

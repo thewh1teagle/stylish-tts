@@ -12,7 +12,7 @@ def validate_acoustic(batch, train) -> LossLog:
     for item in decoding:
         first_decoding = item
         break
-    audio_out, audio_gt_slice, _, _ = first_decoding
+    pred, audio_gt_slice, _, _ = first_decoding
     log = build_loss_log(train)
-    log.add_loss("mel", train.stft_loss(audio_out.squeeze(1), audio_gt_slice))
-    return log, state.get_attention(), audio_out[0], audio_gt_slice[0]
+    log.add_loss("mel", train.stft_loss(pred.audio.squeeze(1), audio_gt_slice))
+    return log, state.get_attention(), pred.audio[0], audio_gt_slice[0]
