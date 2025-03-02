@@ -713,4 +713,4 @@ class Decoder(nn.Module):
             x = self.conv_pretrain(asr)
 
         x, mag, phase = self.generator(x, s, F0_curve)
-        return DecoderPrediction(audio=x)
+        return DecoderPrediction(audio=x, magnitude=mag, phase=phase)

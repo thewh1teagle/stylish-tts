@@ -1,7 +1,7 @@
 import torch
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log, combine_logs
-from losses import freev_loss
+from losses import freev_loss, magphase_loss
 
 
 def train_pre_acoustic(batch, model, train) -> LossLog:
@@ -39,10 +39,20 @@ def train_acoustic(batch, model, train) -> LossLog:
                 "gen",
                 train.generator_loss(
                     audio_gt_slice.detach().unsqueeze(1).float(), pred.audio
-                ).mean(),
+                ).mean()
+                / split_count,
             )
-            log.add_loss("slm", train.wavlm_loss(audio_gt_slice.detach(), pred.audio))
-            freev_loss(log, batch, pred, begin, end, audio_gt_slice, train)
+            log.add_loss(
+                "slm",
+                train.wavlm_loss(audio_gt_slice.detach(), pred.audio) / split_count,
+            )
+            if pred.magnitude is not None and pred.phase is not None:
+                log.add_loss(
+                    "magphase",
+                    magphase_loss(pred.magnitude, pred.phase, audio_gt_slice)
+                    / split_count,
+                )
+            # freev_loss(log, batch, pred, begin, end, audio_gt_slice, train)
             train.accelerator.backward(log.total(), retain_graph=True)
             d_loss = train.discriminator_loss(
                 audio_gt_slice.detach().unsqueeze(1).float(), pred.audio.detach()

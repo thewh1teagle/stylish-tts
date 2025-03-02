@@ -81,10 +81,17 @@ def recursive_munch(d):
 
 class DecoderPrediction:
     def __init__(
-        self, audio=None, log_amplitude=None, phase=None, real=None, imaginary=None
+        self,
+        audio=None,
+        log_amplitude=None,
+        phase=None,
+        real=None,
+        imaginary=None,
+        magnitude=None,
     ):
         self.audio = audio
         self.log_amplitude = log_amplitude
         self.phase = phase
         self.real = real
         self.imaginary = imaginary
+        self.magnitude = magnitude
