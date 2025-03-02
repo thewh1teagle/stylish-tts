@@ -305,7 +305,6 @@ def train_val_iterate(batch, train: TrainContext):
 
 def save_checkpoint(
     train: TrainContext,
-    current_step: int,
     prefix: str = "checkpoint",
     long: bool = True,
 ) -> None:
