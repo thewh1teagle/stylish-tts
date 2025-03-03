@@ -1,33 +1,25 @@
 # coding: utf-8
-import os
 import os.path as osp
-import time
-import random
 import numpy as np
-import random
 import soundfile as sf
 import librosa
-import gc
-import json
 
 import torch
-from torch import nn
-import torch.nn.functional as F
 import torchaudio
 import torch.utils.data
 import torch.distributed as dist
 from huggingface_hub import hf_hub_download
 from safetensors import safe_open
 from librosa.filters import mel as librosa_mel_fn
+from sentence_transformers import SentenceTransformer
 
 import logging
-import utils
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-import pandas as pd
-
+sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
 mel_window = {}
 
 
@@ -129,23 +121,32 @@ class FilePathDataset(torch.utils.data.Dataset):
         self,
         data_list,
         root_path,
+        text_cleaner,
         sr=24000,
         data_augmentation=False,
         validation=False,
         OOD_data="Data/OOD_texts.txt",
         min_length=50,
         multispeaker=False,
-        text_cleaner=None,
         pitch_path="",
     ):
-
         self.cache = {}
         self.pitch = {}
         with safe_open(pitch_path, framework="pt", device="cpu") as f:
             for key in f.keys():
                 self.pitch[key] = f.get_tensor(key)
-        _data_list = [l.strip().split("|") for l in data_list]
-        self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
+        self.data_list = []
+        sentences = []
+        for line in data_list:
+            fields = line.strip().split("|")
+            if len(fields) != 4:
+                exit("Dataset lines must have 4 |-delimited fields: " + fields)
+            self.data_list.append(fields)
+            sentences.append(fields[3])
+        logger.info("Calculating sentence embeddings")
+        self.sentences = sentences
+        logger.info("Finished sentence embeddings")
+        # self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = text_cleaner
         self.sr = sr
 
@@ -217,7 +218,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         # get OOD text
 
         ps = ""
-
+        ref_text = torch.LongTensor()
         while len(ps) < self.min_length:
             rand_idx = np.random.randint(0, len(self.ptexts) - 1)
             ps = self.ptexts[rand_idx]
@@ -231,6 +232,10 @@ class FilePathDataset(torch.utils.data.Dataset):
         pitch = None
         if path in self.pitch:
             pitch = torch.nan_to_num(self.pitch[path].detach().clone())
+        sentence_embedding = torch.from_numpy(
+            sbert.encode([self.sentences[idx]], show_progress_bar=False)
+        ).float()
+
         return (
             speaker_id,
             acoustic_feature,
@@ -241,10 +246,11 @@ class FilePathDataset(torch.utils.data.Dataset):
             path,
             wave,
             pitch,
+            sentence_embedding,
         )
 
     def _load_tensor(self, data):
-        wave_path, text, speaker_id = data
+        wave_path, text, speaker_id, _ = data
         speaker_id = int(speaker_id)
         wave, sr = sf.read(osp.join(self.root_path, wave_path))
         if wave.shape[-1] == 2:
@@ -275,7 +281,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         return wave, text, speaker_id
 
     def _cache_tensor(self, data):
-        path = data[0]
+        # path = data[0]
         # if path in self.cache:
         # (wave, text_tensor, speaker_id, mel_tensor) = self.cache[path]
         # else:
@@ -344,6 +350,7 @@ class Collater(object):
         phases = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
         reals = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
         imags = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        sentence_embeddings = torch.zeros(batch_size, 384).float()
 
         for bid, (
             label,
@@ -355,6 +362,7 @@ class Collater(object):
             path,
             wave,
             pitch,
+            sentence,
         ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -382,6 +390,7 @@ class Collater(object):
             phases[bid] = phase
             reals[bid] = rea
             imags[bid] = imag
+            sentence_embeddings[bid] = sentence
 
         return (
             waves,
@@ -398,6 +407,7 @@ class Collater(object):
             phases,
             reals,
             imags,
+            sentence_embeddings,
         )
 
 
@@ -415,7 +425,6 @@ def build_dataloader(
     multispeaker=False,
     epoch=1,
 ):
-
     collate_config["multispeaker"] = multispeaker
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch_size is not None

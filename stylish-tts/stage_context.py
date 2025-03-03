@@ -29,7 +29,7 @@ class StageConfig:
         disc_models: List[str],
         inputs: List[str],
     ):
-        self.train_fn: Callabale = train_fn
+        self.train_fn: Callable = train_fn
         self.validate_fn: Callable = validate_fn
         self.train_models: List[str] = train_models
         self.eval_models: List[str] = eval_models
@@ -84,7 +84,15 @@ stages = {
         train_models=["text_encoder", "style_encoder", "decoder"],
         eval_models=["text_aligner"],
         disc_models=[],
-        inputs=["text", "text_length", "mel", "mel_length", "audio_gt", "pitch"],
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "mel_length",
+            "audio_gt",
+            "pitch",
+            "sentence_embedding",
+        ],
     ),
     "acoustic": StageConfig(
         train_fn=train_acoustic,
@@ -103,6 +111,7 @@ stages = {
             "phase",
             "real",
             "imaginary",
+            "sentence_emebdding",
         ],
     ),
     "vocoder": StageConfig(
@@ -229,6 +238,7 @@ batch_names = [
     "phase",
     "real",
     "imaginary",
+    "sentence_embedding",
 ]
 
 

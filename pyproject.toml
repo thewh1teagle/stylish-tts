@@ -28,6 +28,7 @@ dependencies = [
     "triton-nightly>=3.0.0.post20240716052845",
     "xlstm>=2.0.2",
     "torchcrepe>=0.0.23",
+    "sentence-transformers>=3.4.1",
 ]
 
 [dependency-groups]
@@ -41,3 +42,7 @@ monotonic-align = { git = "https://github.com/resemble-ai/monotonic_align.git" }
 
 [[tool.uv.index]]
 url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

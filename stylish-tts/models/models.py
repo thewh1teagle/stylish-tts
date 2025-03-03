@@ -1,38 +1,29 @@
 # coding:utf-8
 
-import os
-import os.path as osp
 
-import copy
 import math
 
-import numpy as np
 import safetensors.torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils import remove_weight_norm, spectral_norm
+from torch.nn.utils import spectral_norm
 from torch.nn.utils.parametrizations import weight_norm
 from config_loader import ModelConfig
 
 
 from .text_aligner import TextAligner
-from .pitch_extractor import PitchExtractor
 from .plbert import PLBERT
-
-from .diffusion.sampler import KDiffusion, LogNormalDistribution
-from .diffusion.modules import Transformer1d, StyleTransformer1d
-from .diffusion.diffusion import AudioDiffusionConditional
 
 from .discriminators import (
     MultiPeriodDiscriminator,
     MultiScaleSubbandCQTDiscriminator,
-    # MultiResolutionDiscriminator,
-    WavLMDiscriminator,
 )
 
+from .duration_predictor import DurationPredictor
+from .pitch_energy_predictor import PitchEnergyPredictor
+
 from munch import Munch
-import yaml
 import safetensors
 from huggingface_hub import hf_hub_download
 
@@ -41,9 +32,6 @@ from xlstm import (
     xLSTMBlockStackConfig,
     mLSTMBlockConfig,
     mLSTMLayerConfig,
-    sLSTMBlockConfig,
-    sLSTMLayerConfig,
-    FeedForwardConfig,
 )
 
 import logging
@@ -227,6 +215,7 @@ class StyleEncoder(nn.Module):
         blocks = []
         blocks += [spectral_norm(nn.Conv2d(1, dim_in, 3, 1, 1))]
 
+        dim_out = 0
         repeat_num = 4
         for i in range(repeat_num):
             dim_out = min(dim_in * 2, max_conv_dim)
@@ -263,39 +252,6 @@ class LinearNorm(torch.nn.Module):
 
     def forward(self, x):
         return self.linear_layer(x)
-
-
-class Discriminator2d(nn.Module):
-    def __init__(self, dim_in=48, num_domains=1, max_conv_dim=384, repeat_num=4):
-        super().__init__()
-        blocks = []
-        blocks += [spectral_norm(nn.Conv2d(1, dim_in, 3, 1, 1))]
-
-        for lid in range(repeat_num):
-            dim_out = min(dim_in * 2, max_conv_dim)
-            blocks += [ResBlk(dim_in, dim_out, downsample="half")]
-            dim_in = dim_out
-
-        blocks += [nn.LeakyReLU(0.2)]
-        blocks += [spectral_norm(nn.Conv2d(dim_out, dim_out, 5, 1, 0))]
-        blocks += [nn.LeakyReLU(0.2)]
-        blocks += [nn.AdaptiveAvgPool2d(1)]
-        blocks += [spectral_norm(nn.Conv2d(dim_out, num_domains, 1, 1, 0))]
-        self.main = nn.Sequential(*blocks)
-
-    def get_feature(self, x):
-        features = []
-        for l in self.main:
-            x = l(x)
-            features.append(x)
-        out = features[-1]
-        out = out.view(out.size(0), -1)  # (batch, num_domains)
-        return out, features
-
-    def forward(self, x):
-        out, features = self.get_feature(x)
-        out = out.squeeze()  # (batch)
-        return out, features
 
 
 class ResBlk1d(nn.Module):
@@ -587,110 +543,108 @@ class AdaLayerNorm(nn.Module):
         return x.transpose(1, -1).transpose(-1, -2)
 
 
-class ProsodyPredictor(nn.Module):
+# class ProsodyPredictor(nn.Module):
+#     def __init__(self, style_dim, d_hid, nlayers, max_dur=50, dropout=0.1):
+#         super().__init__()
 
-    def __init__(self, style_dim, d_hid, nlayers, max_dur=50, dropout=0.1):
-        super().__init__()
+#         self.text_encoder = DurationEncoder(
+#             sty_dim=style_dim, d_model=d_hid, nlayers=nlayers, dropout=dropout
+#         )
 
-        self.text_encoder = DurationEncoder(
-            sty_dim=style_dim, d_model=d_hid, nlayers=nlayers, dropout=dropout
-        )
+#         self.lstm = nn.LSTM(
+#             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
+#         )
+#         self.duration_projection = LinearNorm(d_hid, max_dur)
 
-        self.lstm = nn.LSTM(
-            d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
-        )
-        self.duration_projection = LinearNorm(d_hid, max_dur)
+#         self.shared = nn.LSTM(
+#             d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
+#         )
 
-        self.shared = nn.LSTM(
-            d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
-        )
+#         self.F0 = nn.ModuleList()
+#         self.F0.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
+#         self.F0.append(
+#             AdainResBlk1d(
+#                 d_hid, d_hid // 2, style_dim, upsample=True, dropout_p=dropout
+#             )
+#         )
+#         self.F0.append(
+#             AdainResBlk1d(d_hid // 2, d_hid // 2, style_dim, dropout_p=dropout)
+#         )
 
-        self.F0 = nn.ModuleList()
-        self.F0.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
-        self.F0.append(
-            AdainResBlk1d(
-                d_hid, d_hid // 2, style_dim, upsample=True, dropout_p=dropout
-            )
-        )
-        self.F0.append(
-            AdainResBlk1d(d_hid // 2, d_hid // 2, style_dim, dropout_p=dropout)
-        )
+#         self.N = nn.ModuleList()
+#         self.N.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
+#         self.N.append(
+#             AdainResBlk1d(
+#                 d_hid, d_hid // 2, style_dim, upsample=True, dropout_p=dropout
+#             )
+#         )
+#         self.N.append(
+#             AdainResBlk1d(d_hid // 2, d_hid // 2, style_dim, dropout_p=dropout)
+#         )
 
-        self.N = nn.ModuleList()
-        self.N.append(AdainResBlk1d(d_hid, d_hid, style_dim, dropout_p=dropout))
-        self.N.append(
-            AdainResBlk1d(
-                d_hid, d_hid // 2, style_dim, upsample=True, dropout_p=dropout
-            )
-        )
-        self.N.append(
-            AdainResBlk1d(d_hid // 2, d_hid // 2, style_dim, dropout_p=dropout)
-        )
+#         self.F0_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
+#         self.N_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
 
-        self.F0_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
-        self.N_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
+#     def forward(self, values, predict_F0N=False):
+#         if predict_F0N:
+#             (x, s) = values
+#             x, _ = self.shared(x.transpose(-1, -2))
 
-    def forward(self, values, predict_F0N=False):
-        if predict_F0N:
-            (x, s) = values
-            x, _ = self.shared(x.transpose(-1, -2))
+#             F0 = x.transpose(-1, -2)
+#             for block in self.F0:
+#                 F0 = block(F0, s)
+#             F0 = self.F0_proj(F0)
 
-            F0 = x.transpose(-1, -2)
-            for block in self.F0:
-                F0 = block(F0, s)
-            F0 = self.F0_proj(F0)
+#             N = x.transpose(-1, -2)
+#             for block in self.N:
+#                 N = block(N, s)
+#             N = self.N_proj(N)
 
-            N = x.transpose(-1, -2)
-            for block in self.N:
-                N = block(N, s)
-            N = self.N_proj(N)
+#             return F0.squeeze(1), N.squeeze(1)
+#         else:
+#             (texts, style, text_lengths, alignment, m) = values
+#             d = self.text_encoder(texts, style, text_lengths, m)
 
-            return F0.squeeze(1), N.squeeze(1)
-        else:
-            (texts, style, text_lengths, alignment, m) = values
-            d = self.text_encoder(texts, style, text_lengths, m)
+#             batch_size = d.shape[0]
+#             text_size = d.shape[1]
 
-            batch_size = d.shape[0]
-            text_size = d.shape[1]
+#             # predict duration
+#             input_lengths = text_lengths.cpu().numpy()
+#             x = nn.utils.rnn.pack_padded_sequence(
+#                 d, input_lengths, batch_first=True, enforce_sorted=False
+#             )
 
-            # predict duration
-            input_lengths = text_lengths.cpu().numpy()
-            x = nn.utils.rnn.pack_padded_sequence(
-                d, input_lengths, batch_first=True, enforce_sorted=False
-            )
+#             m = m.to(text_lengths.device).unsqueeze(1)
 
-            m = m.to(text_lengths.device).unsqueeze(1)
+#             self.lstm.flatten_parameters()
+#             x, _ = self.lstm(x)
+#             x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
 
-            self.lstm.flatten_parameters()
-            x, _ = self.lstm(x)
-            x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+#             x_pad = torch.zeros([x.shape[0], m.shape[-1], x.shape[-1]])
 
-            x_pad = torch.zeros([x.shape[0], m.shape[-1], x.shape[-1]])
+#             x_pad[:, : x.shape[1], :] = x
+#             x = x_pad.to(x.device)
 
-            x_pad[:, : x.shape[1], :] = x
-            x = x_pad.to(x.device)
+#             duration = self.duration_projection(
+#                 nn.functional.dropout(x, 0.5, training=self.training)
+#             )
 
-            duration = self.duration_projection(
-                nn.functional.dropout(x, 0.5, training=self.training)
-            )
+#             en = d.transpose(-1, -2) @ alignment
 
-            en = d.transpose(-1, -2) @ alignment
+#             return duration.squeeze(-1), en
 
-            return duration.squeeze(-1), en
-
-    def length_to_mask(self, lengths):
-        mask = (
-            torch.arange(lengths.max())
-            .unsqueeze(0)
-            .expand(lengths.shape[0], -1)
-            .type_as(lengths)
-        )
-        mask = torch.gt(mask + 1, lengths.unsqueeze(1))
-        return mask
+#     def length_to_mask(self, lengths):
+#         mask = (
+#             torch.arange(lengths.max())
+#             .unsqueeze(0)
+#             .expand(lengths.shape[0], -1)
+#             .type_as(lengths)
+#         )
+#         mask = torch.gt(mask + 1, lengths.unsqueeze(1))
+#         return mask
 
 
 class DurationEncoder(nn.Module):
-
     def __init__(self, sty_dim, d_model, nlayers, dropout=0.1):
         super().__init__()
         self.lstms = nn.ModuleList()
@@ -716,7 +670,7 @@ class DurationEncoder(nn.Module):
 
         x = x.permute(2, 0, 1)
         s = style.expand(x.shape[0], x.shape[1], -1)
-        x = torch.cat([x, s], axis=-1)
+        x = torch.cat([x, s], dim=-1)
         x.masked_fill_(masks.unsqueeze(-1).transpose(0, 1), 0.0)
 
         x = x.transpose(0, 1)
@@ -726,7 +680,7 @@ class DurationEncoder(nn.Module):
         for block in self.lstms:
             if isinstance(block, AdaLayerNorm):
                 x = block(x.transpose(-1, -2), style).transpose(-1, -2)
-                x = torch.cat([x, s.permute(1, -1, 0)], axis=1)
+                x = torch.cat([x, s.permute(1, -1, 0)], dim=1)
                 x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
             else:
                 x = x.transpose(-1, -2)
@@ -749,7 +703,7 @@ class DurationEncoder(nn.Module):
     def inference(self, x, style):
         x = self.embedding(x.transpose(-1, -2)) * math.sqrt(self.d_model)
         style = style.expand(x.shape[0], x.shape[1], -1)
-        x = torch.cat([x, style], axis=-1)
+        x = torch.cat([x, style], dim=-1)
         src = self.pos_encoder(x)
         output = self.transformer_encoder(src).transpose(0, 1)
         return output
@@ -769,11 +723,12 @@ def build_model(model_config: ModelConfig):
     text_aligner = TextAligner(
         input_dim=model_config.model.n_mels,
         n_token=model_config.text_encoder.n_token,
-        **(model_config.text_aligner.dict()),
+        **(model_config.text_aligner.model_dump()),
     )
-    pitch_extractor = PitchExtractor(**(model_config.pitch_extractor.dict()))
+    # pitch_extractor = PitchExtractor(**(model_config.pitch_extractor.dict()))
     bert = PLBERT(
-        vocab_size=model_config.text_encoder.n_token, **(model_config.plbert.dict())
+        vocab_size=model_config.text_encoder.n_token,
+        **(model_config.plbert.model_dump()),
     )
 
     assert model_config.decoder.type in [
@@ -851,7 +806,7 @@ def build_model(model_config: ModelConfig):
         n_symbols=model_config.text_encoder.n_token,
     )
 
-    predictor = ProsodyPredictor(
+    duration_predictor = DurationPredictor(
         style_dim=model_config.model.style_dim,
         d_hid=model_config.prosody_predictor.hidden_dim,
         nlayers=model_config.prosody_predictor.n_layer,
@@ -859,80 +814,104 @@ def build_model(model_config: ModelConfig):
         dropout=model_config.prosody_predictor.dropout,
     )
 
-    style_encoder = StyleEncoder(
-        dim_in=model_config.embedding_encoder.dim_in,
+    pitch_energy_predictor = PitchEnergyPredictor(
         style_dim=model_config.model.style_dim,
-        max_conv_dim=model_config.embedding_encoder.hidden_dim,
-        skip_downsamples=model_config.embedding_encoder.skip_downsamples,
-    )  # acoustic style encoder
-    predictor_encoder = StyleEncoder(
-        dim_in=model_config.embedding_encoder.dim_in,
-        style_dim=model_config.model.style_dim,
-        max_conv_dim=model_config.embedding_encoder.hidden_dim,
-        skip_downsamples=model_config.embedding_encoder.skip_downsamples,
-    )  # prosodic style encoder
+        d_hid=model_config.prosody_predictor.hidden_dim,
+        dropout=model_config.prosody_predictor.dropout,
+    )
+
+    # predictor = ProsodyPredictor(
+    #    style_dim=model_config.model.style_dim,
+    #    d_hid=model_config.prosody_predictor.hidden_dim,
+    #    nlayers=model_config.prosody_predictor.n_layer,
+    #    max_dur=model_config.prosody_predictor.max_dur,
+    #    dropout=model_config.prosody_predictor.dropout,
+    # )
+
+    # style_encoder = StyleEncoder(
+    #    dim_in=model_config.embedding_encoder.dim_in,
+    #    style_dim=model_config.model.style_dim,
+    #    max_conv_dim=model_config.embedding_encoder.hidden_dim,
+    #    skip_downsamples=model_config.embedding_encoder.skip_downsamples,
+    # )  # acoustic style encoder
+    # predictor_encoder = StyleEncoder(
+    #    dim_in=model_config.embedding_encoder.dim_in,
+    #    style_dim=model_config.model.style_dim,
+    #    max_conv_dim=model_config.embedding_encoder.hidden_dim,
+    #    skip_downsamples=model_config.embedding_encoder.skip_downsamples,
+    # )  # prosodic style encoder
 
     # define diffusion model
-    if model_config.model.multispeaker:
-        transformer = StyleTransformer1d(
-            channels=model_config.model.style_dim * 2,
-            context_embedding_features=bert.config.hidden_size,
-            context_features=model_config.model.style_dim * 2,
-            **model_config.diffusion.transformer,
-        )
-    else:
-        transformer = Transformer1d(
-            channels=model_config.model.style_dim * 2,
-            context_embedding_features=bert.config.hidden_size,
-            **model_config.diffusion.transformer.dict(),
-        )
+    # if model_config.model.multispeaker:
+    #    transformer = StyleTransformer1d(
+    #        channels=model_config.model.style_dim * 2,
+    #        context_embedding_features=bert.config.hidden_size,
+    #        context_features=model_config.model.style_dim * 2,
+    #        **model_config.diffusion.transformer,
+    #    )
+    # else:
+    #    transformer = Transformer1d(
+    #        channels=model_config.model.style_dim * 2,
+    #        context_embedding_features=bert.config.hidden_size,
+    #        **model_config.diffusion.transformer.dict(),
+    #    )
 
-    diffusion = AudioDiffusionConditional(
-        in_channels=1,
-        embedding_max_length=bert.config.max_position_embeddings,
-        embedding_features=bert.config.hidden_size,
-        embedding_mask_proba=model_config.diffusion.embedding_mask_proba,  # Conditional dropout of batch elements,
-        channels=model_config.model.style_dim * 2,
-        context_features=model_config.model.style_dim * 2,
-    )
+    # diffusion = AudioDiffusionConditional(
+    #    in_channels=1,
+    #    embedding_max_length=bert.config.max_position_embeddings,
+    #    embedding_features=bert.config.hidden_size,
+    #    embedding_mask_proba=model_config.diffusion.embedding_mask_proba,  # Conditional dropout of batch elements,
+    #    channels=model_config.model.style_dim * 2,
+    #    context_features=model_config.model.style_dim * 2,
+    # )
 
-    diffusion.diffusion = KDiffusion(
-        net=diffusion.unet,
-        sigma_distribution=LogNormalDistribution(
-            mean=model_config.diffusion.dist.mean, std=model_config.diffusion.dist.std
-        ),
-        sigma_data=model_config.diffusion.dist.sigma_data,  # a placeholder, will be changed dynamically when start training diffusion model
-        dynamic_threshold=0.0,
-    )
-    diffusion.diffusion.net = transformer
-    diffusion.unet = transformer
-    kdiffusion = diffusion.diffusion
+    # diffusion.diffusion = KDiffusion(
+    #    net=diffusion.unet,
+    #    sigma_distribution=LogNormalDistribution(
+    #        mean=model_config.diffusion.dist.mean, std=model_config.diffusion.dist.std
+    #    ),
+    #    sigma_data=model_config.diffusion.dist.sigma_data,  # a placeholder, will be changed dynamically when start training diffusion model
+    #    dynamic_threshold=0.0,
+    # )
+    # diffusion.diffusion.net = transformer
+    # diffusion.unet = transformer
+    # kdiffusion = diffusion.diffusion
 
     nets = Munch(
         bert=bert,
         bert_encoder=nn.Linear(
             bert.config.hidden_size, model_config.prosody_predictor.hidden_dim
         ),
-        predictor=predictor,
+        # predictor=predictor,
+        duration_predictor=duration_predictor,
+        pitch_energy_predictor=pitch_energy_predictor,
         decoder=decoder,
         text_encoder=text_encoder,
-        predictor_encoder=predictor_encoder,
-        style_encoder=style_encoder,
-        diffusion=diffusion,
+        prosodic_style_encoder=nn.Linear(
+            model_config.embedding_encoder.dim_in,
+            model_config.model.style_dim,
+        ),
+        style_encoder=nn.Linear(
+            model_config.embedding_encoder.dim_in,
+            model_config.model.style_dim,
+        ),
+        # predictor_encoder=predictor_encoder,
+        # style_encoder=style_encoder,
+        # diffusion=diffusion,
         text_aligner=text_aligner,
-        pitch_extractor=pitch_extractor,
+        # pitch_extractor=pitch_extractor,
         mpd=MultiPeriodDiscriminator(),
         msd=MultiScaleSubbandCQTDiscriminator(),
         # msd=MultiResolutionDiscriminator(),
         # slm discriminator head
-        wd=WavLMDiscriminator(
-            model_config.slm.hidden,
-            model_config.slm.nlayers,
-            model_config.slm.initial_channel,
-        ),
+        # wd=WavLMDiscriminator(
+        #    model_config.slm.hidden,
+        #    model_config.slm.nlayers,
+        #    model_config.slm.initial_channel,
+        # ),
     )
 
-    return nets, kdiffusion
+    return nets  # , kdiffusion
 
 
 def load_defaults(train, model):
@@ -946,49 +925,16 @@ def load_defaults(train, model):
         model.text_aligner.load_state_dict(params)
 
         # Load pretrained pitch_extractor
-        params = safetensors.torch.load_file(
-            hf_hub_download(
-                repo_id="stylish-tts/pitch_extractor",
-                filename="pitch_extractor.safetensors",
-            )
-        )
-        model.pitch_extractor.load_state_dict(params)
+        # params = safetensors.torch.load_file(
+        # hf_hub_download(
+        # repo_id="stylish-tts/pitch_extractor",
+        # filename="pitch_extractor.safetensors",
+        # )
+        # )
+        # model.pitch_extractor.load_state_dict(params)
 
         # Load pretrained PLBERT
         params = safetensors.torch.load_file(
             hf_hub_download(repo_id="stylish-tts/plbert", filename="plbert.safetensors")
         )
         model.bert.load_state_dict(params, strict=False)
-
-
-def load_checkpoint(model, optimizer, path, ignore_modules=[]):
-
-    state = torch.load(path, map_location="cpu", weights_only=False)
-    params = state["net"]
-    for key in model:
-        if key in params and key not in ignore_modules:
-            try:
-                model[key].load_state_dict(params[key], strict=True)
-            except:
-                from collections import OrderedDict
-
-                state_dict = params[key]
-                new_state_dict = OrderedDict()
-                logger.info(
-                    f"{key} key length: {len(model[key].state_dict().keys())}, state_dict key length: {len(state_dict.keys())}"
-                )
-                for k, v in state_dict.items():
-                    new_state_dict[k[7:]] = v
-                # for (k_m, v_m), (k_c, v_c) in zip(
-                #    model[key].state_dict().items(), state_dict.items()
-                # ):
-                #    logger.debug(f"{k_m}, {k_c}")
-                #    new_state_dict[k_m] = v_c
-                model[key].load_state_dict(new_state_dict, strict=True)
-            logger.info("%s loaded" % key)
-
-    epoch = state["epoch"]
-    iters = state["iters"]
-    optimizer.load_state_dict(state["optimizer"])
-
-    return model, optimizer, epoch, iters

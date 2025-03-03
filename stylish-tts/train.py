@@ -15,7 +15,7 @@ from text_utils import TextCleaner
 import numpy as np
 
 #  warnings.simplefilter("ignore")
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
@@ -26,12 +26,12 @@ from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionS
 from utils import get_data_path_list
 from loss_log import combine_logs
 
-from models.slmadv import SLMAdversarialLoss
-from models.diffusion.sampler import (
-    DiffusionSampler,
-    ADPM2Sampler,
-    KarrasSchedule,
-)
+# from models.slmadv import SLMAdversarialLoss
+# from models.diffusion.sampler import (
+#     DiffusionSampler,
+#     ADPM2Sampler,
+#     KarrasSchedule,
+# )
 
 import os.path as osp
 import os
@@ -171,7 +171,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     )
 
     # build model
-    train.model, kdiffusion = build_model(train.model_config)
+    train.model = build_model(train.model_config)
     for key in train.model:
         train.model[key] = train.accelerator.prepare(train.model[key])
         train.model[key].to(train.config.training.device)
@@ -184,7 +184,8 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     )
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,
-        train.model.wd,
+        None,
+        # train.model.wd,
         train.model_config.preprocess.sample_rate,
         train.model_config.slm.sr,
     ).to(train.config.training.device)
@@ -219,14 +220,14 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     train.manifest.stage = stage
 
     # TODO: How to access model diffusion?
-    train.diffusion_sampler = DiffusionSampler(
-        kdiffusion,
-        sampler=ADPM2Sampler(),
-        sigma_schedule=KarrasSchedule(
-            sigma_min=0.0001, sigma_max=3.0, rho=9.0
-        ),  # empirical parameters
-        clamp=False,
-    )
+    # train.diffusion_sampler = DiffusionSampler(
+    #     kdiffusion,
+    #     sampler=ADPM2Sampler(),
+    #     sigma_schedule=KarrasSchedule(
+    #         sigma_min=0.0001, sigma_max=3.0, rho=9.0
+    #     ),  # empirical parameters
+    #     clamp=False,
+    # )
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
@@ -239,16 +240,16 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     # TODO: This value is calculated inconsistently based on whether checkpoints are loaded/saved
     train.manifest.running_std = []
 
-    train.slm_adversarial_loss = SLMAdversarialLoss(
-        train.model,
-        train.wavlm_loss,
-        train.diffusion_sampler,
-        train.model_config.slmadv_params.min_len,
-        train.model_config.slmadv_params.max_len,
-        batch_percentage=train.model_config.slmadv_params.batch_percentage,
-        skip_update=train.model_config.slmadv_params.iter,
-        sig=train.model_config.slmadv_params.sig,
-    )
+    # train.slm_adversarial_loss = SLMAdversarialLoss(
+    #     train.model,
+    #     train.wavlm_loss,
+    #     train.diffusion_sampler,
+    #     train.model_config.slmadv_params.min_len,
+    #     train.model_config.slmadv_params.max_len,
+    #     batch_percentage=train.model_config.slmadv_params.batch_percentage,
+    #     skip_update=train.model_config.slmadv_params.iter,
+    #     sig=train.model_config.slmadv_params.sig,
+    # )
 
     train_val_loop(train)
     train.accelerator.end_training()

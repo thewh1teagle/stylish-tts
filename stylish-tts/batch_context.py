@@ -2,7 +2,6 @@ import random
 
 import torch
 import torchaudio
-import torchcrepe
 
 from monotonic_align import mask_from_lens
 from train_context import TrainContext
@@ -114,34 +113,37 @@ class BatchContext:
     def get_attention(self):
         return self.attention
 
-    # def acoustic_pitch(self, mels: torch.Tensor):
-    def acoustic_pitch(self, audio_gt: torch.Tensor):
-        with torch.no_grad():
-            # pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
-            c = self.config
-            fmin = 50
-            fmax = 550
-            model = "full"
-            audio = self.resample(audio_gt).to(c.training.device)
-            pitch = torchcrepe.predict(
-                audio,
-                16000,
-                200,  # c.preprocess.hop_length,
-                fmin,
-                fmax,
-                model,
-                batch_size=2048,
-                device=c.training.device,
-            )[:, :-1]
-        return pitch
+    # # def acoustic_pitch(self, mels: torch.Tensor):
+    # def acoustic_pitch(self, audio_gt: torch.Tensor):
+    #     with torch.no_grad():
+    #         # pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
+    #         c = self.config
+    #         fmin = 50
+    #         fmax = 550
+    #         model = "full"
+    #         audio = self.resample(audio_gt).to(c.training.device)
+    #         pitch = torchcrepe.predict(
+    #             audio,
+    #             16000,
+    #             200,  # c.preprocess.hop_length,
+    #             fmin,
+    #             fmax,
+    #             model,
+    #             batch_size=2048,
+    #             device=c.training.device,
+    #         )[:, :-1]
+    #     return pitch
 
     def acoustic_energy(self, mels: torch.Tensor):
         with torch.no_grad():
             energy = log_norm(mels.unsqueeze(1)).squeeze(1)
         return energy
 
-    def acoustic_style_embedding(self, mels: torch.Tensor):
-        return self.model.style_encoder(mels.unsqueeze(1))
+    # def acoustic_style_embedding(self, mels: torch.Tensor):
+    #     return self.model.style_encoder(mels.unsqueeze(1))
+
+    def style_embedding(self, sentence_embedding: torch.Tensor):
+        return self.model.style_encoder(sentence_embedding)
 
     def decoding(
         self,
@@ -199,7 +201,8 @@ class BatchContext:
             use_random_choice=True,
         )
         energy = self.acoustic_energy(batch.mel)
-        style_embedding = self.acoustic_style_embedding(batch.mel)
+        # style_embedding = self.acoustic_style_embedding(batch.mel)
+        style_embedding = self.style_embedding(batch.sentence_embedding)
         prediction = self.decoding(
             text_encoding,
             duration,
