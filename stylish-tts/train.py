@@ -306,7 +306,6 @@ def train_val_iterate(batch, train: TrainContext):
 
 def save_checkpoint(
     train: TrainContext,
-    current_step: int,
     prefix: str = "checkpoint",
     long: bool = True,
 ) -> None:
@@ -316,9 +315,8 @@ def save_checkpoint(
     logger.info("Saving...")
     checkpoint_dir = osp.join(train.out_dir, f"{prefix}")
     if long:
-        checkpoint_dir += (
-            f"_{train.manifest.current_epoch:05d}_step_{train.manifest.current_total_step:09d}",
-        )
+        checkpoint_dir += f"_{train.manifest.current_epoch:05d}_step_{train.manifest.current_total_step:09d}"
+        
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
     train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
 
