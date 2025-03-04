@@ -188,6 +188,19 @@ class BatchContext:
                 text_start += text_hop
                 text_end += text_hop
 
+    def decoding_single(
+        self,
+        text_encoding,
+        duration,
+        pitch,
+        energy,
+        style,
+        probing=False,
+    ):
+        return self.model.decoder(
+            text_encoding @ duration, pitch, energy, style, probing=probing
+        )
+
     def acoustic_prediction(self, batch, split=1):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
@@ -208,6 +221,27 @@ class BatchContext:
             style_embedding,
             batch.audio_gt,
             split=split,
+        )
+        return prediction
+
+    def acoustic_prediction_single(self, batch):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=True,
+            use_random_choice=True,
+        )
+        energy = self.acoustic_energy(batch.mel)
+        style_embedding = self.acoustic_style_embedding(batch.mel)
+        prediction = self.decoding_single(
+            text_encoding,
+            duration,
+            batch.pitch,
+            energy,
+            style_embedding,
         )
         return prediction
 
