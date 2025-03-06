@@ -33,6 +33,9 @@ class BatchContext:
         self.to_mel = torchaudio.transforms.MelSpectrogram(
             n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
         ).to(self.config.training.device)
+        self.pitch_prediction = None
+        self.energy_prediction = None
+        self.duration_prediction = None
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
         return self.model.text_encoder(texts, text_lengths, self.text_mask)
@@ -145,6 +148,9 @@ class BatchContext:
     def style_embedding(self, sentence_embedding: torch.Tensor):
         return self.model.style_encoder(sentence_embedding)
 
+    def prosodic_style_embedding(self, sentence_embedding: torch.Tensor):
+        return self.model.prosodic_style_encoder(sentence_embedding)
+
     def decoding(
         self,
         text_encoding,
@@ -245,6 +251,41 @@ class BatchContext:
             duration,
             batch.pitch,
             energy,
+            style_embedding,
+        )
+        return prediction
+
+    def textual_prediction_single(self, batch):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=False,
+            use_random_choice=False,
+        )
+        style_embedding = self.style_embedding(batch.sentence_embedding)
+        prosody_embedding = self.prosodic_style_embedding(batch.sentence_embedding)
+        plbert_embedding = self.model.bert(
+            batch.texts, attention_mask=(~self.text_mask).int()
+        )
+        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        self.duration_prediction, prosody = self.model.duration_predictor(
+            duration_encoding,
+            prosody_embedding,
+            batch.input_lengths,
+            self.duration_results[1],
+            self.text_mask,
+        )
+        self.pitch_prediction, self.energy_prediction = (
+            self.model.pitch_energy_predictor(prosody, prosody_embedding)
+        )
+        prediction = self.decoding_single(
+            text_encoding,
+            duration,
+            self.pitch_prediction,
+            self.energy_prediction,
             style_embedding,
         )
         return prediction

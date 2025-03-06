@@ -143,10 +143,7 @@ class FilePathDataset(torch.utils.data.Dataset):
                 exit("Dataset lines must have 4 |-delimited fields: " + fields)
             self.data_list.append(fields)
             sentences.append(fields[3])
-        logger.info("Calculating sentence embeddings")
         self.sentences = sentences
-        logger.info("Finished sentence embeddings")
-        # self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = text_cleaner
         self.sr = sr
 

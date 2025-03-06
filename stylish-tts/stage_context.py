@@ -13,8 +13,8 @@ from stages import (
 )
 
 from loss_log import combine_logs
-from stage_train import train_pre_acoustic, train_acoustic
-from stage_validate import validate_acoustic
+from stage_train import train_pre_acoustic, train_acoustic, train_textual
+from stage_validate import validate_acoustic, validate_textual
 from optimizers import build_optimizer
 from utils import get_image
 
@@ -112,6 +112,28 @@ stages = {
             "real",
             "imaginary",
             "sentence_emebdding",
+        ],
+    ),
+    "textual": StageConfig(
+        train_fn=train_textual,
+        validate_fn=validate_textual,
+        train_models=[
+            "prosodic_style_encoder",
+            "duration_predictor",
+            "pitch_energy_predictor",
+            "bert",
+            "bert_encoder",
+        ],
+        eval_models=["text_encoder", "style_encoder", "decoder", "text_aligner"],
+        disc_models=[],
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "mel_length",
+            "audio_gt",
+            "pitch",
+            "sentence_embedding",
         ],
     ),
     "vocoder": StageConfig(
