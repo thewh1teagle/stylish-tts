@@ -111,7 +111,7 @@ stages = {
             "phase",
             "real",
             "imaginary",
-            "sentence_emebdding",
+            "sentence_embedding",
         ],
     ),
     "vocoder": StageConfig(
