@@ -92,11 +92,15 @@ def combine_logs(loglist):
     result = None
     if len(loglist) > 0:
         result = LossLog(loglist[0].logger, loglist[0].writer, loglist[0].weights)
+        totals = {}
+        counts = {}
         for log in loglist:
             for key in log.metrics.keys():
-                if key not in result.metrics:
-                    result.metrics[key] = 0
-                result.metrics[key] += log.metrics[key]
-        for key in result.metrics.keys():
-            result.metrics[key] /= len(loglist)
+                if key not in totals:
+                    totals[key] = 0
+                    counts[key] = 0
+                totals[key] += log.metrics[key]
+                counts[key] += 1
+        for key in totals.keys():
+            result.metrics[key] = totals[key] / counts[key]
     return result

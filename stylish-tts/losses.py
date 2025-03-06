@@ -451,3 +451,27 @@ class WavLMLoss(torch.nn.Module):
         y_d_rs = self.wd(y_embeddings)
 
         return y_d_rs
+
+
+def compute_duration_ce_loss(
+    duration_prediction: List[torch.Tensor],
+    duration: List[torch.Tensor],
+    text_length: List[int],
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes the duration and binary cross-entropy losses over a batch.
+    Returns (loss_ce, loss_dur).
+    """
+    loss_ce = 0
+    loss_dur = 0
+    for pred, dur, length in zip(duration_prediction, duration, text_length):
+        pred = pred[:length, :]
+        dur = dur[:length].long()
+        target = torch.zeros_like(pred)
+        for i in range(target.shape[0]):
+            target[i, : dur[i]] = 1
+        dur_pred = torch.sigmoid(pred).sum(dim=1)
+        loss_dur += F.l1_loss(dur_pred[1 : length - 1], dur[1 : length - 1])
+        loss_ce += F.binary_cross_entropy_with_logits(pred.flatten(), target.flatten())
+    n = len(text_length)
+    return loss_ce / n, loss_dur / n
