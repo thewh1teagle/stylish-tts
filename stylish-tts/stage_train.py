@@ -5,21 +5,22 @@ from losses import freev_loss, magphase_loss
 
 
 def train_pre_acoustic(batch, model, train) -> LossLog:
-    split_count = 1
     state = BatchContext(train, model, batch.text_length)
     with train.accelerator.autocast():
-        decoding = state.acoustic_prediction(batch, split=split_count)
+        pred = state.acoustic_prediction_single(batch, use_random_mono=True)
         train.stage.optimizer.zero_grad()
-        loglist = []
-        for pred, audio_gt_slice, _, _ in decoding:
-            log = build_loss_log(train)
-            log.add_loss(
-                "mel",
-                train.stft_loss(pred.audio.squeeze(1), audio_gt_slice) / split_count,
-            )
-            train.accelerator.backward(log.total(), retain_graph=True)
-            loglist.append(log)
-    return combine_logs(loglist).detach()
+        log = build_loss_log(train)
+        log.add_loss(
+            "mel",
+            train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
+        )
+        # if pred.magnitude is not None and pred.phase is not None:
+        #     log.add_loss(
+        #         "magphase",
+        #         magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
+        #     )
+        train.accelerator.backward(log.total())
+    return log.detach()
 
 
 def train_acoustic(batch, model, train) -> LossLog:

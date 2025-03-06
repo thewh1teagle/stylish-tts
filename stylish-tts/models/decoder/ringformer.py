@@ -493,13 +493,13 @@ class Generator(torch.nn.Module):
         # x = self.conv_pre(x)
         # if g is not None:
         #    x = x + self.cond(g)
-        with torch.no_grad():
-            f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
-
-            har_source, noi_source, uv = self.m_source(f0)
-            har_source = har_source.transpose(1, 2).squeeze(1)
-            har_spec, har_phase = self.stft.transform(har_source)
-            har = torch.cat([har_spec, har_phase], dim=1)
+        #         with torch.no_grad():
+        #             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+        #
+        #             har_source, noi_source, uv = self.m_source(f0)
+        #             har_source = har_source.transpose(1, 2).squeeze(1)
+        #             har_spec, har_phase = self.stft.transform(har_source)
+        #             har = torch.cat([har_spec, har_phase], dim=1)
 
         for i in range(self.num_upsamples):
             x = x + (1 / self.alphas[i]) * (torch.sin(self.alphas[i] * x) ** 2)
@@ -507,14 +507,14 @@ class Generator(torch.nn.Module):
             x = self.conformers[i](x)
             x = rearrange(x, "b t f -> b f t")
 
-            x_source = self.noise_convs[i](har)
-            x_source = self.noise_res[i](x_source, s)
+            # x_source = self.noise_convs[i](har)
+            # x_source = self.noise_res[i](x_source, s)
 
             x = self.ups[i](x)
 
-            if i == self.num_upsamples - 1:
-                x = self.reflection_pad(x)
-            x = x + x_source
+            # if i == self.num_upsamples - 1:
+            #    x = self.reflection_pad(x)
+            # x = x + x_source
 
             xs = None
             for j in range(self.num_kernels):
@@ -525,7 +525,7 @@ class Generator(torch.nn.Module):
             x = xs / self.num_kernels
 
         x = x + (1 / self.alphas[i + 1]) * (torch.sin(self.alphas[i + 1] * x) ** 2)
-        # x = self.reflection_pad(x)
+        x = self.reflection_pad(x)
         x = self.conv_post(x)
 
         spec = torch.exp(x[:, : self.post_n_fft // 2 + 1, :])

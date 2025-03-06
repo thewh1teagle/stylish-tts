@@ -227,7 +227,7 @@ class BatchContext:
         )
         return prediction
 
-    def acoustic_prediction_single(self, batch):
+    def acoustic_prediction_single(self, batch, use_random_mono=True):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
             batch.mel,
@@ -235,10 +235,11 @@ class BatchContext:
             batch.text,
             batch.text_length,
             apply_attention_mask=True,
-            use_random_choice=True,
+            use_random_choice=use_random_mono,
         )
         energy = self.acoustic_energy(batch.mel)
-        style_embedding = self.acoustic_style_embedding(batch.mel)
+        # style_embedding = self.acoustic_style_embedding(batch.mel)
+        style_embedding = self.style_embedding(batch.sentence_embedding)
         prediction = self.decoding_single(
             text_encoding,
             duration,
