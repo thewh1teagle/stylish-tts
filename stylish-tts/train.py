@@ -150,12 +150,11 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         val_dataset,
         val_dataset.time_bins(),
         validation=True,
-        batch_size={},
         num_workers=4,
         device=train.config.training.device,
         multispeaker=train.model_config.model.multispeaker,
+        train=train,
     )
-
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
 
     train.batch_manager = BatchManager(
@@ -168,6 +167,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         text_cleaner=text_cleaner,
         stage=stage,
         epoch=train.manifest.current_epoch,
+        train=train,
     )
 
     # build model
@@ -197,6 +197,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
 
     train.manifest.current_epoch = 1
     train.manifest.current_total_step = 0
+    should_fast_forward = False
 
     if checkpoint:
         train.accelerator.load_state(checkpoint)
@@ -204,11 +205,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         # if we are not loading on a epoch boundary we need to resume the loader and skip to the correct step
         if train.manifest.stage == stage:
             if train.manifest.current_step != 0:
-                train.batch_manager.resume_loader = (
-                    train.accelerator.skip_first_batches(
-                        train.batch_manager.loader, train.manifest.current_step
-                    )
-                )
+                should_fast_forward = True
         else:
             train.manifest.current_epoch = 1
             train.manifest.current_step = 0
@@ -251,14 +248,18 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     #     sig=train.model_config.slmadv_params.sig,
     # )
 
-    train_val_loop(train)
+    if not train.stage.batch_sizes_exist():
+        train.batch_manager.probe_loop(train)
+        should_fast_forward = False
+
+    train_val_loop(train, should_fast_forward=should_fast_forward)
     train.accelerator.end_training()
 
 
-def train_val_loop(train: TrainContext):
+def train_val_loop(train: TrainContext, should_fast_forward=False):
     logs = []
     while train.manifest.current_epoch <= train.stage.max_epoch:
-        train.batch_manager.init_epoch(train)
+        train.batch_manager.init_epoch(train, should_fast_forward=should_fast_forward)
         train.stage.steps_per_epoch = train.batch_manager.get_step_count()
         train.running_loss = 0
         train.start_time = time.time()
@@ -316,7 +317,7 @@ def save_checkpoint(
     checkpoint_dir = osp.join(train.out_dir, f"{prefix}")
     if long:
         checkpoint_dir += f"_{train.manifest.current_epoch:05d}_step_{train.manifest.current_total_step:09d}"
-        
+
     # Let the accelerator save all model/optimizer/LR scheduler/rng states
     train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
 

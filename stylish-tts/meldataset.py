@@ -412,7 +412,6 @@ def build_dataloader(
     dataset,
     time_bins,
     validation=False,
-    batch_size={},
     num_workers=1,
     device="cpu",
     collate_config={},
@@ -421,6 +420,8 @@ def build_dataloader(
     drop_last=True,
     multispeaker=False,
     epoch=1,
+    *,
+    train,
 ):
     collate_config["multispeaker"] = multispeaker
     collate_fn = Collater(**collate_config)
@@ -430,14 +431,12 @@ def build_dataloader(
         num_workers=num_workers,
         batch_sampler=DynamicBatchSampler(
             time_bins,
-            batch_size,
             shuffle=(not validation),
             drop_last=drop_last,
-            num_replicas=1,
-            rank=0,
             force_bin=probe_bin,
             force_batch_size=probe_batch_size,
             epoch=epoch,
+            train=train,
         ),
         collate_fn=collate_fn,
         pin_memory=(device != "cpu"),
@@ -450,26 +449,16 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
     def __init__(
         self,
         time_bins,
-        batch_sizes,
-        num_replicas=None,
-        rank=None,
         shuffle=True,
         seed=0,
         drop_last=False,
         epoch=1,
         force_bin=None,
         force_batch_size=None,
+        *,
+        train,
     ):
         self.time_bins = time_bins
-        self.batch_sizes = batch_sizes
-        if num_replicas is None:
-            self.num_replicas = dist.get_world_size()
-        else:
-            self.num_replicas = num_replicas
-        if rank is None:
-            self.rank = dist.get_rank()
-        else:
-            self.rank = rank
         self.shuffle = shuffle
         self.seed = seed
         self.drop_last = drop_last
@@ -482,55 +471,59 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         self.force_batch_size = force_batch_size
         if force_bin is not None and force_batch_size is not None:
             self.drop_last = False
-
-        total = 0
-        for key in self.time_bins.keys():
-            total += len(self.time_bins[key])
-        for key in self.time_bins.keys():
-            val = self.time_bins[key]
-            total_batch = self.get_batch_size(key) * num_replicas
-            if total_batch > 0:
-                self.total_len += len(val) // total_batch
-                if not self.drop_last and len(val) % total_batch != 0:
-                    self.total_len += 1
+        self.train = train
 
     def __iter__(self):
-        sampler_order = list(self.time_bins.keys())
-        sampler_indices = []
+        # provided_steps = 0
+        samples = {}
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
         if self.force_bin is not None:
-            sampler_order = [self.force_bin]
-            sampler_indices = [0]
-        elif self.shuffle:
-            g = torch.Generator()
-            g.manual_seed(self.seed + self.epoch)
-            sampler_indices = torch.randperm(len(sampler_order), generator=g).tolist()
+            samples = {self.force_bin: self.time_bins[self.force_bin]}
         else:
-            sampler_indices = list(range(len(sampler_order)))
+            for key in self.time_bins.keys():
+                if self.get_batch_size(key) <= 0:
+                    continue
+                if not self.drop_last or len(
+                    self.time_bins[key] >= self.get_batch_size(key)
+                ):
+                    if self.shuffle:
+                        order = torch.randperm(len(self.time_bins[key]), generator=g)
+                        current = []
+                        for index in order:
+                            current.append(self.time_bins[key][index])
+                        samples[key] = current
+                    else:
+                        samples[key] = self.time_bins[key]
 
-        for index in sampler_indices:
-            key = sampler_order[index]
-            if self.get_batch_size(key) <= 0:
-                continue
-            current_bin = self.time_bins[key]
-            dist = torch.utils.data.distributed.DistributedSampler(
-                current_bin,
-                num_replicas=self.num_replicas,
-                rank=self.rank,
-                shuffle=self.shuffle,
-                seed=self.seed,
-                drop_last=self.drop_last,
-            )
-            dist.set_epoch(self.epoch)
-            sampler = torch.utils.data.sampler.BatchSampler(
-                dist, self.get_batch_size(key), self.drop_last
-            )
-            # logger.debug(f"{key}:{self.get_batch_size(key)}")
-            for item_list in sampler:
-                self.last_bin = key
-                yield [current_bin[i] for i in item_list]
+        sample_keys = list(samples.keys())
+        while len(sample_keys) > 0:
+            if self.shuffle:
+                index = torch.randint(0, len(sample_keys), [1], generator=g)[0]
+            else:
+                index = 0
+            key = sample_keys[index]
+            current_samples = samples[key]
+            batch_size = min(len(current_samples), self.get_batch_size(key))
+            batch = current_samples[:batch_size]
+            remaining = current_samples[batch_size:]
+            if len(remaining) == 0 or (self.drop_last and len(remaining) < batch_size):
+                del samples[key]
+            else:
+                samples[key] = remaining
+            yield batch
+            sample_keys = list(samples.keys())
 
     def __len__(self):
-        return self.total_len
+        total = 0
+        for key in self.time_bins.keys():
+            val = self.time_bins[key]
+            total_batch = self.train.stage.get_batch_size(key)
+            if total_batch > 0:
+                total += len(val) // total_batch
+                if not self.drop_last and len(val) % total_batch != 0:
+                    total += 1
+        return total
 
     def set_epoch(self, epoch):
         self.epoch = epoch
@@ -543,12 +536,10 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         return batch_size
 
     def get_batch_size(self, key):
-        result = 1
         if self.force_batch_size is not None:
-            result = self.force_batch_size
-        elif str(key) in self.batch_sizes:
-            result = self.batch_sizes[str(key)]
-        return result
+            return self.force_batch_size
+        else:
+            return self.train.stage.get_batch_size(key)
 
 
 def get_frame_count(i):

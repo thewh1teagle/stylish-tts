@@ -27,6 +27,8 @@ class BatchManager:
         text_cleaner: TextCleaner = None,
         stage: str = "",
         epoch: int = 1,
+        *,
+        train,
     ):
         self.train_path: str = dataset_config.train_data
         self.probe_batch_max: int = probe_batch_max
@@ -34,8 +36,6 @@ class BatchManager:
         self.device: str = device
         self.multispeaker: bool = multispeaker
         self.stage: int = stage
-        self.batch_dict: Dict[str, int] = {}
-        self.load_batch_dict()
 
         train_list = utils.get_data_path_list(self.train_path)
         if len(train_list) == 0:
@@ -56,22 +56,10 @@ class BatchManager:
         if accelerator is not None:
             self.process_count = accelerator.num_processes
             accelerator.even_batches = False
-        # TODO: This should be unnecessary but the order of initialization means that the optimizer relies on this. Need to figure that out and make the optimizer be reset after a probe_batch
-        self.loader = build_dataloader(
-            self.dataset,
-            self.time_bins,
-            batch_size=self.batch_dict,
-            num_workers=32,
-            device=self.device,
-            drop_last=True,
-            multispeaker=self.multispeaker,
-            epoch=epoch,
-        )
-        if accelerator is not None:
-            self.loader = accelerator.prepare(self.loader)
-        # self.loader: DataLoader = None
-        self.resume_loader: DataLoader = None
-        self.epoch_step_count: int = len(self.loader.batch_sampler)
+        self.loader: DataLoader = None
+        # TODO: Fix this when we untangle the scheduler
+        # self.epoch_step_count: int = len(self.loader.batch_sampler)
+        self.epoch_step_count: int = 1000
         self.last_oom: int = -1
         self.last_bin: Optional[int] = None
         self.skip_forward: bool = False
@@ -79,33 +67,13 @@ class BatchManager:
     def get_step_count(self) -> int:
         return self.epoch_step_count // self.process_count
 
-    def get_batch_size(self, i) -> int:
-        batch_size = 1
-        if str(i) in self.batch_dict:
-            batch_size = self.batch_dict[str(i)]
-        return batch_size
-
-    def set_batch_size(self, i, batch_size) -> None:
-        self.batch_dict[str(i)] = batch_size
-
-    def load_batch_dict(self) -> None:
-        batch_file = osp.join(self.log_dir, f"{self.stage}_batch_sizes.json")
-        if osp.isfile(batch_file):
-            with open(batch_file, "r") as batch_input:
-                self.batch_dict = json.load(batch_input)
-
-    def save_batch_dict(self) -> None:
-        batch_file = osp.join(self.log_dir, f"{self.stage}_batch_sizes.json")
-        with open(batch_file, "w") as o:
-            json.dump(self.batch_dict, o)
-
     def probe_loop(self, train) -> None:
         if self.process_count > 1:
             exit(
                 "--probe_batch must be run with accelerator num_processes set to 1. After running it, distribute the batch_sizes.json files to the log directories and run in DDP"
             )
 
-        self.batch_dict = {}
+        train.stage.reset_batch_sizes()
         batch_size = self.probe_batch_max
         time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
@@ -116,7 +84,7 @@ class BatchManager:
             while not done:
                 try:
                     if batch_size == 1:
-                        self.set_batch_size(key, 1)
+                        train.stage.set_batch_size(key, 1)
                         done = True
                     elif batch_size > 0:
                         logger.info(
@@ -126,20 +94,20 @@ class BatchManager:
                         loader = build_dataloader(
                             self.dataset,
                             self.time_bins,
-                            batch_size=self.batch_dict,
                             num_workers=1,
                             device=self.device,
                             drop_last=True,
                             multispeaker=self.multispeaker,
                             probe_bin=key,
                             probe_batch_size=batch_size,
+                            train=train,
                         )
 
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _ = train.stage.train_batch(batch, train)
                             break
-                        self.set_batch_size(key, batch_size)
+                        train.stage.set_batch_size(key, batch_size)
                     done = True
                 except Exception as e:
                     if "out of memory" in str(e) or "cufft" in str(e).lower():
@@ -160,27 +128,27 @@ class BatchManager:
                         logger.error("UNKNOWN EXCEPTION")
                         logger.error("".join(traceback.format_exception(e)))
                         raise e
-        self.save_batch_dict()
+        train.stage.save_batch_sizes()
 
-    def init_epoch(self, train) -> None:
-        if not self.batch_dict:
-            self.probe_loop(train)
-            self.resume_loader = None
-        if self.resume_loader:
-            self.loader = self.resume_loader
-            self.resume_loader = None
-        else:
-            self.loader = build_dataloader(
-                self.dataset,
-                self.time_bins,
-                batch_size=self.batch_dict,
-                num_workers=32,
-                device=self.device,
-                drop_last=True,
-                multispeaker=self.multispeaker,
-                epoch=train.manifest.current_epoch,
+    def init_epoch(self, train, should_fast_forward=False) -> None:
+        self.loader = build_dataloader(
+            self.dataset,
+            self.time_bins,
+            num_workers=32,
+            device=self.device,
+            drop_last=True,
+            multispeaker=self.multispeaker,
+            epoch=train.manifest.current_epoch,
+            train=train,
+        )
+        self.loader = train.accelerator.prepare(self.loader)
+        if should_fast_forward:
+            self.loader = train.accelerator.skip_first_batches(
+                self.loader, train.manifest.current_step
             )
-            self.loader = train.accelerator.prepare(self.loader)
+        # if not self.batch_dict:
+        #     self.probe_loop(train)
+        #     self.resume_loader = None
         self.last_oom = -1
         self.last_bin = None
         self.skip_forward = False
@@ -198,7 +166,7 @@ class BatchManager:
         for attempt in range(1, max_attempts + 1):
             try:
                 if debug:
-                    batch_size = self.get_batch_size(self.last_bin)
+                    batch_size = train.stage.get_batch_size(self.last_bin)
                     audio_length = (self.last_bin * 0.25) + 0.25
                     train.logger.info(
                         f"train_batch(i={train.manifest.current_step}, batch={batch_size}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
@@ -206,7 +174,7 @@ class BatchManager:
                 result = train.stage.train_batch(batch, train)
                 break
             except Exception as e:
-                batch_size = self.get_batch_size(self.last_bin)
+                batch_size = train.stage.get_batch_size(self.last_bin)
                 audio_length = (self.last_bin * 0.25) + 0.25
                 if "CUDA out of memory" in str(e) or "cufft" in str(e).lower():
                     train.logger.info(
@@ -222,8 +190,8 @@ class BatchManager:
                         self.last_oom = self.last_bin
                         if batch_size > 1:
                             batch_size -= 1
-                        self.set_batch_size(self.last_bin, batch_size)
-                        self.save_batch_dict()
+                        train.stage.set_batch_size(self.last_bin, batch_size)
+                        train.stage.save_batch_sizes()
                     gc.collect()
                     torch.cuda.empty_cache()
                 else:

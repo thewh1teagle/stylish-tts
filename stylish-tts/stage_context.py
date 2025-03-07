@@ -1,5 +1,7 @@
+import json
+import os.path as osp
 import traceback
-from typing import Callable, List, Any
+from typing import Callable, List, Any, Dict
 import torch
 from munch import Munch
 
@@ -8,8 +10,6 @@ from stages import (
     validate_first,
     train_second,
     validate_second,
-    train_acoustic_adapter,
-    train_vocoder_adapter,
 )
 
 from loss_log import combine_logs
@@ -136,14 +136,6 @@ stages = {
             "sentence_embedding",
         ],
     ),
-    "vocoder": StageConfig(
-        train_fn=train_vocoder_adapter,
-        validate_fn=validate_first,
-        train_models=[],
-        eval_models=[],
-        disc_models=[],
-        inputs=[],
-    ),
 }
 
 
@@ -160,13 +152,16 @@ class StageContext:
         self.max_epoch: int = 0
         self.steps_per_epoch: int = 0
 
-        self.name = None
-        self.train_fn = None
-        self.validate_fn = None
+        self.name: str = ""
+        self.train_fn: Callable = None
+        self.validate_fn: Callable = None
         self.optimizer = None
+        self.batch_sizes: Dict[str, int] = {}
+        self.batch_sizes_loaded = False
+        self.out_dir: str = ""
 
     def begin_stage(self, name, train):
-        if self.name is not None:
+        if len(self.name) > 0:
             self.optimizer.reset_lr(train)
         #    for key in train.model:
         #        train.model[key] = train.accelerator.free_memory(train.model[key])
@@ -174,7 +169,9 @@ class StageContext:
         #        train.model[key] = train.accelerator.prepare(train.model[key])
         #    self.optimizer.free_memory(train.accelerator)
         self.max_epoch = train.config.training_plan.dict()[name]
-        self.steps_per_epoch = train.batch_manager.get_step_count()
+        # TODO: Fix this when we untangle scheduler
+        self.steps_per_epoch = 1000
+        # self.steps_per_epoch = train.batch_manager.get_step_count()
         self.name = name
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
@@ -183,6 +180,35 @@ class StageContext:
                 self.max_epoch, self.steps_per_epoch, train=train
             )
             self.optimizer.prepare(train.accelerator)
+        self.out_dir = train.out_dir
+        self.load_batch_sizes()
+
+    def set_batch_size(self, i: int, batch_size: int) -> None:
+        self.batch_sizes[str(i)] = batch_size
+
+    def get_batch_size(self, key: int) -> int:
+        if str(key) in self.batch_sizes:
+            return self.batch_sizes[str(key)]
+        else:
+            return 1
+
+    def reset_batch_sizes(self) -> None:
+        self.batch_sizes = {}
+
+    def batch_sizes_exist(self):
+        return self.batch_sizes_loaded
+
+    def load_batch_sizes(self) -> None:
+        batch_file = osp.join(self.out_dir, f"{self.name}_batch_sizes.json")
+        if osp.isfile(batch_file):
+            with open(batch_file, "r") as batch_input:
+                self.batch_sizes = json.load(batch_input)
+                self.batch_sizes_loaded = True
+
+    def save_batch_sizes(self) -> None:
+        batch_file = osp.join(self.out_dir, f"{self.name}_batch_sizes.json")
+        with open(batch_file, "w") as o:
+            json.dump(self.batch_sizes, o)
 
     def train_batch(self, inputs, train):
         config = stages[self.name]
