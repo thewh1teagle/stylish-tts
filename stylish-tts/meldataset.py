@@ -389,7 +389,7 @@ class Collater(object):
             imags[bid] = imag
             sentence_embeddings[bid] = sentence
 
-        return (
+        result = (
             waves,
             texts,
             input_lengths,
@@ -406,6 +406,7 @@ class Collater(object):
             imags,
             sentence_embeddings,
         )
+        return result
 
 
 def build_dataloader(
@@ -512,6 +513,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
             else:
                 samples[key] = remaining
             yield batch
+            self.train.stage.load_batch_sizes()
             sample_keys = list(samples.keys())
 
     def __len__(self):
@@ -551,4 +553,11 @@ def get_time_bin(sample_count):
     frames = sample_count // 300
     if frames >= 20:
         result = (frames - 20) // 20
+    return result
+
+
+def get_padded_time_bin(sample_count):
+    result = -1
+    frames = sample_count // 300
+    return (frames - 60) // 20
     return result

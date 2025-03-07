@@ -1,4 +1,5 @@
 import json
+import os
 import os.path as osp
 import traceback
 from typing import Callable, List, Any, Dict
@@ -157,7 +158,7 @@ class StageContext:
         self.validate_fn: Callable = None
         self.optimizer = None
         self.batch_sizes: Dict[str, int] = {}
-        self.batch_sizes_loaded = False
+        self.last_batch_load = None
         self.out_dir: str = ""
 
     def begin_stage(self, name, train):
@@ -196,14 +197,16 @@ class StageContext:
         self.batch_sizes = {}
 
     def batch_sizes_exist(self):
-        return self.batch_sizes_loaded
+        return self.last_batch_load is not None
 
     def load_batch_sizes(self) -> None:
         batch_file = osp.join(self.out_dir, f"{self.name}_batch_sizes.json")
         if osp.isfile(batch_file):
-            with open(batch_file, "r") as batch_input:
-                self.batch_sizes = json.load(batch_input)
-                self.batch_sizes_loaded = True
+            modified = os.stat(batch_file).st_mtime
+            if self.last_batch_load is None or modified > self.last_batch_load:
+                with open(batch_file, "r") as batch_input:
+                    self.batch_sizes = json.load(batch_input)
+                    self.last_batch_load = modified
 
     def save_batch_sizes(self) -> None:
         batch_file = osp.join(self.out_dir, f"{self.name}_batch_sizes.json")

@@ -3,7 +3,12 @@ import gc, json, traceback
 import os.path as osp
 import torch
 from typing import Optional, Callable, Dict, Any, List
-from meldataset import FilePathDataset, build_dataloader, get_frame_count, get_time_bin
+from meldataset import (
+    FilePathDataset,
+    build_dataloader,
+    get_frame_count,
+    get_padded_time_bin,
+)
 import utils
 from accelerate.accelerator import Accelerator
 from text_utils import TextCleaner
@@ -158,7 +163,7 @@ class BatchManager:
     def train_iterate(self, batch, train, debug=False) -> Optional[LossLog]:
         result = None
         max_attempts = 3
-        self.last_bin = get_time_bin(batch[0].shape[-1])
+        self.last_bin = get_padded_time_bin(batch[0].shape[-1])
         if self.last_bin == self.last_oom and self.skip_forward:
             return result
         elif self.last_bin != self.last_oom:
