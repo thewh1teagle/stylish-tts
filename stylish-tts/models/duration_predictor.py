@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from xlstm import (
     xLSTMBlockStackConfig,
     mLSTMBlockConfig,
@@ -10,7 +11,6 @@ from .common import LinearNorm
 
 
 class DurationPredictor(nn.Module):
-
     def __init__(self, style_dim, d_hid, nlayers, max_dur=50, dropout=0.1):
         super().__init__()
 
@@ -41,12 +41,11 @@ class DurationPredictor(nn.Module):
         duration = self.duration_proj(
             nn.functional.dropout(x, 0.5, training=self.training)
         )
-        en = d.transpose(-1, -2) @ alignment
+        en = x.transpose(-1, -2) @ alignment
         return duration.squeeze(-1), en
 
 
 class DurationEncoder(nn.Module):
-
     def __init__(self, sty_dim, d_model, nlayers, dropout=0.1):
         super().__init__()
         self.lstms = nn.ModuleList()
@@ -72,7 +71,7 @@ class DurationEncoder(nn.Module):
 
         x = x.permute(2, 0, 1)
         s = style.expand(x.shape[0], x.shape[1], -1)
-        x = torch.cat([x, s], axis=-1)
+        x = torch.cat([x, s], dim=-1)
         x.masked_fill_(masks.unsqueeze(-1).transpose(0, 1), 0.0)
 
         x = x.transpose(0, 1)
@@ -82,7 +81,7 @@ class DurationEncoder(nn.Module):
         for block in self.lstms:
             if isinstance(block, AdaLayerNorm):
                 x = block(x.transpose(-1, -2), style).transpose(-1, -2)
-                x = torch.cat([x, s.permute(1, -1, 0)], axis=1)
+                x = torch.cat([x, s.permute(1, -1, 0)], dim=1)
                 x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
             else:
                 x = x.transpose(-1, -2)

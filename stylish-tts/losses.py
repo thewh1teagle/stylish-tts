@@ -1,9 +1,11 @@
 import math
+from typing import List, Tuple
 import torch
 from torch import nn
 import torch.nn.functional as F
 import torchaudio
 from transformers import AutoModel
+import numpy as np
 
 
 class SpectralConvergengeLoss(torch.nn.Module):
@@ -128,6 +130,106 @@ def magphase_loss(mag, phase, gt):
             mag, target_mag
         ) + torch.nn.functional.l1_loss(phase, target_phase)
     return result
+
+
+def amplitude_loss(log_amplitude_r, log_amplitude_g):
+    MSELoss = torch.nn.MSELoss()
+
+    amplitude_loss = MSELoss(log_amplitude_r, log_amplitude_g)
+
+    return amplitude_loss
+
+
+def anti_wrapping_function(x):
+    return torch.abs(x - torch.round(x / (2 * np.pi)) * 2 * np.pi)
+
+
+def phase_loss(phase_r, phase_g, n_fft, frames):
+    GD_matrix = (
+        torch.triu(torch.ones(n_fft // 2 + 1, n_fft // 2 + 1), diagonal=1)
+        - torch.triu(torch.ones(n_fft // 2 + 1, n_fft // 2 + 1), diagonal=2)
+        - torch.eye(n_fft // 2 + 1)
+    )
+    GD_matrix = GD_matrix.to(phase_g.device)
+
+    GD_r = torch.matmul(phase_r.permute(0, 2, 1), GD_matrix)
+    GD_g = torch.matmul(phase_g.permute(0, 2, 1), GD_matrix)
+
+    PTD_matrix = (
+        torch.triu(torch.ones(frames, frames), diagonal=1)
+        - torch.triu(torch.ones(frames, frames), diagonal=2)
+        - torch.eye(frames)
+    )
+    PTD_matrix = PTD_matrix.to(phase_g.device)
+
+    PTD_r = torch.matmul(phase_r, PTD_matrix)
+    PTD_g = torch.matmul(phase_g, PTD_matrix)
+
+    IP_loss = torch.mean(anti_wrapping_function(phase_r - phase_g))
+    GD_loss = torch.mean(anti_wrapping_function(GD_r - GD_g))
+    PTD_loss = torch.mean(anti_wrapping_function(PTD_r - PTD_g))
+
+    return IP_loss, GD_loss, PTD_loss
+
+
+def stft_consistency_loss(rea_r, rea_g, imag_r, imag_g):
+    C_loss = torch.mean(
+        torch.mean((rea_r - rea_g) ** 2 + (imag_r - imag_g) ** 2, (1, 2))
+    )
+
+    return C_loss
+
+
+def amp_phase_spectrum(y, n_fft, hop_size, win_size):
+    hann_window = torch.hann_window(win_size).to(y.device)
+
+    stft_spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window,
+        center=True,
+        return_complex=True,
+    )  # [batch_size, n_fft//2+1, frames, 2]
+
+    log_amplitude = torch.log(
+        stft_spec.abs() + 1e-5
+    )  # [batch_size, n_fft//2+1, frames]
+    phase = stft_spec.angle()  # [batch_size, n_fft//2+1, frames]
+
+    return log_amplitude, phase, stft_spec.real, stft_spec.imag
+
+
+def freev_loss(log, batch, pred, begin, end, audio_gt_slice, train):
+    if pred.log_amplitude is not None:
+        loss_amplitude = amplitude_loss(batch.log_amplitude, pred.log_amplitude)
+
+        L_IP, L_GD, L_PTD = phase_loss(
+            batch.phase,
+            pred.phase,
+            train.model_config.preprocess.n_fft,
+            phase.size()[-1],
+        )
+        # Losses defined on phase spectra
+        loss_phase = L_IP + L_GD + L_PTD
+        _, _, rea_g_final, imag_g_final = amp_phase_spectrum(
+            pred.audio.squeeze(1),
+            train.model_config.preprocess.n_fft,
+            train.model_config.preprocess.hop_length,
+            train.model_config.preprocess.win_length,
+        )
+        loss_consistency = stft_consistency_loss(
+            pred.real, rea_g_final, pred.imaginary, imag_g_final
+        )
+        loss_real_part = F.l1_loss(batch.real, pred.real)
+        loss_imaginary_part = F.l1_loss(batch.imagineary, pred.imaginary)
+        loss_stft_reconstruction = loss_consistency + 2.25 * (
+            loss_real_part + loss_imaginary_part
+        )
+        log.add_loss("amplitude", loss_amplitude)
+        log.add_loss("phase", loss_phase)
+        log.add_loss("stft_reconstruction", loss_stft_reconstruction)
 
 
 def feature_loss(fmap_r, fmap_g):
@@ -350,3 +452,27 @@ class WavLMLoss(torch.nn.Module):
         y_d_rs = self.wd(y_embeddings)
 
         return y_d_rs
+
+
+def compute_duration_ce_loss(
+    duration_prediction: List[torch.Tensor],
+    duration: List[torch.Tensor],
+    text_length: List[int],
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes the duration and binary cross-entropy losses over a batch.
+    Returns (loss_ce, loss_dur).
+    """
+    loss_ce = 0
+    loss_dur = 0
+    for pred, dur, length in zip(duration_prediction, duration, text_length):
+        pred = pred[:length, :]
+        dur = dur[:length].long()
+        target = torch.zeros_like(pred)
+        for i in range(target.shape[0]):
+            target[i, : dur[i]] = 1
+        dur_pred = torch.sigmoid(pred).sum(dim=1)
+        loss_dur += F.l1_loss(dur_pred[1 : length - 1], dur[1 : length - 1])
+        loss_ce += F.binary_cross_entropy_with_logits(pred.flatten(), target.flatten())
+    n = len(text_length)
+    return loss_ce / n, loss_dur / n

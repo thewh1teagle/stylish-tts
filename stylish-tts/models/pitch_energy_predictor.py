@@ -1,5 +1,7 @@
+import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from xlstm import (
     xLSTMBlockStackConfig,
     mLSTMBlockConfig,
@@ -10,8 +12,7 @@ from torch.nn.utils.parametrizations import weight_norm
 
 
 class PitchEnergyPredictor(nn.Module):
-
-    def __init__(self, style_dim, d_hid, nlayers, max_dur=50, dropout=0.1):
+    def __init__(self, style_dim, d_hid, dropout=0.1):
         super().__init__()
 
         self.cfg_pred = xLSTMBlockStackConfig(
@@ -75,7 +76,7 @@ class AdainResBlk1d(nn.Module):
         dim_out,
         style_dim=64,
         actv=nn.LeakyReLU(0.2),
-        upsample="none",
+        upsample=False,
         dropout_p=0.0,
     ):
         super().__init__()
@@ -86,9 +87,7 @@ class AdainResBlk1d(nn.Module):
         self._build_weights(dim_in, dim_out, style_dim)
         self.dropout = nn.Dropout(dropout_p)
 
-        if upsample == "none":
-            self.pool = nn.Identity()
-        else:
+        if upsample:
             self.pool = weight_norm(
                 nn.ConvTranspose1d(
                     dim_in,
@@ -100,6 +99,8 @@ class AdainResBlk1d(nn.Module):
                     output_padding=1,
                 )
             )
+        else:
+            self.pool = nn.Identity()
 
     def _build_weights(self, dim_in, dim_out, style_dim):
         self.conv1 = weight_norm(nn.Conv1d(dim_in, dim_out, 3, 1, 1))

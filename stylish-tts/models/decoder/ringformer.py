@@ -13,6 +13,7 @@ from .stft import stft
 from .stft import TorchSTFT
 from .conformer import Conformer
 from einops import rearrange
+from utils import DecoderPrediction
 
 import math
 import random
@@ -667,7 +668,7 @@ class Decoder(nn.Module):
             gen_istft_hop_size,
         )
 
-    def forward(self, asr, F0_curve, N, s, pretrain=False):
+    def forward(self, asr, F0_curve, N, s, pretrain=False, probing=False):
         if not pretrain:
             if self.training:
                 downlist = [0, 3, 7]
@@ -712,4 +713,4 @@ class Decoder(nn.Module):
             x = self.conv_pretrain(asr)
 
         x, mag, phase = self.generator(x, s, F0_curve)
-        return x, mag, phase
+        return DecoderPrediction(audio=x, magnitude=mag, phase=phase)

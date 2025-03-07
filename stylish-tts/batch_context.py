@@ -27,9 +27,15 @@ class BatchContext:
                 self.config.training.device
             )
         self.duration_results = None
+        self.resample = torchaudio.transforms.Resample(
+            self.train.model_config.preprocess.sample_rate, 16000
+        ).to(self.config.training.device)
         self.to_mel = torchaudio.transforms.MelSpectrogram(
             n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
         ).to(self.config.training.device)
+        self.pitch_prediction = None
+        self.energy_prediction = None
+        self.duration_prediction = None
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
         return self.model.text_encoder(texts, text_lengths, self.text_mask)
@@ -102,31 +108,65 @@ class BatchContext:
         else:
             duration = s2s_attn_mono
 
+        self.attention = s2s_attn[0]
         self.duration_results = (s2s_attn, s2s_attn_mono)
         self.s2s_pred = s2s_pred
         return duration
 
-    def acoustic_pitch(self, mels: torch.Tensor):
-        with torch.no_grad():
-            pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
-        return pitch
+    def get_attention(self):
+        return self.attention
+
+    # # def acoustic_pitch(self, mels: torch.Tensor):
+    # def acoustic_pitch(self, audio_gt: torch.Tensor):
+    #     with torch.no_grad():
+    #         # pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
+    #         c = self.config
+    #         fmin = 50
+    #         fmax = 550
+    #         model = "full"
+    #         audio = self.resample(audio_gt).to(c.training.device)
+    #         pitch = torchcrepe.predict(
+    #             audio,
+    #             16000,
+    #             200,  # c.preprocess.hop_length,
+    #             fmin,
+    #             fmax,
+    #             model,
+    #             batch_size=2048,
+    #             device=c.training.device,
+    #         )[:, :-1]
+    #     return pitch
 
     def acoustic_energy(self, mels: torch.Tensor):
         with torch.no_grad():
             energy = log_norm(mels.unsqueeze(1)).squeeze(1)
         return energy
 
-    def acoustic_style_embedding(self, mels: torch.Tensor):
-        return self.model.style_encoder(mels.unsqueeze(1))
+    # def acoustic_style_embedding(self, mels: torch.Tensor):
+    #     return self.model.style_encoder(mels.unsqueeze(1))
+
+    def style_embedding(self, sentence_embedding: torch.Tensor):
+        return self.model.style_encoder(sentence_embedding)
+
+    def prosodic_style_embedding(self, sentence_embedding: torch.Tensor):
+        return self.model.prosodic_style_encoder(sentence_embedding)
 
     def decoding(
-        self, text_encoding, duration, pitch, energy, style, audio_gt, split=1
+        self,
+        text_encoding,
+        duration,
+        pitch,
+        energy,
+        style,
+        audio_gt,
+        split=1,
+        probing=False,
     ):
         if split == 1 or text_encoding.shape[0] != 1:
-            audio_out, mag, phase = self.model.decoder(
-                text_encoding @ duration, pitch, energy, style
+            prediction = self.model.decoder(
+                text_encoding @ duration, pitch, energy, style, probing=probing
             )
-            yield (audio_out, mag, phase, audio_gt)
+            yield (prediction, audio_gt, 0, energy.shape[-1])
         else:
             text_hop = text_encoding.shape[-1] // split
             text_start = 0
@@ -145,13 +185,113 @@ class BatchContext:
                 audio_gt_slice = audio_gt[
                     :, mel_start * 300 * 2 : mel_end * 300 * 2
                 ].detach()
-                audio_out, mag, phase = self.train.model.decoder(
-                    text_slice @ duration_slice, pitch_slice, energy_slice, style
+                prediction = self.train.model.decoder(
+                    text_slice @ duration_slice,
+                    pitch_slice,
+                    energy_slice,
+                    style,
+                    probing=probing,
                 )
-                yield (audio_out, mag, phase, audio_gt_slice)
+                yield (prediction, audio_gt_slice, mel_start, mel_end)
                 text_start += text_hop
                 text_end += text_hop
 
-    def pretrain_decoding(self, pitch, style, audio_gt):
-        mels = self.to_mel(audio_gt)[:, :, :-1]
-        return self.model.decoder(mels, pitch, None, style, pretrain=True)
+    def decoding_single(
+        self,
+        text_encoding,
+        duration,
+        pitch,
+        energy,
+        style,
+        probing=False,
+    ):
+        return self.model.decoder(
+            text_encoding @ duration, pitch, energy, style, probing=probing
+        )
+
+    def acoustic_prediction(self, batch, split=1):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=True,
+            use_random_choice=True,
+        )
+        energy = self.acoustic_energy(batch.mel)
+        # style_embedding = self.acoustic_style_embedding(batch.mel)
+        style_embedding = self.style_embedding(batch.sentence_embedding)
+        prediction = self.decoding(
+            text_encoding,
+            duration,
+            batch.pitch,
+            energy,
+            style_embedding,
+            batch.audio_gt,
+            split=split,
+        )
+        return prediction
+
+    def acoustic_prediction_single(self, batch, use_random_mono=True):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=True,
+            use_random_choice=use_random_mono,
+        )
+        energy = self.acoustic_energy(batch.mel)
+        # style_embedding = self.acoustic_style_embedding(batch.mel)
+        style_embedding = self.style_embedding(batch.sentence_embedding)
+        prediction = self.decoding_single(
+            text_encoding,
+            duration,
+            batch.pitch,
+            energy,
+            style_embedding,
+        )
+        return prediction
+
+    def textual_prediction_single(self, batch):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=False,
+            use_random_choice=False,
+        )
+        style_embedding = self.style_embedding(batch.sentence_embedding)
+        prosody_embedding = self.prosodic_style_embedding(batch.sentence_embedding)
+        plbert_embedding = self.model.bert(
+            batch.texts, attention_mask=(~self.text_mask).int()
+        )
+        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        self.duration_prediction, prosody = self.model.duration_predictor(
+            duration_encoding,
+            prosody_embedding,
+            batch.input_lengths,
+            self.duration_results[1],
+            self.text_mask,
+        )
+        self.pitch_prediction, self.energy_prediction = (
+            self.model.pitch_energy_predictor(prosody, prosody_embedding)
+        )
+        prediction = self.decoding_single(
+            text_encoding,
+            duration,
+            self.pitch_prediction,
+            self.energy_prediction,
+            style_embedding,
+        )
+        return prediction
+
+    # def pretrain_decoding(self, pitch, style, audio_gt, probing=False):
+    #    mels = self.to_mel(audio_gt)[:, :, :-1]
+    #    return self.model.decoder(
+    #        mels, pitch, None, style, pretrain=True, probing=probing
+    #    )

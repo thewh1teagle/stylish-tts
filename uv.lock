@@ -2309,6 +2309,19 @@ wheels = [
 ]
 
 [[package]]
+name = "resampy"
+version = "0.4.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numba" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/f1/34be702a69a5d272e844c98cee82351f880985cfbca0cc86378011078497/resampy-0.4.3.tar.gz", hash = "sha256:a0d1c28398f0e55994b739650afef4e3974115edbe96cd4bb81968425e916e47", size = 3080604 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/b9/3b00ac340a1aab3389ebcc52c779914a44aadf7b0cb7a3bf053195735607/resampy-0.4.3-py3-none-any.whl", hash = "sha256:ad2ed64516b140a122d96704e32bc0f92b23f45419e8b8f478e5a05f83edcebd", size = 3076529 },
+]
+
+[[package]]
 name = "rfc3339-validator"
 version = "0.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2535,6 +2548,24 @@ wheels = [
 ]
 
 [[package]]
+name = "sentence-transformers"
+version = "3.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "pillow" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/16/74/aca6f8a2b8d62b4daf8c9a0c49d2aa573381caf47dc35cbb343389229376/sentence_transformers-3.4.1.tar.gz", hash = "sha256:68daa57504ff548340e54ff117bd86c1d2f784b21e0fb2689cf3272b8937b24b", size = 223898 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/89/7eb147a37b7f31d3c815543df539d8b8d0425e93296c875cc87719d65232/sentence_transformers-3.4.1-py3-none-any.whl", hash = "sha256:e026dc6d56801fd83f74ad29a30263f401b4b522165c19386d8bc10dcca805da", size = 275896 },
+]
+
+[[package]]
 name = "setuptools"
 version = "75.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2641,9 +2672,11 @@ dependencies = [
     { name = "pydantic" },
     { name = "ring-attention-pytorch" },
     { name = "scikit-learn" },
+    { name = "sentence-transformers" },
     { name = "tensorboard" },
     { name = "torch" },
     { name = "torchaudio" },
+    { name = "torchcrepe" },
     { name = "transformers" },
     { name = "triton" },
     { name = "triton-nightly" },
@@ -2675,9 +2708,11 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "ring-attention-pytorch", specifier = ">=0.5.19" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
+    { name = "sentence-transformers", specifier = ">=3.4.1" },
     { name = "tensorboard", specifier = ">=2.18.0" },
     { name = "torch", specifier = "~=2.5.1" },
     { name = "torchaudio", specifier = "~=2.5.1" },
+    { name = "torchcrepe", specifier = ">=0.0.23" },
     { name = "transformers", specifier = ">=4.48.2" },
     { name = "triton", specifier = ">=3.1.0" },
     { name = "triton-nightly", specifier = ">=3.0.0.post20240716052845" },
@@ -2847,6 +2882,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/34/1c/345d11bf492a1414dced70a9572ff1eb2c73013578d24fb4d728a91a09d1/torchaudio-2.5.1-cp312-cp312-manylinux1_x86_64.whl", hash = "sha256:9c8fb06fbd8d2016e7b7caf15a3231867c792a2e3b0f2f8f9013633e9c2ce412", size = 3371851 },
     { url = "https://files.pythonhosted.org/packages/1c/74/a27c6d0d4c4fad90462f08e99222d3557f118beb8fb560b87d607a727a0a/torchaudio-2.5.1-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:6bb65416405f40e00b20701257c16e7493bfdd7188e02e87cc5b389c31c10c2c", size = 1668849 },
     { url = "https://files.pythonhosted.org/packages/99/a1/4220b73ba6e083229099892d9126e01836afe96cf7e2fbfe60b327506f49/torchaudio-2.5.1-cp312-cp312-win_amd64.whl", hash = "sha256:ec8f12d6be12aed248a0d65a76c7bb341ee5eef969fe2e9dc3154c7cfba1bdf4", size = 2435747 },
+]
+
+[[package]]
+name = "torchcrepe"
+version = "0.0.23"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "librosa" },
+    { name = "resampy" },
+    { name = "scipy" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/3d/7b79b26eca51a7c526eb9be1920bda1616029b2fb3d54a9ce842fff6754b/torchcrepe-0.0.23.tar.gz", hash = "sha256:8f7e75638a5ab3fbb9cfc1704c173adbcb61de73dbdadcf428b3d93b54dfe57f", size = 72329837 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/24/c1876271d361d4474faa59137eaa7784c779adddaf3c12ba755a1b3489c2/torchcrepe-0.0.23-py3-none-any.whl", hash = "sha256:6e104465b89e763ba7fd0d1b228162783ed4b5a6c5735772baca286c20d7ae2c", size = 72326101 },
 ]
 
 [[package]]

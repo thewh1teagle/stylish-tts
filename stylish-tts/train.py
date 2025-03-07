@@ -15,7 +15,7 @@ from text_utils import TextCleaner
 import numpy as np
 
 #  warnings.simplefilter("ignore")
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
@@ -24,14 +24,14 @@ from stage_context import StageContext, is_valid_stage, valid_stage_list
 from models.models import build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from utils import get_data_path_list
+from loss_log import combine_logs
 
-
-from models.slmadv import SLMAdversarialLoss
-from models.diffusion.sampler import (
-    DiffusionSampler,
-    ADPM2Sampler,
-    KarrasSchedule,
-)
+# from models.slmadv import SLMAdversarialLoss
+# from models.diffusion.sampler import (
+#     DiffusionSampler,
+#     ADPM2Sampler,
+#     KarrasSchedule,
+# )
 
 import os.path as osp
 import os
@@ -144,6 +144,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         validation=True,
         multispeaker=train.model_config.model.multispeaker,
         text_cleaner=text_cleaner,
+        pitch_path=train.config.dataset.pitch_path,
     )
     train.val_dataloader = build_dataloader(
         val_dataset,
@@ -158,12 +159,9 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
 
     train.batch_manager = BatchManager(
-        train.config.dataset.train_data,
+        train.config.dataset,
         train.out_dir,
         probe_batch_max=train.config.training.probe_batch_max,
-        root_path=train.config.dataset.wav_path,
-        OOD_data=train.config.dataset.OOD_data,
-        min_length=train.config.dataset.min_length,
         device=train.config.training.device,
         accelerator=train.accelerator,
         multispeaker=train.model_config.model.multispeaker,
@@ -173,7 +171,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     )
 
     # build model
-    train.model, kdiffusion = build_model(train.model_config)
+    train.model = build_model(train.model_config)
     for key in train.model:
         train.model[key] = train.accelerator.prepare(train.model[key])
         train.model[key].to(train.config.training.device)
@@ -186,7 +184,8 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     )
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,
-        train.model.wd,
+        None,
+        # train.model.wd,
         train.model_config.preprocess.sample_rate,
         train.model_config.slm.sr,
     ).to(train.config.training.device)
@@ -221,14 +220,14 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     train.manifest.stage = stage
 
     # TODO: How to access model diffusion?
-    train.diffusion_sampler = DiffusionSampler(
-        kdiffusion,
-        sampler=ADPM2Sampler(),
-        sigma_schedule=KarrasSchedule(
-            sigma_min=0.0001, sigma_max=3.0, rho=9.0
-        ),  # empirical parameters
-        clamp=False,
-    )
+    # train.diffusion_sampler = DiffusionSampler(
+    #     kdiffusion,
+    #     sampler=ADPM2Sampler(),
+    #     sigma_schedule=KarrasSchedule(
+    #         sigma_min=0.0001, sigma_max=3.0, rho=9.0
+    #     ),  # empirical parameters
+    #     clamp=False,
+    # )
 
     train.n_down = 1  # TODO: Use train.model.text_aligner.n_down
 
@@ -241,22 +240,23 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     # TODO: This value is calculated inconsistently based on whether checkpoints are loaded/saved
     train.manifest.running_std = []
 
-    train.slm_adversarial_loss = SLMAdversarialLoss(
-        train.model,
-        train.wavlm_loss,
-        train.diffusion_sampler,
-        train.model_config.slmadv_params.min_len,
-        train.model_config.slmadv_params.max_len,
-        batch_percentage=train.model_config.slmadv_params.batch_percentage,
-        skip_update=train.model_config.slmadv_params.iter,
-        sig=train.model_config.slmadv_params.sig,
-    )
+    # train.slm_adversarial_loss = SLMAdversarialLoss(
+    #     train.model,
+    #     train.wavlm_loss,
+    #     train.diffusion_sampler,
+    #     train.model_config.slmadv_params.min_len,
+    #     train.model_config.slmadv_params.max_len,
+    #     batch_percentage=train.model_config.slmadv_params.batch_percentage,
+    #     skip_update=train.model_config.slmadv_params.iter,
+    #     sig=train.model_config.slmadv_params.sig,
+    # )
 
     train_val_loop(train)
     train.accelerator.end_training()
 
 
 def train_val_loop(train: TrainContext):
+    logs = []
     while train.manifest.current_epoch <= train.stage.max_epoch:
         train.batch_manager.init_epoch(train)
         train.stage.steps_per_epoch = train.batch_manager.get_step_count()
@@ -266,19 +266,33 @@ def train_val_loop(train: TrainContext):
         # TODO: This line should be obsolete soon
         _ = [train.model[key].train() for key in train.model]
         for _, batch in enumerate(train.batch_manager.loader):
-            train_val_iterate(batch, train)
+            next_log = train_val_iterate(batch, train)
+            if next_log is not None:
+                logs.append(next_log)
+            if len(logs) >= train.config.training.log_interval:
+                combine_logs(logs).broadcast(train.manifest, train.stage)
+                logs = []
+            num = train.manifest.current_total_step
+            do_val = num % train.config.training.val_interval == 0
+            do_save = num % train.config.training.save_interval == 0
+            if do_val or do_save:
+                train.stage.validate(train)
+            if do_save:
+                save_checkpoint(train, prefix="checkpoint")
+        if len(logs) > 0:
+            combine_logs(logs).broadcast(train.manifest, train.stage)
+            logs = []
         train.manifest.current_epoch += 1
         train.manifest.current_step = 0
         train.manifest.training_log.append(
             f"Completed 1 epoch of {train.manifest.stage} training"
         )
-    train.stage.validate(
-        current_step=train.manifest.current_total_step, save=True, train=train
-    )
+    train.stage.validate(train)
+    save_checkpoint(train, prefix="checkpoint_final", long=False)
 
 
 def train_val_iterate(batch, train: TrainContext):
-    train.batch_manager.train_iterate(batch, train)
+    result = train.batch_manager.train_iterate(batch, train)
     train.manifest.current_total_step += 1
     train.manifest.current_step += 1
     train.manifest.total_trained_audio_seconds += (
@@ -287,11 +301,26 @@ def train_val_iterate(batch, train: TrainContext):
     )
     # filenames = batch[8]
     # logger.info(f"Step {train.manifest.current_step} Processing: {filenames}")
-    num = train.manifest.current_total_step
-    do_val = num % train.config.training.val_interval == 0
-    do_save = num % train.config.training.save_interval == 0
-    if do_val or do_save:
-        train.stage.validate(current_step=num, save=do_save, train=train)
+    return result
+
+
+def save_checkpoint(
+    train: TrainContext,
+    prefix: str = "checkpoint",
+    long: bool = True,
+) -> None:
+    """
+    Saves checkpoint using a checkpoint.
+    """
+    logger.info("Saving...")
+    checkpoint_dir = osp.join(train.out_dir, f"{prefix}")
+    if long:
+        checkpoint_dir += f"_{train.manifest.current_epoch:05d}_step_{train.manifest.current_total_step:09d}"
+        
+    # Let the accelerator save all model/optimizer/LR scheduler/rng states
+    train.accelerator.save_state(checkpoint_dir, safe_serialization=False)
+
+    logger.info(f"Saved checkpoint to {checkpoint_dir}")
 
 
 if __name__ == "__main__":

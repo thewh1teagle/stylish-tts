@@ -5,12 +5,14 @@ from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 import numpy as np
 from munch import Munch
 from librosa.filters import mel as librosa_mel_fn
+import random
 
 import math
 
 # import torch
 # from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
+from utils import DecoderPrediction
 
 # import torch.nn.functional as F
 
@@ -149,8 +151,8 @@ config_h = Munch(
         "hop_size": 300,
         "win_size": 1200,
         "sampling_rate": 24000,
-        "fmin": 0,
-        "fmax": 8000,
+        "fmin": 50,
+        "fmax": 550,
     }
 )
 
@@ -258,6 +260,7 @@ class Generator(torch.nn.Module):
         else:
             inv_amp = inv_mel
         logamp = inv_amp.log()
+        logamp = F.pad(logamp, pad=(0, 1), mode="replicate")
         # logamp = self.ASP_input_conv(logamp)
         for conv_block in self.convnext2:
             logamp = conv_block(logamp, cond_embedding_id=None)
@@ -276,8 +279,10 @@ class Generator(torch.nn.Module):
         I = self.PSP_output_I_conv(pha)
 
         pha = torch.atan2(I, R)
-
+        pha = F.pad(pha, pad=(0, 1), mode="replicate")
+        # rea is the real part of the complex number
         rea = torch.exp(logamp) * torch.cos(pha)
+        # imag is the imaginary part of the complex number
         imag = torch.exp(logamp) * torch.sin(pha)
 
         spec = torch.complex(rea, imag)
@@ -293,7 +298,13 @@ class Generator(torch.nn.Module):
         )
 
         # return logamp, pha, rea, imag, audio.unsqueeze(1)
-        return torch.cat([audio, audio[:, -300:]], dim=-1).unsqueeze(1), None, None
+        return (
+            audio.unsqueeze(1),
+            logamp,
+            pha,
+            rea,
+            imag,
+        )
 
 
 ###################################################################
@@ -519,21 +530,54 @@ class Decoder(nn.Module):
 
         self.generator = Generator()
 
-    def forward(self, asr, F0, N, s):
-        F0 = self.F0_conv(F0.unsqueeze(1))
-        N = self.N_conv(N.unsqueeze(1))
+    def forward(self, asr, F0, N, s, pretrain=False, probing=False):
+        if not pretrain:
+            # if self.training:
+            #    downlist = [0, 3, 7]
+            #    F0_down = downlist[random.randint(0, 2)]
+            #    downlist = [0, 3, 7, 15]
+            #    N_down = downlist[random.randint(0, 3)]
+            #    if probing:
+            #        F0_down = 0
+            #        N_down = 0
+            #    if F0_down:
+            #        F0 = (
+            #            nn.functional.conv1d(
+            #                F0.unsqueeze(1),
+            #                torch.ones(1, 1, F0_down).to("cuda"),
+            #                padding=F0_down // 2,
+            #            ).squeeze(1)
+            #            / F0_down
+            #        )
+            #    if N_down:
+            #        N = (
+            #            nn.functional.conv1d(
+            #                N.unsqueeze(1),
+            #                torch.ones(1, 1, N_down).to("cuda"),
+            #                padding=N_down // 2,
+            #            ).squeeze(1)
+            #            / N_down
+            #        )
 
-        x = torch.cat([asr, F0, N], axis=1)
-        x = self.encode(x)
+            F0 = self.F0_conv(F0.unsqueeze(1))
+            N = self.N_conv(N.unsqueeze(1))
 
-        asr_res = self.asr_res(asr)
+            x = torch.cat([asr, F0, N], axis=1)
+            x = self.encode(x)
 
-        res = True
-        for block in self.decode:
-            if res:
-                x = torch.cat([x, asr_res, F0, N], axis=1)
-            x = block(x, s)
-            if block.upsample_type != "none":
-                res = False
-        x = self.to_out(x)
-        return self.generator(x)
+            asr_res = self.asr_res(asr)
+
+            res = True
+            for block in self.decode:
+                if res:
+                    x = torch.cat([x, asr_res, F0, N], axis=1)
+                x = block(x, s)
+                if block.upsample_type != "none":
+                    res = False
+            x = self.to_out(x)
+        else:
+            x = asr
+        audio, logamp, phase, real, imaginary = self.generator(x)
+        return DecoderPrediction(
+            audio=audio, log_amplitude=logamp, real=real, imaginary=imaginary
+        )

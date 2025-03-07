@@ -1,30 +1,74 @@
 # coding: utf-8
-import os
 import os.path as osp
-import time
-import random
 import numpy as np
-import random
 import soundfile as sf
 import librosa
-import gc
-import json
 
 import torch
-from torch import nn
-import torch.nn.functional as F
 import torchaudio
 import torch.utils.data
 import torch.distributed as dist
 from huggingface_hub import hf_hub_download
+from safetensors import safe_open
+from librosa.filters import mel as librosa_mel_fn
+from sentence_transformers import SentenceTransformer
 
 import logging
-import utils
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-import pandas as pd
+sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
+mel_window = {}
+
+
+def param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device):
+    return f"{sampling_rate}-{n_fft}-{num_mels}-{fmin}-{fmax}-{win_size}-{device}"
+
+
+def mel_spectrogram(
+    y,
+    n_fft,
+    num_mels,
+    sampling_rate,
+    hop_size,
+    win_size,
+    fmin,
+    fmax,
+    center=True,
+    in_dataset=False,
+):
+    global mel_window
+    # device = torch.device("cpu") if in_dataset else y.device
+    device = "cpu"
+    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
+    if ps in mel_window:
+        mel_basis, hann_window = mel_window[ps]
+        # print(mel_basis, hann_window)
+        # mel_basis, hann_window = mel_basis.to(y.device), hann_window.to(y.device)
+    else:
+        mel = librosa_mel_fn(
+            sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
+        )
+        mel_basis = torch.from_numpy(mel).float().to(device)
+        hann_window = torch.hann_window(win_size).to(device)
+        mel_window[ps] = (mel_basis.clone(), hann_window.clone())
+
+    spec = torch.stft(
+        y.to(device),
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window.to(device),
+        center=True,
+        return_complex=True,
+    )
+
+    spec = mel_basis.to(device) @ spec.abs()
+    # spec = spectral_normalize_torch(spec)
+
+    return spec  # [batch_size,n_fft/2+1,frames]
 
 
 to_mel = torchaudio.transforms.MelSpectrogram(
@@ -37,8 +81,39 @@ def preprocess(wave):
     # wave_tensor = torch.from_numpy(wave).float()
     wave_tensor = wave
     mel_tensor = to_mel(wave_tensor)
+    # mel_tensor = mel_spectrogram(
+    #    y=wave_tensor,
+    #    n_fft=2048,
+    #    num_mels=80,
+    #    sampling_rate=24000,
+    #    hop_size=300,
+    #    win_size=1200,
+    #    fmin=50,
+    #    fmax=550,
+    # )
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
+
+
+def amp_pha_specturm(y, n_fft, hop_size, win_size):
+    hann_window = torch.hann_window(win_size).to(y.device)
+
+    stft_spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window,
+        center=True,
+        return_complex=True,
+    )  # [batch_size, n_fft//2+1, frames, 2]
+
+    log_amplitude = torch.log(
+        stft_spec.abs() + 1e-5
+    )  # [batch_size, n_fft//2+1, frames]
+    phase = stft_spec.angle()  # [batch_size, n_fft//2+1, frames]
+
+    return log_amplitude, phase, stft_spec.real, stft_spec.imag
 
 
 class FilePathDataset(torch.utils.data.Dataset):
@@ -46,18 +121,29 @@ class FilePathDataset(torch.utils.data.Dataset):
         self,
         data_list,
         root_path,
+        text_cleaner,
         sr=24000,
         data_augmentation=False,
         validation=False,
         OOD_data="Data/OOD_texts.txt",
         min_length=50,
         multispeaker=False,
-        text_cleaner=None,
+        pitch_path="",
     ):
-
         self.cache = {}
-        _data_list = [l.strip().split("|") for l in data_list]
-        self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
+        self.pitch = {}
+        with safe_open(pitch_path, framework="pt", device="cpu") as f:
+            for key in f.keys():
+                self.pitch[key] = f.get_tensor(key)
+        self.data_list = []
+        sentences = []
+        for line in data_list:
+            fields = line.strip().split("|")
+            if len(fields) != 4:
+                exit("Dataset lines must have 4 |-delimited fields: " + fields)
+            self.data_list.append(fields)
+            sentences.append(fields[3])
+        self.sentences = sentences
         self.text_cleaner = text_cleaner
         self.sr = sr
 
@@ -129,7 +215,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         # get OOD text
 
         ps = ""
-
+        ref_text = torch.LongTensor()
         while len(ps) < self.min_length:
             rand_idx = np.random.randint(0, len(self.ptexts) - 1)
             ps = self.ptexts[rand_idx]
@@ -140,6 +226,13 @@ class FilePathDataset(torch.utils.data.Dataset):
 
             ref_text = torch.LongTensor(text)
 
+        pitch = None
+        if path in self.pitch:
+            pitch = torch.nan_to_num(self.pitch[path].detach().clone())
+        sentence_embedding = torch.from_numpy(
+            sbert.encode([self.sentences[idx]], show_progress_bar=False)
+        ).float()
+
         return (
             speaker_id,
             acoustic_feature,
@@ -149,10 +242,12 @@ class FilePathDataset(torch.utils.data.Dataset):
             ref_label,
             path,
             wave,
+            pitch,
+            sentence_embedding,
         )
 
     def _load_tensor(self, data):
-        wave_path, text, speaker_id = data
+        wave_path, text, speaker_id, _ = data
         speaker_id = int(speaker_id)
         wave, sr = sf.read(osp.join(self.root_path, wave_path))
         if wave.shape[-1] == 2:
@@ -183,7 +278,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         return wave, text, speaker_id
 
     def _cache_tensor(self, data):
-        path = data[0]
+        # path = data[0]
         # if path in self.cache:
         # (wave, text_tensor, speaker_id, mel_tensor) = self.cache[path]
         # else:
@@ -247,6 +342,12 @@ class Collater(object):
         waves = torch.zeros(
             (batch_size, batch[0][7].shape[-1])
         ).float()  # [None for _ in range(batch_size)]
+        pitches = torch.zeros((batch_size, max_mel_length)).float()
+        log_amplitudes = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        phases = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        reals = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        imags = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
+        sentence_embeddings = torch.zeros(batch_size, 384).float()
 
         for bid, (
             label,
@@ -257,6 +358,8 @@ class Collater(object):
             ref_label,
             path,
             wave,
+            pitch,
+            sentence,
         ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -274,6 +377,17 @@ class Collater(object):
                 ref_mels[bid, :, :ref_mel_size] = ref_mel
                 ref_labels[bid] = ref_label
             waves[bid] = wave
+            if pitch is not None:
+                pitches[bid] = pitch
+            # TODO: hard coded fix
+            log_amplitude, phase, rea, imag = amp_pha_specturm(
+                wave, n_fft=2048, hop_size=300, win_size=1200
+            )
+            log_amplitudes[bid] = log_amplitude
+            phases[bid] = phase
+            reals[bid] = rea
+            imags[bid] = imag
+            sentence_embeddings[bid] = sentence
 
         return (
             waves,
@@ -285,6 +399,12 @@ class Collater(object):
             output_lengths,
             ref_mels,
             paths,
+            pitches,
+            log_amplitudes,
+            phases,
+            reals,
+            imags,
+            sentence_embeddings,
         )
 
 
@@ -302,7 +422,6 @@ def build_dataloader(
     multispeaker=False,
     epoch=1,
 ):
-
     collate_config["multispeaker"] = multispeaker
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch_size is not None

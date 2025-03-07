@@ -30,20 +30,33 @@ class TrainingPlanConfig(BaseModel):
     Training plan configuration that defines the number of epochs for different stages.
     """
 
+    pre_acoustic: int = Field(
+        default=10,
+        description="Number of epochs for the pretraining of acoustic models.",
+    )
+    acoustic: int = Field(
+        default=10,
+        description="Number of epochs for joint training of acoustic models.",
+    )
+    vocoder: int = Field(
+        default=10, description="Number of epochs for the vocoder pretraining stage."
+    )
     first: int = Field(
-        ..., description="Number of epochs for the first training stage."
+        default=10, description="Number of epochs for the first training stage."
     )
     first_tma: int = Field(
-        ..., description="Number of epochs for the first stage with TMA."
+        default=10, description="Number of epochs for the first stage with TMA."
     )
     second: int = Field(
-        ..., description="Number of epochs for the second training stage."
+        default=10, description="Number of epochs for the second training stage."
     )
     second_style: int = Field(
-        ..., description="Number of epochs for the second stage with style training."
+        default=10,
+        description="Number of epochs for the second stage with style training.",
     )
     second_joint: int = Field(
-        ..., description="Number of epochs for the second stage with joint training."
+        default=10,
+        description="Number of epochs for the second stage with joint training.",
     )
 
 
@@ -55,6 +68,10 @@ class DatasetConfig(BaseModel):
     train_data: str = Field(..., description="Path to the training data list.")
     val_data: str = Field(..., description="Path to the validation data list.")
     wav_path: str = Field(..., description="Directory containing WAV files.")
+    pitch_path: str = Field(
+        ...,
+        description="Path to the precomputed pitch safetensor file for your segments.",
+    )
     OOD_data: str = Field(..., description="Path to out-of-domain texts file.")
     min_length: int = Field(
         ..., description="Minimum text length for sampling (used for OOD texts)."
@@ -242,6 +259,35 @@ class FreevDecoderConfig(BaseModel):
     """
 
     type: Literal["freev"] = "freev"
+    ASP_channel: int = Field(..., description="Amplitude channel dimension")
+    ASP_resblock_kernel_sizes: List[int] = Field(
+        ..., description="Amplitude residual block kernels"
+    )
+    ASP_resblock_dilation_sizes: List[List[int]] = Field(
+        ..., description="Amplitude residual block dilation sizes"
+    )
+    ASP_input_conv_kernel_size: int = Field(
+        ..., description="Amplitude input convolution kerenel size"
+    )
+    ASP_output_conv_kernel_size: int = Field(
+        ..., description="Amplitude output convolution kernel size"
+    )
+    PSP_channel: int = Field(..., description="Phase channel dimension")
+    PSP_resblock_kernel_sizes: List[int] = Field(
+        ..., description="Phase residual block kernels"
+    )
+    PSP_resblock_dilation_sizes: List[List[int]] = Field(
+        ..., description="Phase residual block dilation sizes"
+    )
+    PSP_input_conv_kernel_size: int = Field(
+        ..., description="Phase input convolution kerenel size"
+    )
+    PSP_output_R_conv_kernel_size: int = Field(
+        ..., description="Phase real output convolution kernel size"
+    )
+    PSP_output_I_conv_kernel_size: int = Field(
+        ..., description="Phase imaginary output convolution kernel size"
+    )
 
 
 class TextEncoderConfig(BaseModel):
@@ -371,6 +417,11 @@ class LossWeightConfig(BaseModel):
         ..., description="Weight for score matching (diffusion) loss."
     )
     magphase: float = Field(..., description="Weight for magnitude/phase loss.")
+    amplitude: float = Field(..., description="Weight for amplitude loss.")
+    phase: float = Field(..., description="Weight for phase loss.")
+    stft_reconstruction: float = Field(
+        ..., description="Weight for stft reconstruction loss."
+    )
 
 
 class OptimizerConfig(BaseModel):

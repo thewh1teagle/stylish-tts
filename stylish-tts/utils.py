@@ -77,3 +77,21 @@ def recursive_munch(d):
         return [recursive_munch(v) for v in d]
     else:
         return d
+
+
+class DecoderPrediction:
+    def __init__(
+        self,
+        audio=None,
+        log_amplitude=None,
+        phase=None,
+        real=None,
+        imaginary=None,
+        magnitude=None,
+    ):
+        self.audio = audio
+        self.log_amplitude = log_amplitude
+        self.phase = phase
+        self.real = real
+        self.imaginary = imaginary
+        self.magnitude = magnitude
