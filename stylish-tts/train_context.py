@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from models.diffusion.sampler import DiffusionSampler
 from models.slmadv import SLMAdversarialLoss
+from torch.utils.tensorboard.writer import SummaryWriter
 
 
 class Manifest:
@@ -33,12 +34,13 @@ class Manifest:
 class TrainContext:
     def __init__(self) -> None:
         self.base_output_dir: Optional[str] = None
-        self.out_dir: Optional[str] = None
+        self.out_dir: str = ""
         self.config: Optional[Config] = None
         self.model_config: Optional[ModelConfig] = None
         self.batch_manager: Optional[BatchManager] = None
         self.stage: "Optional[StageContext]" = None
         self.manifest: Manifest = Manifest()
+        self.writer: Optional[SummaryWriter] = None
 
         self.accelerator: Optional[Accelerator] = None
         self.val_dataloader: Optional[DataLoader] = None
