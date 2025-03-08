@@ -83,7 +83,7 @@ class BatchManager:
         batch_size = self.probe_batch_max
         time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
-        iter = tqdm.tqdm(
+        iterator = tqdm.tqdm(
             iterable=time_keys,
             desc="Probing",
             total=max_frame_size,
@@ -92,10 +92,11 @@ class BatchManager:
             initial=0,
             colour="MAGENTA",
             delay=5,
+            leave=False,
         )
-        for key in iter:
+        for key in iterator:
             frame_count = get_frame_count(key)
-            iter.update(n=(frame_count - iter.n))
+            iterator.update(n=(frame_count - iterator.n))
             last_bin = key
             done = False
             while not done:
@@ -104,7 +105,7 @@ class BatchManager:
                         train.stage.set_batch_size(key, 1)
                         done = True
                     elif batch_size > 0:
-                        iter.set_postfix({"batch_size": str(batch_size)})
+                        iterator.set_postfix({"batch_size": str(batch_size)})
                         # logger.info(
                         #     "Attempting %d/%d @ %d"
                         #     % (frame_count, max_frame_size, batch_size)
@@ -130,11 +131,11 @@ class BatchManager:
                 except Exception as e:
                     if "out of memory" in str(e) or "cufft" in str(e).lower():
                         audio_length = (last_bin * 0.25) + 0.25
-                        iter.clear()
+                        iterator.clear()
                         train.logger.info(
                             f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
-                        iter.display()
+                        iterator.display()
                         # logger.info("Probe saw OOM -- backing off")
                         import gc
 
@@ -145,12 +146,12 @@ class BatchManager:
                         if batch_size > 1:
                             batch_size -= 1
                     else:
-                        iter.close()
+                        iterator.close()
                         logger.error("UNKNOWN EXCEPTION")
                         logger.error("".join(traceback.format_exception(e)))
                         raise e
         train.stage.save_batch_sizes()
-        iter.close()
+        iterator.close()
 
     def init_epoch(self, train, should_fast_forward=False) -> None:
         self.loader = build_dataloader(
@@ -177,7 +178,9 @@ class BatchManager:
 
         self.epoch_step_count = len(self.loader.batch_sampler)
 
-    def train_iterate(self, batch, train, debug=False) -> Optional[LossLog]:
+    def train_iterate(
+        self, batch, train, progress_bar=None, debug=False
+    ) -> Optional[LossLog]:
         result = None
         max_attempts = 3
         self.last_bin = get_padded_time_bin(batch[0].shape[-1])
@@ -190,20 +193,24 @@ class BatchManager:
                 if debug:
                     batch_size = train.stage.get_batch_size(self.last_bin)
                     audio_length = (self.last_bin * 0.25) + 0.25
+                    progress_bar.clear() if progress_bar is not None else None
                     train.logger.info(
                         f"train_batch(i={train.manifest.current_step}, batch={batch_size}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
                     )
+                    progress_bar.display() if progress_bar is not None else None
                 result = train.stage.train_batch(batch, train)
                 break
             except Exception as e:
                 batch_size = train.stage.get_batch_size(self.last_bin)
                 audio_length = (self.last_bin * 0.25) + 0.25
                 if "CUDA out of memory" in str(e) or "cufft" in str(e).lower():
+                    progress_bar.clear() if progress_bar is not None else None
                     train.logger.info(
                         f"{attempt * ('*' if attempt < max_attempts else 'X')} "
-                        + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size} "
-                        + str(batch[2])
+                        + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: "
+                        + f"audio_len {audio_length} total audio leng {audio_length * batch_size} "
                     )
+                    progress_bar.display() if progress_bar is not None else None
                     if attempt >= max_attempts:
                         self.skip_forward = True
                     # train.logger.info(e)

@@ -267,8 +267,9 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
 
         # TODO: This line should be obsolete soon
         _ = [train.model[key].train() for key in train.model]
+        progress_bar = None
         if train.accelerator.is_main_process:
-            iter = tqdm.tqdm(
+            iterator = tqdm.tqdm(
                 iterable=enumerate(train.batch_manager.loader),
                 desc=f"Train [{train.manifest.current_epoch}/{train.stage.max_epoch}]",
                 total=train.stage.steps_per_epoch,
@@ -277,15 +278,19 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                 bar_format="{desc}{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
                 colour="GREEN",
                 delay=5,
+                leave=False,
             )
+            progress_bar = iterator
         else:
-            iter = enumerate(train.batch_manager.loader)
+            iterator = enumerate(train.batch_manager.loader)
         loss = None
-        for _, batch in iter:
-            next_log = train.batch_manager.train_iterate(batch, train)
+        for _, batch in iterator:
+            next_log = train.batch_manager.train_iterate(
+                batch, train, progress_bar=progress_bar
+            )
             if loss is None:
-                loss = next_log.total()
-            loss = loss * 0.9 + next_log.total() * 0.1
+                loss = next_log.metrics["mel"]
+            loss = loss * 0.9 + next_log.metrics["mel"] * 0.1
             train.manifest.current_total_step += 1
             train.manifest.current_step += 1
             train.manifest.total_trained_audio_seconds += (
@@ -296,9 +301,9 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                 if next_log is not None:
                     logs.append(next_log)
                 if len(logs) >= train.config.training.log_interval:
-                    iter.clear()
+                    progress_bar.clear() if progress_bar is not None else None
                     combine_logs(logs).broadcast(train.manifest, train.stage)
-                    iter.display()
+                    progress_bar.display() if progress_bar is not None else None
                     logs = []
             num = train.manifest.current_total_step
             val_step = train.config.training.val_interval
@@ -307,24 +312,20 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             do_save = num % save_step == 0
             next_val = val_step - num % val_step - 1
             next_save = save_step - num % save_step - 1
-            postfix = {"loss": f"{loss:.3f}"}
+            postfix = {"mel loss": f"{loss:.3f}"}
             if next_val < next_save:
                 postfix["val"] = str(next_val)
             else:
                 postfix["save"] = str(next_save)
-            iter.set_postfix(postfix)
+            progress_bar.set_postfix(postfix) if progress_bar is not None else None
             if do_val or do_save:
-                if train.accelerator.is_main_process:
-                    iter.clear()
+                progress_bar.clear() if progress_bar is not None else None
                 train.stage.validate(train)
-                if train.accelerator.is_main_process:
-                    iter.display()
+                progress_bar.display() if progress_bar is not None else None
             if do_save:
-                if train.accelerator.is_main_process:
-                    iter.clear()
+                progress_bar.clear() if progress_bar is not None else None
                 save_checkpoint(train, prefix="checkpoint")
-                if train.accelerator.is_main_process:
-                    iter.display()
+                progress_bar.display() if progress_bar is not None else None
         if len(logs) > 0:
             combine_logs(logs).broadcast(train.manifest, train.stage)
             logs = []
@@ -333,8 +334,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
         train.manifest.training_log.append(
             f"Completed 1 epoch of {train.manifest.stage} training"
         )
-        if train.accelerator.is_main_process:
-            iter.close()
+        progress_bar.close() if progress_bar is not None else None
     train.stage.validate(train)
     save_checkpoint(train, prefix="checkpoint_final", long=False)
 

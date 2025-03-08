@@ -233,8 +233,9 @@ class StageContext:
         for key in train.model:
             train.model[key].eval()
         logs = []
+        progress_bar = None
         if train.accelerator.is_main_process:
-            iter = tqdm.tqdm(
+            iterator = tqdm.tqdm(
                 iterable=enumerate(train.val_dataloader),
                 desc="Validating",
                 total=len(train.val_dataloader),
@@ -242,10 +243,12 @@ class StageContext:
                 bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
                 colour="BLUE",
                 delay=2,
+                leave=False,
             )
+            progress_bar = iterator
         else:
-            iter = enumerate(train.val_dataloader)
-        for index, inputs in iter:
+            iterator = enumerate(train.val_dataloader)
+        for index, inputs in iterator:
             try:
                 batch = prepare_batch(
                     inputs, train.config.training.device, stages[self.name].inputs
@@ -273,15 +276,17 @@ class StageContext:
                         f"eval/sample_{index}_gt", audio_gt, 0, sample_rate=sample_rate
                     )
                     interim = combine_logs(logs)
-                    iter.set_postfix({"loss": f"{interim.total():.3f}"})
+                    if progress_bar is not None:
+                        progress_bar.set_postfix({"loss": f"{interim.total():.3f}"})
 
             except Exception as e:
                 path = inputs[8]
+                progress_bar.clear() if progress_bar is not None else None
                 train.logger.error(f"Validation failed {path}: {e}")
                 traceback.print_exc()
+                progress_bar.display() if progress_bar is not None else None
                 continue
-        if train.accelerator.is_main_process:
-            iter.close()
+        progress_bar.close() if progress_bar is not None else None
         validation = combine_logs(logs)
         validation.broadcast(train.manifest, train.stage, validation=True)
         total = validation.total()
