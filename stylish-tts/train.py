@@ -25,6 +25,7 @@ from models.models import build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from utils import get_data_path_list
 from loss_log import combine_logs
+import tqdm
 
 # from models.slmadv import SLMAdversarialLoss
 # from models.diffusion.sampler import (
@@ -266,20 +267,66 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
 
         # TODO: This line should be obsolete soon
         _ = [train.model[key].train() for key in train.model]
-        for _, batch in enumerate(train.batch_manager.loader):
-            next_log = train_val_iterate(batch, train)
-            if next_log is not None:
-                logs.append(next_log)
-            if len(logs) >= train.config.training.log_interval:
-                combine_logs(logs).broadcast(train.manifest, train.stage)
-                logs = []
+        if train.accelerator.is_main_process:
+            iter = tqdm.tqdm(
+                iterable=enumerate(train.batch_manager.loader),
+                desc=f"Train [{train.manifest.current_epoch}/{train.stage.max_epoch}]",
+                total=train.stage.steps_per_epoch,
+                unit="steps",
+                initial=train.manifest.current_step,
+                bar_format="{desc}{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
+            )
+        else:
+            iter = enumerate(train.batch_manager.loader)
+        loss = None
+        for _, batch in iter:
+            next_log = train.batch_manager.train_iterate(batch, train)
+            if loss is None:
+                loss = next_log.total()
+            loss = loss * 0.9 + next_log.total() * 0.1
+            train.manifest.current_total_step += 1
+            train.manifest.current_step += 1
+            train.manifest.total_trained_audio_seconds += (
+                float(len(batch[0][0]) * len(batch[0]))
+                / train.model_config.preprocess.sample_rate
+            )
+            if train.accelerator.is_main_process:
+                if next_log is not None:
+                    logs.append(next_log)
+                if len(logs) >= train.config.training.log_interval:
+                    iter.clear()
+                    combine_logs(logs).broadcast(train.manifest, train.stage)
+                    iter.display()
+                    logs = []
             num = train.manifest.current_total_step
-            do_val = num % train.config.training.val_interval == 0
-            do_save = num % train.config.training.save_interval == 0
+            val_step = train.config.training.val_interval
+            save_step = train.config.training.save_interval
+            do_val = num % val_step == 0
+            do_save = num % save_step == 0
+            next_val = val_step - num % val_step - 1
+            next_save = save_step - num % save_step - 1
+            postfix = {"loss": f"{loss:.3f}"}
+            if next_val < next_save:
+                postfix["val"] = str(next_val)
+            else:
+                postfix["save"] = str(next_save)
+            iter.set_postfix(postfix)
             if do_val or do_save:
+                if train.accelerator.is_main_process:
+                    iter.clear()
+                    iter.pause()
                 train.stage.validate(train)
+                if train.accelerator.is_main_process:
+                    iter.unpause()
+                    iter.display()
             if do_save:
+                if train.accelerator.is_main_process:
+                    iter.pause()
+                    iter.clear()
                 save_checkpoint(train, prefix="checkpoint")
+                if train.accelerator.is_main_process:
+                    iter.unpause()
+                    iter.display()
         if len(logs) > 0:
             combine_logs(logs).broadcast(train.manifest, train.stage)
             logs = []
@@ -288,21 +335,10 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
         train.manifest.training_log.append(
             f"Completed 1 epoch of {train.manifest.stage} training"
         )
+        if train.accelerator.is_main_process:
+            iter.close()
     train.stage.validate(train)
     save_checkpoint(train, prefix="checkpoint_final", long=False)
-
-
-def train_val_iterate(batch, train: TrainContext):
-    result = train.batch_manager.train_iterate(batch, train)
-    train.manifest.current_total_step += 1
-    train.manifest.current_step += 1
-    train.manifest.total_trained_audio_seconds += (
-        float(len(batch[0][0]) * len(batch[0]))
-        / train.model_config.preprocess.sample_rate
-    )
-    # filenames = batch[8]
-    # logger.info(f"Step {train.manifest.current_step} Processing: {filenames}")
-    return result
 
 
 def save_checkpoint(

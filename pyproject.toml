@@ -29,6 +29,7 @@ dependencies = [
     "xlstm>=2.0.2",
     "torchcrepe>=0.0.23",
     "sentence-transformers>=3.4.1",
+    "tqdm>=4.67.1",
 ]
 
 [dependency-groups]

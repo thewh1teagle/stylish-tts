@@ -3,11 +3,11 @@ import os.path as osp
 import numpy as np
 import soundfile as sf
 import librosa
+import tqdm
 
 import torch
 import torchaudio
 import torch.utils.data
-import torch.distributed as dist
 from huggingface_hub import hf_hub_download
 from safetensors import safe_open
 from librosa.filters import mel as librosa_mel_fn
@@ -171,15 +171,24 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.multispeaker = multispeaker
 
     def time_bins(self):
-        logger.info("Calculating sample lengths")
         sample_lengths = []
-        for data in self.data_list:
+        iter = tqdm.tqdm(
+            iterable=self.data_list,
+            desc="Calculating segment lengths",
+            total=len(self.data_list),
+            unit="segments",
+            bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining} ",
+            initial=0,
+        )
+        for data in iter:
             wave_path = data[0]
             wave, sr = sf.read(osp.join(self.root_path, wave_path))
             wave_len = wave.shape[0]
             if sr != 24000:
                 wave_len *= 24000 / sr
             sample_lengths.append(wave_len)
+        iter.clear()
+        iter.close()
         time_bins = {}
         for i in range(len(sample_lengths)):
             bin_num = get_time_bin(sample_lengths[i])
@@ -187,7 +196,6 @@ class FilePathDataset(torch.utils.data.Dataset):
                 if bin_num not in time_bins:
                     time_bins[bin_num] = []
                 time_bins[bin_num].append(i)
-        logger.info("Finished sample lengths")
         return time_bins
 
     def __len__(self):

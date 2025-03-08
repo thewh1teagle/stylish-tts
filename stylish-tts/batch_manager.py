@@ -13,6 +13,7 @@ import utils
 from accelerate.accelerator import Accelerator
 from text_utils import TextCleaner
 from torch.utils.data import DataLoader
+import tqdm
 import logging
 from config_loader import DatasetConfig
 from loss_log import LossLog
@@ -82,8 +83,17 @@ class BatchManager:
         batch_size = self.probe_batch_max
         time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
-        for key in time_keys:
+        iter = tqdm.tqdm(
+            iterable=time_keys,
+            desc="Probing",
+            total=max_frame_size,
+            unit="frames",
+            bar_format="{desc}{bar}| {n_fmt}/{total_fmt}{postfix} ",
+            initial=0,
+        )
+        for key in iter:
             frame_count = get_frame_count(key)
+            iter.update(n=(frame_count - iter.n))
             last_bin = key
             done = False
             while not done:
@@ -92,10 +102,11 @@ class BatchManager:
                         train.stage.set_batch_size(key, 1)
                         done = True
                     elif batch_size > 0:
-                        logger.info(
-                            "Attempting %d/%d @ %d"
-                            % (frame_count, max_frame_size, batch_size)
-                        )
+                        iter.set_postfix({"batch_size": str(batch_size)})
+                        # logger.info(
+                        #     "Attempting %d/%d @ %d"
+                        #     % (frame_count, max_frame_size, batch_size)
+                        # )
                         loader = build_dataloader(
                             self.dataset,
                             self.time_bins,
@@ -117,10 +128,12 @@ class BatchManager:
                 except Exception as e:
                     if "out of memory" in str(e) or "cufft" in str(e).lower():
                         audio_length = (last_bin * 0.25) + 0.25
+                        iter.clear()
                         train.logger.info(
                             f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
                         )
-                        logger.info("Probe saw OOM -- backing off")
+                        iter.display()
+                        # logger.info("Probe saw OOM -- backing off")
                         import gc
 
                         train.stage.optimizer.zero_grad()
@@ -130,10 +143,12 @@ class BatchManager:
                         if batch_size > 1:
                             batch_size -= 1
                     else:
+                        iter.close()
                         logger.error("UNKNOWN EXCEPTION")
                         logger.error("".join(traceback.format_exception(e)))
                         raise e
         train.stage.save_batch_sizes()
+        iter.close()
 
     def init_epoch(self, train, should_fast_forward=False) -> None:
         self.loader = build_dataloader(

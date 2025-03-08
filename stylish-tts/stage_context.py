@@ -5,6 +5,7 @@ import traceback
 from typing import Callable, List, Any, Dict
 import torch
 from munch import Munch
+import tqdm
 
 from stages import (
     train_first,
@@ -232,7 +233,17 @@ class StageContext:
         for key in train.model:
             train.model[key].eval()
         logs = []
-        for index, inputs in enumerate(train.val_dataloader):
+        if train.accelerator.is_main_process:
+            iter = tqdm.tqdm(
+                iterable=enumerate(train.val_dataloader),
+                desc="Validating",
+                total=len(train.val_dataloader),
+                unit="steps",
+                bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
+            )
+        else:
+            iter = enumerate(train.val_dataloader)
+        for index, inputs in iter:
             try:
                 batch = prepare_batch(
                     inputs, train.config.training.device, stages[self.name].inputs
@@ -259,12 +270,16 @@ class StageContext:
                     train.writer.add_audio(
                         f"eval/sample_{index}_gt", audio_gt, 0, sample_rate=sample_rate
                     )
+                    interim = combine_logs(logs)
+                    iter.set_postfix({"loss": f"{interim.total():.3f}"})
 
             except Exception as e:
                 path = inputs[8]
                 train.logger.error(f"Validation failed {path}: {e}")
                 traceback.print_exc()
                 continue
+        if train.accelerator.is_main_process:
+            iter.close()
         validation = combine_logs(logs)
         validation.broadcast(train.manifest, train.stage, validation=True)
         total = validation.total()

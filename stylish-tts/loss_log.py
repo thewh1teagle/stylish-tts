@@ -82,6 +82,8 @@ class LossLog:
         for key, value in self.metrics.items():
             if torch.is_tensor(value):
                 self.metrics[key] = value.item()
+        if torch.is_tensor(self.total_loss):
+            self.total_loss = self.total_loss.item()
         return self
 
     def add_loss(self, key, value):
