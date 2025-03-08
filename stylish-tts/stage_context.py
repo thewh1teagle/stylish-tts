@@ -164,7 +164,7 @@ class StageContext:
 
     def begin_stage(self, name, train):
         if len(self.name) > 0:
-            self.optimizer.reset_lr(train)
+            self.optimizer.reset_lr(name, train)
         #    for key in train.model:
         #        train.model[key] = train.accelerator.free_memory(train.model[key])
         #    for key in train.model:
@@ -179,7 +179,7 @@ class StageContext:
         self.validate_fn = stages[name].validate_fn
         if self.optimizer is None:
             self.optimizer = build_optimizer(
-                self.max_epoch, self.steps_per_epoch, train=train
+                self.name, self.max_epoch, self.steps_per_epoch, train=train
             )
             self.optimizer.prepare(train.accelerator)
         self.out_dir = train.out_dir

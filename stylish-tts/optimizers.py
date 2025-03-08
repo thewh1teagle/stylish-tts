@@ -37,9 +37,9 @@ class MultiOptimizer:
         # for key in self.disc_schedulers.keys():
         #    self.disc_schedulers[key] = accelerator.prepare(self.disc_schedulers[key])
 
-    def reset_lr(self, train):
+    def reset_lr(self, stage_name, train):
         for key in train.model.keys():
-            lr, _, _ = calculate_lr(key, train)
+            lr, _, _ = calculate_lr(key, stage_name, train)
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
                     param_group["lr"].fill_(lr)
@@ -136,11 +136,11 @@ class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
         return [group["lr"] * self.factor for group in self.optimizer.param_groups]
 
 
-def build_optimizer(max_epoch, steps_per_epoch, train=None):
+def build_optimizer(stage_name: str, max_epoch: int, steps_per_epoch: int, train=None):
     optim = {}
     schedulers = {}
     for key in train.model.keys():
-        lr, weight_decay, betas = calculate_lr(key, train)
+        lr, weight_decay, betas = calculate_lr(key, stage_name, train)
         optim[key] = AdamW(
             train.model[key].parameters(),
             lr=lr,
@@ -160,11 +160,12 @@ def build_optimizer(max_epoch, steps_per_epoch, train=None):
     return multi_optim
 
 
-def calculate_lr(key, train):
+def calculate_lr(key, stage_name, train):
     is_second = (
-        train.manifest.stage == "second"
-        or train.manifest.stage == "second_style"
-        or train.manifest.stage == "second_joint"
+        stage_name == "second"
+        or stage_name == "second_style"
+        or stage_name == "second_joint"
+        or stage_name == "textual"
     )
     lr = train.config.optimizer.lr
     weight_decay = 1e-4

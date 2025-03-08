@@ -109,5 +109,6 @@ def train_textual(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
+        train.accelerator.backward(log.total())
 
     return log.detach()

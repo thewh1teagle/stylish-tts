@@ -133,7 +133,7 @@ class BatchManager:
                         audio_length = (last_bin * 0.25) + 0.25
                         iterator.clear()
                         train.logger.info(
-                            f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_length {audio_length} total audio length {audio_length * batch_size}"
+                            f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_len {audio_length} total_audio_len {audio_length * batch_size}"
                         )
                         iterator.display()
                         # logger.info("Probe saw OOM -- backing off")
@@ -208,7 +208,7 @@ class BatchManager:
                     train.logger.info(
                         f"{attempt * ('*' if attempt < max_attempts else 'X')} "
                         + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: "
-                        + f"audio_len {audio_length} total audio leng {audio_length * batch_size} "
+                        + f"audio_len {audio_length} total_audio_len {audio_length * batch_size} "
                     )
                     progress_bar.display() if progress_bar is not None else None
                     if attempt >= max_attempts:

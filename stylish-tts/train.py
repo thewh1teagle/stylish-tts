@@ -1,4 +1,4 @@
-# load packages
+import copy
 import time
 import torch
 import click
@@ -211,7 +211,12 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
             train.manifest.current_epoch = 1
             train.manifest.current_step = 0
             train.stage.begin_stage(stage, train)
-        logger.info(f"Loading last checkpoint at {checkpoint} ...")
+        # if train.manifest.stage == "acoustic" and stage == "textual":
+        #     logger.info("Cloning style encoder into prosodic style encoder...")
+        #     train.model.prosodic_style_encoder.load_state_dict(
+        #         train.model.style_encoder.state_dict()
+        #     )
+        logger.info(f"Loaded last checkpoint at {checkpoint} ...")
     else:
         load_defaults(train, train.model)
 
@@ -312,7 +317,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             do_save = num % save_step == 0
             next_val = val_step - num % val_step - 1
             next_save = save_step - num % save_step - 1
-            postfix = {"mel loss": f"{loss:.3f}"}
+            postfix = {"mel_loss": f"{loss:.3f}"}
             if next_val < next_save:
                 postfix["val"] = str(next_val)
             else:
