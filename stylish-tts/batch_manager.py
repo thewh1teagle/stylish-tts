@@ -101,9 +101,8 @@ class BatchManager:
             done = False
             while not done:
                 try:
-                    if batch_size == 1:
-                        train.stage.set_batch_size(key, 1)
-                        done = True
+                    if batch_size == 0:
+                        train.stage.set_batch_size(key, 0)
                     elif batch_size > 0:
                         iterator.set_postfix({"batch_size": str(batch_size)})
                         # logger.info(
@@ -121,7 +120,6 @@ class BatchManager:
                             probe_batch_size=batch_size,
                             train=train,
                         )
-
                         loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _ = train.stage.train_batch(batch, train)
@@ -143,7 +141,7 @@ class BatchManager:
                         gc.collect()
                         torch.cuda.empty_cache()
                         counting_up = False
-                        if batch_size > 1:
+                        if batch_size > 0:
                             batch_size -= 1
                     else:
                         iterator.close()
