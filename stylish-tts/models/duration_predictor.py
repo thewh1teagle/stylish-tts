@@ -31,18 +31,17 @@ class DurationPredictor(nn.Module):
         self.prepare_projection = nn.Linear(d_hid + style_dim, d_hid)
         self.duration_proj = LinearNorm(d_hid, max_dur)
 
-    def forward(self, texts, style, text_lengths, alignment, m):
-        x = self.duration_encoder(texts, style, text_lengths, m)
-        m = m.to(text_lengths.device).unsqueeze(1)
-        x = self.lstm(x)
+    def forward(self, texts, style, text_lengths, alignment, mask):
+        d = self.duration_encoder(texts, style, text_lengths, mask)
+        x = self.lstm(d)
         x = self.prepare_projection(x)
         x = x.transpose(-1, -2)
         x = x.permute(0, 2, 1)
         duration = self.duration_proj(
             nn.functional.dropout(x, 0.5, training=self.training)
         )
-        en = x.transpose(-1, -2) @ alignment
-        return duration.squeeze(-1), en
+        encoding = d.transpose(-1, -2) @ alignment
+        return duration.squeeze(-1), encoding
 
 
 class DurationEncoder(nn.Module):

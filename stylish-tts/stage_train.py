@@ -78,7 +78,7 @@ def train_textual(batch, model, train) -> LossLog:
     state = BatchContext(train, model, batch.text_length)
     with train.accelerator.autocast():
         pred = state.textual_prediction_single(batch)
-        energy = state.acoustic_energy(batch.mels)
+        energy = state.acoustic_energy(batch.mel)
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
         log.add_loss(
@@ -94,12 +94,18 @@ def train_textual(batch, model, train) -> LossLog:
                 "magphase",
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
-        log.add_loss("F0", F.smooth_l1_loss(batch.pitch, state.pitch_prediction) / 10)
-        log.add_loss("norm", F.smooth_l1_loss(energy, state.energy_prediction))
+        log.add_loss(
+            "F0",
+            torch.nn.functional.smooth_l1_loss(batch.pitch, state.pitch_prediction)
+            / 10,
+        )
+        log.add_loss(
+            "norm", torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction)
+        )
         loss_ce, loss_dur = compute_duration_ce_loss(
             state.duration_prediction,
             state.duration_results[1].sum(dim=-1),
-            batch.input_lengths,
+            batch.text_length,
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)

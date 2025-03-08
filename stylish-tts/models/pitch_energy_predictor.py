@@ -53,8 +53,8 @@ class PitchEnergyPredictor(nn.Module):
         self.F0_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
         self.N_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
 
-    def forward(self, texts, style):
-        x = self.shared(texts.transpose(-1, -2))
+    def forward(self, prosody, style):
+        x = self.shared(prosody.transpose(-1, -2))
         x = self.prepare_projection(x)
         F0 = x.transpose(-1, -2)
         for block in self.F0:
@@ -82,7 +82,7 @@ class AdainResBlk1d(nn.Module):
         super().__init__()
         self.actv = actv
         self.upsample_type = upsample
-        self.upsample = UpSample1d(upsample)
+        self.upsample = UpSample1d(upsample=upsample)
         self.learned_sc = dim_in != dim_out
         self._build_weights(dim_in, dim_out, style_dim)
         self.dropout = nn.Dropout(dropout_p)
@@ -133,15 +133,15 @@ class AdainResBlk1d(nn.Module):
 
 
 class UpSample1d(nn.Module):
-    def __init__(self, layer_type):
+    def __init__(self, *, upsample):
         super().__init__()
-        self.layer_type = layer_type
+        self.upsample = upsample
 
     def forward(self, x):
-        if self.layer_type == "none":
-            return x
-        else:
+        if self.upsample:
             return F.interpolate(x, scale_factor=2, mode="nearest")
+        else:
+            return x
 
 
 class AdaIN1d(nn.Module):

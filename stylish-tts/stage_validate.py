@@ -17,7 +17,7 @@ def validate_acoustic(batch, train):
 def validate_textual(batch, train):
     state = BatchContext(train, train.model, batch.text_length)
     pred = state.textual_prediction_single(batch)
-    energy = state.acoustic_energy(batch.mels)
+    energy = state.acoustic_energy(batch.mel)
     log = build_loss_log(train)
     log.add_loss("mel", train.stft_loss(pred.audio.squeeze(1), batch.audio_gt))
     log.add_loss(

@@ -32,23 +32,15 @@ class TrainingPlanConfig(BaseModel):
 
     pre_acoustic: int = Field(
         default=10,
-        description="Number of epochs for the pretraining of acoustic models.",
+        description="Number of epochs for the pretraining of acoustic models (first stage).",
     )
     acoustic: int = Field(
         default=10,
-        description="Number of epochs for joint training of acoustic models.",
+        description="Number of epochs for joint training of acoustic models (second stage).",
     )
-    vocoder: int = Field(
-        default=10, description="Number of epochs for the vocoder pretraining stage."
-    )
-    first: int = Field(
-        default=10, description="Number of epochs for the first training stage."
-    )
-    first_tma: int = Field(
-        default=10, description="Number of epochs for the first stage with TMA."
-    )
-    second: int = Field(
-        default=10, description="Number of epochs for the second training stage."
+    textual: int = Field(
+        default=10,
+        description="Number of epochs for training of textual models stage (third stage).",
     )
     second_style: int = Field(
         default=10,

@@ -268,13 +268,13 @@ class BatchContext:
         style_embedding = self.style_embedding(batch.sentence_embedding)
         prosody_embedding = self.prosodic_style_embedding(batch.sentence_embedding)
         plbert_embedding = self.model.bert(
-            batch.texts, attention_mask=(~self.text_mask).int()
+            batch.text, attention_mask=(~self.text_mask).int()
         )
         duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
-            batch.input_lengths,
+            batch.text_length,
             self.duration_results[1],
             self.text_mask,
         )
