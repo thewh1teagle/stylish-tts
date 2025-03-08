@@ -172,7 +172,7 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def time_bins(self):
         sample_lengths = []
-        iter = tqdm.tqdm(
+        iterator = tqdm.tqdm(
             iterable=self.data_list,
             desc="Calculating segment lengths",
             total=len(self.data_list),
@@ -181,15 +181,15 @@ class FilePathDataset(torch.utils.data.Dataset):
             initial=0,
             colour="MAGENTA",
         )
-        for data in iter:
+        for data in iterator:
             wave_path = data[0]
             wave, sr = sf.read(osp.join(self.root_path, wave_path))
             wave_len = wave.shape[0]
             if sr != 24000:
                 wave_len *= 24000 / sr
             sample_lengths.append(wave_len)
-        iter.clear()
-        iter.close()
+        iterator.clear()
+        iterator.close()
         time_bins = {}
         for i in range(len(sample_lengths)):
             bin_num = get_time_bin(sample_lengths[i])
