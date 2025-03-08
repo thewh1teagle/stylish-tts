@@ -240,6 +240,8 @@ class StageContext:
                 total=len(train.val_dataloader),
                 unit="steps",
                 bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
+                colour="BLUE",
+                delay=2,
             )
         else:
             iter = enumerate(train.val_dataloader)

@@ -179,6 +179,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             unit="segments",
             bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining} ",
             initial=0,
+            colour="MAGENTA",
         )
         for data in iter:
             wave_path = data[0]

@@ -88,8 +88,10 @@ class BatchManager:
             desc="Probing",
             total=max_frame_size,
             unit="frames",
-            bar_format="{desc}{bar}| {n_fmt}/{total_fmt}{postfix} ",
+            bar_format="{desc} |{bar}| {n_fmt}/{total_fmt}{postfix} ",
             initial=0,
+            colour="MAGENTA",
+            delay=5,
         )
         for key in iter:
             frame_count = get_frame_count(key)

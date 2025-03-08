@@ -275,6 +275,8 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                 unit="steps",
                 initial=train.manifest.current_step,
                 bar_format="{desc}{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
+                colour="GREEN",
+                delay=5,
             )
         else:
             iter = enumerate(train.batch_manager.loader)
@@ -314,18 +316,14 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             if do_val or do_save:
                 if train.accelerator.is_main_process:
                     iter.clear()
-                    iter.pause()
                 train.stage.validate(train)
                 if train.accelerator.is_main_process:
-                    iter.unpause()
                     iter.display()
             if do_save:
                 if train.accelerator.is_main_process:
-                    iter.pause()
                     iter.clear()
                 save_checkpoint(train, prefix="checkpoint")
                 if train.accelerator.is_main_process:
-                    iter.unpause()
                     iter.display()
         if len(logs) > 0:
             combine_logs(logs).broadcast(train.manifest, train.stage)
