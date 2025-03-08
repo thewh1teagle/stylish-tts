@@ -1,4 +1,3 @@
-import copy
 import time
 import torch
 import click
@@ -117,6 +116,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         split_batches=True,
         kwargs_handlers=[ddp_kwargs],
         mixed_precision=train.config.training.mixed_precision,
+        step_scheduler_with_optimizer=False,
     )
     train.accelerator.even_batches = False
 

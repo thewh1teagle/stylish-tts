@@ -1,16 +1,12 @@
 # coding:utf-8
-import os, sys
-import os.path as osp
-import numpy as np
 import torch
-from torch import nn
-from torch.optim import Optimizer
-from functools import reduce
 from torch.optim import AdamW
 import logging
 import transformers
 
 logger = logging.getLogger(__name__)
+logical_step_limit = 10000
+logical_step_warmup = 100
 
 
 class MultiOptimizer:
@@ -24,34 +20,24 @@ class MultiOptimizer:
         # self.scale_schedulers = {}
         self.disc_schedulers = {}
         self.keys = list(optimizers.keys())
-        self.param_groups = reduce(
-            lambda x, y: x + y, [v.param_groups for v in self.optimizers.values()]
-        )
-        # for key in self.keys:
-        #    self.scale_schedulers[key] = ScaleLR(self.optimizers[key])
 
     def prepare(self, accelerator):
         for key in self.optimizers.keys():
             self.optimizers[key] = accelerator.prepare(self.optimizers[key])
             self.schedulers[key] = accelerator.prepare(self.schedulers[key])
-        # for key in self.disc_schedulers.keys():
-        #    self.disc_schedulers[key] = accelerator.prepare(self.disc_schedulers[key])
 
     def reset_lr(self, stage_name, train):
         for key in train.model.keys():
-            lr, _, _ = calculate_lr(key, stage_name, train)
+            lr, _, _ = calculate_lr(key, stage_name, train=train)
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
                     param_group["lr"].fill_(lr)
+                    param_group["initial_lr"].fill_(lr)
                 else:
                     param_group["lr"] = lr
-
-    # def free_memory(self, accelerator):
-    #    for key in self.optimizers.keys():
-    #        accelerator.free_memory(self.optimizers[key])
-    #        accelerator.free_memory(self.schedulers[key])
-    #    # for key in self.disc_schedulers.keys():
-    #    #    accelerator.free_memory(self.disc_schedulers[key])
+                    param_group["initial_lr"] = lr
+            self.schedulers[key].scheduler.last_epoch = -1
+            self.schedulers[key].step()
 
     def add_discriminator_schedulers(self, discriminator_loss):
         for key in ["msd", "mpd"]:
@@ -66,25 +52,14 @@ class MultiOptimizer:
                 if isinstance(param_group["lr"], torch.Tensor):
                     torch.clamp(
                         param_group["lr"],
-                        self.min_disc_lr,
-                        self.max_disc_lr,
-                        param_group["lr"],
+                        min=self.min_disc_lr,
+                        max=self.max_disc_lr,
+                        out=param_group["lr"],
                     )
                 else:
                     param_group["lr"] = min(
                         max(self.min_disc_lr, param_group["lr"]), self.max_disc_lr
                     )
-
-    def state_dict(self):
-        state_dicts = [(key, self.optimizers[key].state_dict()) for key in self.keys]
-        return state_dicts
-
-    def load_state_dict(self, state_dict):
-        for key, val in state_dict:
-            try:
-                self.optimizers[key].load_state_dict(val)
-            except:
-                logger.info("Unloaded %s" % key)
 
     def step(self, key=None, scaler=None):
         keys = [key] if key is not None else self.keys
@@ -103,44 +78,18 @@ class MultiOptimizer:
         else:
             _ = [self.optimizers[key].zero_grad() for key in self.keys]
 
-    def scheduler(self, *args, key=None):
-        pass
-        # if key is not None:
-        #    self.schedulers[key].step(*args)
-        # else:
-        #    _ = [self.schedulers[key].step(*args) for key in self.keys]
-
-    # def scale(self, scale, key_in=None):
-    #    keys = [key_in]
-    #    if key_in is None:
-    #        keys = self.keys
-    #    for key in keys:
-    #        self.scale_schedulers[key].set_factor(scale)
-    #        self.scale_schedulers[key].step()
+    def scheduler(self, step: int, step_limit: int):
+        logical_step = step * logical_step_limit // step_limit
+        for key in self.keys:
+            self.schedulers[key].scheduler.last_epoch = logical_step
+            self.schedulers[key].step()
 
 
-class ScaleLR(torch.optim.lr_scheduler.LRScheduler):
-    def __init__(
-        self,
-        optimizer: Optimizer,
-        factor: float = 1.0,
-    ):
-        self.factor = factor
-        super().__init__(optimizer)
-
-    def set_factor(self, factor):
-        self.factor = factor
-
-    def get_lr(self):
-        """Compute the learning rate of each parameter group."""
-        return [group["lr"] * self.factor for group in self.optimizer.param_groups]
-
-
-def build_optimizer(stage_name: str, max_epoch: int, steps_per_epoch: int, train=None):
+def build_optimizer(stage_name: str, *, train):
     optim = {}
     schedulers = {}
     for key in train.model.keys():
-        lr, weight_decay, betas = calculate_lr(key, stage_name, train)
+        lr, weight_decay, betas = calculate_lr(key, stage_name, train=train)
         optim[key] = AdamW(
             train.model[key].parameters(),
             lr=lr,
@@ -150,8 +99,8 @@ def build_optimizer(stage_name: str, max_epoch: int, steps_per_epoch: int, train
         )
         schedulers[key] = transformers.get_cosine_schedule_with_warmup(
             optim[key],
-            num_warmup_steps=0,  # 200,
-            num_training_steps=steps_per_epoch * max_epoch,
+            num_warmup_steps=50,  # logical_step_warmup,
+            num_training_steps=10000,  # logical_step_limit,
         )
     min_disc_lr = train.config.optimizer.lr / 10
     max_disc_lr = train.config.optimizer.lr * 10
@@ -160,7 +109,7 @@ def build_optimizer(stage_name: str, max_epoch: int, steps_per_epoch: int, train
     return multi_optim
 
 
-def calculate_lr(key, stage_name, train):
+def calculate_lr(key, stage_name, *, train):
     is_second = (
         stage_name == "second"
         or stage_name == "second_style"

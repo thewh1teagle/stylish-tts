@@ -178,9 +178,7 @@ class StageContext:
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
         if self.optimizer is None:
-            self.optimizer = build_optimizer(
-                self.name, self.max_epoch, self.steps_per_epoch, train=train
-            )
+            self.optimizer = build_optimizer(self.name, train=train)
             self.optimizer.prepare(train.accelerator)
         self.out_dir = train.out_dir
         self.load_batch_sizes()

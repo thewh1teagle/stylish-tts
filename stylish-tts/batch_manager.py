@@ -1,8 +1,7 @@
-import math
-import gc, json, traceback
-import os.path as osp
+import gc
+import traceback
 import torch
-from typing import Optional, Callable, Dict, Any, List
+from typing import Optional, Dict, List
 from meldataset import (
     FilePathDataset,
     build_dataloader,
@@ -26,14 +25,14 @@ class BatchManager:
         self,
         dataset_config: DatasetConfig,
         log_dir: str,
-        probe_batch_max: int = None,
-        device: str = "cpu",
         accelerator: Optional["Accelerator"] = None,
-        multispeaker: bool = False,
-        text_cleaner: TextCleaner = None,
-        stage: str = "",
-        epoch: int = 1,
         *,
+        probe_batch_max: int,
+        device: str,
+        multispeaker: bool,
+        text_cleaner: TextCleaner,
+        stage: str,
+        epoch: int,
         train,
     ):
         self.train_path: str = dataset_config.train_data
@@ -41,7 +40,7 @@ class BatchManager:
         self.log_dir: str = log_dir
         self.device: str = device
         self.multispeaker: bool = multispeaker
-        self.stage: int = stage
+        self.stage: str = stage
 
         train_list = utils.get_data_path_list(self.train_path)
         if len(train_list) == 0:
@@ -67,7 +66,6 @@ class BatchManager:
         # self.epoch_step_count: int = len(self.loader.batch_sampler)
         self.epoch_step_count: int = 1000
         self.last_oom: int = -1
-        self.last_bin: Optional[int] = None
         self.skip_forward: bool = False
 
     def get_step_count(self) -> int:
@@ -121,7 +119,6 @@ class BatchManager:
                             probe_batch_size=batch_size,
                             train=train,
                         )
-                        loader = train.accelerator.prepare(loader)
                         for _, batch in enumerate(loader):
                             _ = train.stage.train_batch(batch, train)
                             break
@@ -141,7 +138,6 @@ class BatchManager:
                         train.stage.optimizer.zero_grad()
                         gc.collect()
                         torch.cuda.empty_cache()
-                        counting_up = False
                         if batch_size > 0:
                             batch_size -= 1
                     else:
@@ -172,7 +168,6 @@ class BatchManager:
         #     self.probe_loop(train)
         #     self.resume_loader = None
         self.last_oom = -1
-        self.last_bin = None
         self.skip_forward = False
 
         self.epoch_step_count = len(self.loader.batch_sampler)
@@ -182,16 +177,16 @@ class BatchManager:
     ) -> Optional[LossLog]:
         result = None
         max_attempts = 3
-        self.last_bin = get_padded_time_bin(batch[0].shape[-1])
-        if self.last_bin == self.last_oom and self.skip_forward:
+        last_bin = get_padded_time_bin(batch[0].shape[-1])
+        if last_bin == -1 or (last_bin == self.last_oom and self.skip_forward):
             return result
-        elif self.last_bin != self.last_oom:
+        elif last_bin != self.last_oom:
             self.skip_forward = False
         for attempt in range(1, max_attempts + 1):
             try:
                 if debug:
-                    batch_size = train.stage.get_batch_size(self.last_bin)
-                    audio_length = (self.last_bin * 0.25) + 0.25
+                    batch_size = train.stage.get_batch_size(last_bin)
+                    audio_length = (last_bin * 0.25) + 0.25
                     progress_bar.clear() if progress_bar is not None else None
                     train.logger.info(
                         f"train_batch(i={train.manifest.current_step}, batch={batch_size}, steps={train.manifest.current_total_step}), segment_bin_length={audio_length}, total_audio_in_batch={batch_size * audio_length}"
@@ -200,13 +195,13 @@ class BatchManager:
                 result = train.stage.train_batch(batch, train)
                 break
             except Exception as e:
-                batch_size = train.stage.get_batch_size(self.last_bin)
-                audio_length = (self.last_bin * 0.25) + 0.25
+                batch_size = train.stage.get_batch_size(last_bin)
+                audio_length = (last_bin * 0.25) + 0.25
                 if "CUDA out of memory" in str(e) or "cufft" in str(e).lower():
                     progress_bar.clear() if progress_bar is not None else None
                     train.logger.info(
                         f"{attempt * ('*' if attempt < max_attempts else 'X')} "
-                        + f"TRAIN_BATCH OOM ({self.last_bin}) @ batch_size {batch_size}: "
+                        + f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: "
                         + f"audio_len {audio_length} total_audio_len {audio_length * batch_size} "
                     )
                     progress_bar.display() if progress_bar is not None else None
@@ -214,18 +209,22 @@ class BatchManager:
                         self.skip_forward = True
                     # train.logger.info(e)
                     train.stage.optimizer.zero_grad()
-                    if self.last_oom != self.last_bin:
-                        self.last_oom = self.last_bin
+                    if self.last_oom != last_bin:
+                        self.last_oom = last_bin
                         if batch_size > 1:
                             batch_size -= 1
-                        train.stage.set_batch_size(self.last_bin, batch_size)
+                        train.stage.set_batch_size(last_bin, batch_size)
                         train.stage.save_batch_sizes()
                     gc.collect()
                     torch.cuda.empty_cache()
                 else:
                     logger.error("".join(traceback.format_exception(e)))
                     raise e
-        # train.optimizer.scale(1.0 / math.sqrt(batch[0].shape[0]))
-        train.stage.optimizer.scheduler()
+        step = (
+            train.manifest.current_step
+            + (train.manifest.current_epoch - 1) * train.stage.steps_per_epoch
+        )
+        step_limit = train.stage.max_epoch * train.stage.steps_per_epoch
+        train.stage.optimizer.scheduler(step, step_limit)
         train.stage.optimizer.step_discriminator_schedulers()
         return result

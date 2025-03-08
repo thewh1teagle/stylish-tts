@@ -41,7 +41,7 @@ class LossLog:
             )
         else:
             writer_type = "train"
-            lr = stage.optimizer.param_groups[0]["lr"]
+            lr = stage.optimizer.optimizers["text_encoder"].param_groups[0]["lr"]
             lr_string = f", lr: {lr:.7f}"
             self.logger.info(
                 f"Epoch [{manifest.current_epoch}/{stage.max_epoch}], "
