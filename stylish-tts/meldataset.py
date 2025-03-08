@@ -180,6 +180,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining} ",
             initial=0,
             colour="MAGENTA",
+            dynamic_ncols=True,
         )
         for data in iterator:
             wave_path = data[0]

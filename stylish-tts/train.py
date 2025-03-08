@@ -284,6 +284,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                 colour="GREEN",
                 delay=5,
                 leave=False,
+                dynamic_ncols=True,
             )
             progress_bar = iterator
         else:

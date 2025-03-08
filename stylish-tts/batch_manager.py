@@ -93,6 +93,7 @@ class BatchManager:
             colour="MAGENTA",
             delay=5,
             leave=False,
+            dynamic_ncols=True,
         )
         for key in iterator:
             frame_count = get_frame_count(key)

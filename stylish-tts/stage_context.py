@@ -244,6 +244,7 @@ class StageContext:
                 colour="BLUE",
                 delay=2,
                 leave=False,
+                dynamic_ncols=True,
             )
             progress_bar = iterator
         else:
