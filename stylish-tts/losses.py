@@ -290,7 +290,6 @@ def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
 
 
 class GeneratorLoss(torch.nn.Module):
-
     def __init__(self, mpd, msd):
         super(GeneratorLoss, self).__init__()
         self.mpd = mpd
@@ -314,7 +313,6 @@ class GeneratorLoss(torch.nn.Module):
 
 
 class DiscriminatorLoss(torch.nn.Module):
-
     def __init__(self, mpd, msd):
         super(DiscriminatorLoss, self).__init__()
         self.mpd = mpd
@@ -367,7 +365,6 @@ class DiscriminatorLoss(torch.nn.Module):
 
 
 class WavLMLoss(torch.nn.Module):
-
     def __init__(self, model, wd, model_sr, slm_sr=16000):
         super(WavLMLoss, self).__init__()
         self.wavlm = AutoModel.from_pretrained(model)

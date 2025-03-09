@@ -106,6 +106,23 @@ def save_git_diff(out_dir):
     print(f"Git diff saved to {diff_file}")
 
 
+def clamped_exp(x: torch.Tensor) -> torch.Tensor:
+    result = torch.zeros_like(x, device=x.device)
+    torch.clamp(x, -35, 35, out=result)
+    return torch.exp(result)
+
+
+def leaky_clamp(
+    x_in: torch.Tensor, min_f: float, max_f: float, slope: float = 0.001
+) -> torch.Tensor:
+    x = x_in
+    min_t = torch.full_like(x, min_f, device=x.device)
+    max_t = torch.full_like(x, max_f, device=x.device)
+    x = torch.maximum(x, min_t)  # + slope * (x - min_t))
+    x = torch.minimum(x, max_t)  # + slope * (x - max_t))
+    return x
+
+
 class DecoderPrediction:
     def __init__(
         self,
