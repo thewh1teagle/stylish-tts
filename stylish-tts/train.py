@@ -22,7 +22,7 @@ from stage_context import StageContext, is_valid_stage, valid_stage_list
 
 from models.models import build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
-from utils import get_data_path_list
+from utils import get_data_path_list, save_git_diff
 from loss_log import combine_logs
 import tqdm
 
@@ -104,6 +104,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     shutil.copy(
         model_config_path, osp.join(train.out_dir, osp.basename(model_config_path))
     )
+    save_git_diff(train.out_dir)
 
     train.logger = logging.getLogger(__name__)
     setup_logger(train.logger, train.out_dir)

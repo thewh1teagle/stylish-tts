@@ -4,6 +4,7 @@ import torch
 import matplotlib.pyplot as plt
 from munch import Munch
 import os
+import subprocess
 
 
 def maximum_path(neg_cent, mask):
@@ -70,6 +71,39 @@ def recursive_munch(d):
         return [recursive_munch(v) for v in d]
     else:
         return d
+
+
+def get_git_commit_hash():
+    try:
+        commit_hash = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"])
+            .strip()
+            .decode("utf-8")
+        )
+        return commit_hash
+    except subprocess.CalledProcessError as e:
+        print("Error obtaining git commit hash:", e)
+        return "unknown"
+
+
+def get_git_diff():
+    try:
+        # Run the git diff command
+        diff_output = subprocess.check_output(["git", "diff"]).decode("utf-8")
+        return diff_output
+    except subprocess.CalledProcessError as e:
+        print("Error obtaining git diff:", e)
+        return ""
+
+
+def save_git_diff(out_dir):
+    hash = get_git_commit_hash()
+    diff = get_git_diff()
+    diff_file = os.path.join(out_dir, "git_state.txt")
+    with open(diff_file, "w") as f:
+        f.write(f"Git commit hash: {hash}\n\n")
+        f.write(diff)
+    print(f"Git diff saved to {diff_file}")
 
 
 class DecoderPrediction:
