@@ -828,18 +828,18 @@ def build_model(model_config: ModelConfig):
     #    dropout=model_config.prosody_predictor.dropout,
     # )
 
-    # style_encoder = StyleEncoder(
-    #    dim_in=model_config.embedding_encoder.dim_in,
-    #    style_dim=model_config.model.style_dim,
-    #    max_conv_dim=model_config.embedding_encoder.hidden_dim,
-    #    skip_downsamples=model_config.embedding_encoder.skip_downsamples,
-    # )  # acoustic style encoder
-    # predictor_encoder = StyleEncoder(
-    #    dim_in=model_config.embedding_encoder.dim_in,
-    #    style_dim=model_config.model.style_dim,
-    #    max_conv_dim=model_config.embedding_encoder.hidden_dim,
-    #    skip_downsamples=model_config.embedding_encoder.skip_downsamples,
-    # )  # prosodic style encoder
+    style_encoder = StyleEncoder(
+        dim_in=model_config.embedding_encoder.dim_in,
+        style_dim=model_config.model.style_dim,
+        max_conv_dim=model_config.embedding_encoder.hidden_dim,
+        skip_downsamples=model_config.embedding_encoder.skip_downsamples,
+    )  # acoustic style encoder
+    predictor_encoder = StyleEncoder(
+        dim_in=model_config.embedding_encoder.dim_in,
+        style_dim=model_config.model.style_dim,
+        max_conv_dim=model_config.embedding_encoder.hidden_dim,
+        skip_downsamples=model_config.embedding_encoder.skip_downsamples,
+    )  # prosodic style encoder
 
     # define diffusion model
     # if model_config.model.multispeaker:
@@ -887,16 +887,18 @@ def build_model(model_config: ModelConfig):
         pitch_energy_predictor=pitch_energy_predictor,
         decoder=decoder,
         text_encoder=text_encoder,
-        prosodic_style_encoder=nn.Linear(
-            model_config.embedding_encoder.dim_in,
+        # TODO Make this a config option
+        # TODO Make the sbert model a config option
+        textual_prosody_encoder=nn.Linear(
+            384,  # model_config.embedding_encoder.dim_in,
             model_config.model.style_dim,
         ),
-        style_encoder=nn.Linear(
-            model_config.embedding_encoder.dim_in,
+        textual_style_encoder=nn.Linear(
+            384,  # model_config.embedding_encoder.dim_in,
             model_config.model.style_dim,
         ),
-        # predictor_encoder=predictor_encoder,
-        # style_encoder=style_encoder,
+        acoustic_prosody_encoder=predictor_encoder,
+        acoustic_style_encoder=style_encoder,
         # diffusion=diffusion,
         text_aligner=text_aligner,
         # pitch_extractor=pitch_extractor,

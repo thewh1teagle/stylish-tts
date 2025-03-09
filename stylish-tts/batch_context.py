@@ -142,14 +142,17 @@ class BatchContext:
             energy = log_norm(mels.unsqueeze(1)).squeeze(1)
         return energy
 
-    # def acoustic_style_embedding(self, mels: torch.Tensor):
-    #     return self.model.style_encoder(mels.unsqueeze(1))
+    def acoustic_style_embedding(self, mels: torch.Tensor):
+        return self.model.acoustic_style_encoder(mels.unsqueeze(1))
 
-    def style_embedding(self, sentence_embedding: torch.Tensor):
-        return self.model.style_encoder(sentence_embedding)
+    def acoustic_prosody_embedding(self, mels: torch.Tensor):
+        return self.model.acoustic_prosody_encoder(mels.unsqueeze(1))
 
-    def prosodic_style_embedding(self, sentence_embedding: torch.Tensor):
-        return self.model.prosodic_style_encoder(sentence_embedding)
+    def textual_style_embedding(self, sentence_embedding: torch.Tensor):
+        return self.model.textual_style_encoder(sentence_embedding)
+
+    def textual_prosody_embedding(self, sentence_embedding: torch.Tensor):
+        return self.model.textual_prosody_encoder(sentence_embedding)
 
     def decoding(
         self,
@@ -220,8 +223,7 @@ class BatchContext:
             use_random_choice=True,
         )
         energy = self.acoustic_energy(batch.mel)
-        # style_embedding = self.acoustic_style_embedding(batch.mel)
-        style_embedding = self.style_embedding(batch.sentence_embedding)
+        style_embedding = self.acoustic_style_embedding(batch.mel)
         prediction = self.decoding(
             text_encoding,
             duration,
@@ -244,8 +246,7 @@ class BatchContext:
             use_random_choice=use_random_mono,
         )
         energy = self.acoustic_energy(batch.mel)
-        # style_embedding = self.acoustic_style_embedding(batch.mel)
-        style_embedding = self.style_embedding(batch.sentence_embedding)
+        style_embedding = self.acoustic_style_embedding(batch.mel)
         prediction = self.decoding_single(
             text_encoding,
             duration,
@@ -265,8 +266,8 @@ class BatchContext:
             apply_attention_mask=False,
             use_random_choice=False,
         )
-        style_embedding = self.style_embedding(batch.sentence_embedding)
-        prosody_embedding = self.prosodic_style_embedding(batch.sentence_embedding)
+        style_embedding = self.acoustic_style_embedding(batch.mel)
+        prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
         plbert_embedding = self.model.bert(
             batch.text, attention_mask=(~self.text_mask).int()
         )

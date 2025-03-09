@@ -1,7 +1,7 @@
 import torch
 from batch_context import BatchContext
-from loss_log import LossLog, build_loss_log, combine_logs
-from losses import freev_loss, magphase_loss, compute_duration_ce_loss
+from loss_log import LossLog, build_loss_log
+from losses import magphase_loss, compute_duration_ce_loss
 
 
 def train_pre_acoustic(batch, model, train) -> LossLog:
@@ -14,11 +14,11 @@ def train_pre_acoustic(batch, model, train) -> LossLog:
             "mel",
             train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
         )
-        # if pred.magnitude is not None and pred.phase is not None:
-        #     log.add_loss(
-        #         "magphase",
-        #         magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
-        #     )
+        if pred.magnitude is not None and pred.phase is not None:
+            log.add_loss(
+                "magphase",
+                magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
+            )
         train.accelerator.backward(log.total())
     return log.detach()
 

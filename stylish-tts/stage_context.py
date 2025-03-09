@@ -83,7 +83,7 @@ stages = {
     "pre_acoustic": StageConfig(
         train_fn=train_pre_acoustic,
         validate_fn=validate_acoustic,
-        train_models=["text_encoder", "style_encoder", "decoder"],
+        train_models=["text_encoder", "acoustic_style_encoder", "decoder"],
         eval_models=["text_aligner"],
         disc_models=[],
         inputs=[
@@ -99,7 +99,12 @@ stages = {
     "acoustic": StageConfig(
         train_fn=train_acoustic,
         validate_fn=validate_acoustic,
-        train_models=["text_encoder", "style_encoder", "decoder", "text_aligner"],
+        train_models=[
+            "text_encoder",
+            "acoustic_style_encoder",
+            "decoder",
+            "text_aligner",
+        ],
         eval_models=[],
         disc_models=["msd", "mpd"],
         inputs=[
@@ -120,13 +125,18 @@ stages = {
         train_fn=train_textual,
         validate_fn=validate_textual,
         train_models=[
-            "prosodic_style_encoder",
+            "acoustic_prosody_encoder",
             "duration_predictor",
             "pitch_energy_predictor",
             "bert",
             "bert_encoder",
         ],
-        eval_models=["text_encoder", "style_encoder", "decoder", "text_aligner"],
+        eval_models=[
+            "text_encoder",
+            "acoustic_style_encoder",
+            "decoder",
+            "text_aligner",
+        ],
         disc_models=[],
         inputs=[
             "text",
@@ -275,6 +285,7 @@ class StageContext:
                         f"eval/sample_{index}_gt", audio_gt, 0, sample_rate=sample_rate
                     )
                     interim = combine_logs(logs)
+                    interim.calculate_metrics()
                     if progress_bar is not None:
                         progress_bar.set_postfix({"loss": f"{interim.total():.3f}"})
 
