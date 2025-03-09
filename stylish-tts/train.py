@@ -211,6 +211,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
             train.manifest.current_epoch = 1
             train.manifest.current_step = 0
             train.stage.begin_stage(stage, train)
+        train.stage.optimizers.reset_discriminator_schedulers()
         # if train.manifest.stage == "acoustic" and stage == "textual":
         #     logger.info("Cloning style encoder into prosodic style encoder...")
         #     train.model.prosodic_style_encoder.load_state_dict(

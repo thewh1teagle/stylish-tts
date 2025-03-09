@@ -38,6 +38,7 @@ class MultiOptimizer:
                     param_group["initial_lr"] = lr
             self.schedulers[key].scheduler.last_epoch = -1
             self.schedulers[key].step()
+        self.reset_discriminator_schedulers()
 
     def add_discriminator_schedulers(self, discriminator_loss):
         for key in ["msd", "mpd"]:
@@ -60,6 +61,16 @@ class MultiOptimizer:
                     param_group["lr"] = min(
                         max(self.min_disc_lr, param_group["lr"]), self.max_disc_lr
                     )
+
+    def reset_discriminator_schedulers(self):
+        for key in ["msd", "mpd"]:
+            for param_group in self.optimizers[key].param_groups:
+                if isinstance(param_group["lr"], torch.Tensor):
+                    param_group["lr"] = zeros_like(
+                        param_group["lr"], device=param_group["lr"].device
+                    )
+                else:
+                    param_group["lr"] = 0
 
     def step(self, key=None, scaler=None):
         keys = [key] if key is not None else self.keys
