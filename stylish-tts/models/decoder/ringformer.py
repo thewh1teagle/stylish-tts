@@ -7,13 +7,13 @@ import torch.nn as nn
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import remove_weight_norm, spectral_norm
 from torch.nn.utils.parametrizations import weight_norm
-from ..common import init_weights, get_padding, ClampedInstanceNorm1d
+from ..common import init_weights, get_padding
 
 from .stft import stft
 from .stft import TorchSTFT
 from .conformer import Conformer
 from einops import rearrange
-from utils import DecoderPrediction, clamped_exp
+from utils import DecoderPrediction, clamped_exp, leaky_clamp
 
 import math
 import random
@@ -27,14 +27,14 @@ logger = logging.getLogger(__name__)
 class AdaIN1d(nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
-        self.norm = ClampedInstanceNorm1d(num_features, affine=False)
+        self.norm = nn.InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
 
     def forward(self, x, s):
         h = self.fc(s)
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)
-        result = (1 + gamma) * self.norm(x) + beta
+        result = (1 + gamma) * self.norm(leaky_clamp(x, -1e10, 1e10)) + beta
         return result
 
 
