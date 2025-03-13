@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from einops.layers.torch import Rearrange
-from ring_attention_pytorch import RingAttention
+from .ring_attention_pytorch import RingAttention
 import logging
 
 logger = logging.getLogger(__name__)
