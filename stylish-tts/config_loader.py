@@ -228,6 +228,10 @@ class RingformerDecoderConfig(BaseModel):
     )
     gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
     gen_istft_hop_size: int = Field(..., description="Hop size for iSTFT generator.")
+    depth: int = Field(..., description="Number of conformer blocks in model")
+    dim_head: int = Field(
+        ..., description="Dimension of the ring attention head (power of 2)"
+    )
 
 
 class VocosDecoderConfig(BaseModel):

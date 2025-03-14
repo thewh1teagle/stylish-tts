@@ -380,6 +380,7 @@ def padDiff(x):
 class Generator(torch.nn.Module):
     def __init__(
         self,
+        *,
         style_dim,
         resblock_kernel_sizes,
         upsample_rates,
@@ -388,6 +389,8 @@ class Generator(torch.nn.Module):
         upsample_kernel_sizes,
         gen_istft_n_fft,
         gen_istft_hop_size,
+        depth,
+        dim_head,
         # gin_channels=0,
     ):
         super(Generator, self).__init__()
@@ -464,8 +467,8 @@ class Generator(torch.nn.Module):
             self.conformers.append(
                 Conformer(
                     dim=ch,
-                    depth=2,
-                    dim_head=64,
+                    depth=depth,
+                    dim_head=dim_head,
                     heads=8,
                     ff_mult=4,
                     conv_expansion_factor=2,
@@ -622,17 +625,19 @@ class UpSample1d(nn.Module):
 class Decoder(nn.Module):
     def __init__(
         self,
-        dim_in=512,
-        F0_channel=512,
-        style_dim=64,
-        dim_out=80,
-        resblock_kernel_sizes=[3, 7, 11],
-        upsample_rates=[10, 6],
-        upsample_initial_channel=512,
-        resblock_dilation_sizes=[[1, 3, 5], [1, 3, 5], [1, 3, 5]],
-        upsample_kernel_sizes=[20, 12],
-        gen_istft_n_fft=20,
-        gen_istft_hop_size=5,
+        *,
+        dim_in,
+        style_dim,
+        dim_out,
+        resblock_kernel_sizes,
+        upsample_rates,
+        upsample_initial_channel,
+        resblock_dilation_sizes,
+        upsample_kernel_sizes,
+        gen_istft_n_fft,
+        gen_istft_hop_size,
+        conformer_depth,
+        conformer_dim_head,
     ):
         super().__init__()
 
@@ -660,14 +665,16 @@ class Decoder(nn.Module):
         )
 
         self.generator = Generator(
-            style_dim,
-            resblock_kernel_sizes,
-            upsample_rates,
-            upsample_initial_channel,
-            resblock_dilation_sizes,
-            upsample_kernel_sizes,
-            gen_istft_n_fft,
-            gen_istft_hop_size,
+            style_dim=style_dim,
+            resblock_kernel_sizes=resblock_kernel_sizes,
+            upsample_rates=upsample_rates,
+            upsample_initial_channel=upsample_initial_channel,
+            resblock_dilation_sizes=resblock_dilation_sizes,
+            upsample_kernel_sizes=upsample_kernel_sizes,
+            gen_istft_n_fft=gen_istft_n_fft,
+            gen_istft_hop_size=gen_istft_hop_size,
+            depth=conformer_depth,
+            dim_head=conformer_dim_head,
         )
 
     def forward(self, asr, F0_curve, N, s, pretrain=False, probing=False):
