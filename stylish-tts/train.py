@@ -167,8 +167,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
 
     if not is_valid_stage(stage):
         exit(f"{stage} is not a valid stage. Must be one of {valid_stage_list()}")
-    train.stage = StageContext()
-    train.stage.begin_stage(stage, train)
+    train.stage = StageContext(stage, train)
 
     train.manifest.current_epoch = 1
     train.manifest.current_total_step = 0
