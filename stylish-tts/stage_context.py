@@ -160,36 +160,29 @@ def valid_stage_list():
 
 
 class StageContext:
-    def __init__(self) -> None:
-        self.max_epoch: int = 0
-        self.steps_per_epoch: int = 0
+    def __init__(self, name: str, train) -> None:
+        self.name: str = name
+        self.max_epoch: int = train.config.training_plan.dict()[name]
+        self.steps_per_epoch: int = 1000
 
-        self.name: str = ""
-        self.train_fn: Callable = None
-        self.validate_fn: Callable = None
-        self.optimizer = None
+        self.train_fn: Callable = stages[name].train_fn
+        self.validate_fn: Callable = stages[name].validate_fn
+        self.optimizer = build_optimizer(self.name, train=train)
+        self.optimizer.prepare(train.accelerator)
         self.batch_sizes: Dict[str, int] = {}
         self.last_batch_load = None
-        self.out_dir: str = ""
+        self.out_dir = train.out_dir
+        self.load_batch_sizes()
 
     def begin_stage(self, name, train):
-        if len(self.name) > 0:
-            self.optimizer.reset_lr(name, train)
-        #    for key in train.model:
-        #        train.model[key] = train.accelerator.free_memory(train.model[key])
-        #    for key in train.model:
-        #        train.model[key] = train.accelerator.prepare(train.model[key])
-        #    self.optimizer.free_memory(train.accelerator)
+        self.name = name
         self.max_epoch = train.config.training_plan.dict()[name]
         # TODO: Fix this when we untangle scheduler
         self.steps_per_epoch = 1000
         # self.steps_per_epoch = train.batch_manager.get_step_count()
-        self.name = name
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
-        if self.optimizer is None:
-            self.optimizer = build_optimizer(self.name, train=train)
-            self.optimizer.prepare(train.accelerator)
+        self.optimizer.reset_lr(name, train)
         self.out_dir = train.out_dir
         self.load_batch_sizes()
 

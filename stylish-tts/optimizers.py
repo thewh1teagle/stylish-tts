@@ -37,6 +37,9 @@ class MultiOptimizer:
                     param_group["lr"] = lr
                     param_group["initial_lr"] = lr
             self.schedulers[key].scheduler.last_epoch = -1
+            self.schedulers[key].scheduler.base_lrs = [
+                group["initial_lr"] for group in self.optimizers[key].param_groups
+            ]
             self.schedulers[key].step()
         self.reset_discriminator_schedulers()
 
