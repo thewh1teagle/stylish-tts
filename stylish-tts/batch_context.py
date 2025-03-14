@@ -4,7 +4,7 @@ import torch
 import torchaudio
 
 from monotonic_align import mask_from_lens
-from train_context import TrainContext
+import train_context
 from config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 
@@ -12,20 +12,19 @@ from utils import length_to_mask, log_norm, maximum_path
 class BatchContext:
     def __init__(
         self,
-        train: TrainContext,
+        *,
+        train: train_context.TrainContext,
         model,
-        text_lengths: torch.Tensor = None,
+        text_length: torch.Tensor,
     ):
-        self.train: TrainContext = train
+        self.train: train_context.TrainContext = train
         self.config: Config = train.config
         # This is a subset containing only those models used this batch
         self.model = model
 
-        self.text_mask = None
-        if text_lengths is not None:
-            self.text_mask: torch.Tensor = length_to_mask(text_lengths).to(
-                self.config.training.device
-            )
+        self.text_mask: torch.Tensor = length_to_mask(text_length).to(
+            self.config.training.device
+        )
         self.duration_results = None
         self.resample = torchaudio.transforms.Resample(
             self.train.model_config.preprocess.sample_rate, 16000

@@ -5,7 +5,7 @@ from losses import magphase_loss, compute_duration_ce_loss
 
 
 def train_pre_acoustic(batch, model, train) -> LossLog:
-    state = BatchContext(train, model, batch.text_length)
+    state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
         pred = state.acoustic_prediction_single(batch, use_random_mono=True)
         train.stage.optimizer.zero_grad()
@@ -24,7 +24,7 @@ def train_pre_acoustic(batch, model, train) -> LossLog:
 
 
 def train_acoustic(batch, model, train) -> LossLog:
-    state = BatchContext(train, model, batch.text_length)
+    state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
         pred = state.acoustic_prediction_single(batch)
         train.stage.optimizer.zero_grad()
@@ -75,7 +75,7 @@ def train_acoustic(batch, model, train) -> LossLog:
 
 
 def train_textual(batch, model, train) -> LossLog:
-    state = BatchContext(train, model, batch.text_length)
+    state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
         pred = state.textual_prediction_single(batch)
         energy = state.acoustic_energy(batch.mel)
@@ -115,7 +115,7 @@ def train_textual(batch, model, train) -> LossLog:
 
 
 def train_joint(batch, model, train) -> LossLog:
-    state = BatchContext(train, model, batch.text_length)
+    state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
         pred = state.textual_prediction_single(batch)
         train.stage.optimizer.zero_grad()

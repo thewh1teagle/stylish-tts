@@ -7,7 +7,7 @@ from losses import compute_duration_ce_loss
 
 @torch.no_grad()
 def validate_acoustic(batch, train):
-    state = BatchContext(train, train.model, batch.text_length)
+    state = BatchContext(train=train, model=train.model, text_length=batch.text_length)
     pred = state.acoustic_prediction_single(batch)
     log = build_loss_log(train)
     log.add_loss("mel", train.stft_loss(pred.audio.squeeze(1), batch.audio_gt))
@@ -16,7 +16,7 @@ def validate_acoustic(batch, train):
 
 @torch.no_grad()
 def validate_textual(batch, train):
-    state = BatchContext(train, train.model, batch.text_length)
+    state = BatchContext(train=train, model=train.model, text_length=batch.text_length)
     pred = state.textual_prediction_single(batch)
     energy = state.acoustic_energy(batch.mel)
     log = build_loss_log(train)

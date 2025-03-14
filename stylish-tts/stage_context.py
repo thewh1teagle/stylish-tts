@@ -2,17 +2,10 @@ import json
 import os
 import os.path as osp
 import traceback
-from typing import Callable, List, Any, Dict
+from typing import Callable, List, Any, Dict, Optional
 import torch
 from munch import Munch
 import tqdm
-
-from stages import (
-    train_first,
-    validate_first,
-    train_second,
-    validate_second,
-)
 
 from loss_log import combine_logs
 from stage_train import train_pre_acoustic, train_acoustic, train_textual, train_joint
@@ -24,6 +17,7 @@ from utils import get_image
 class StageConfig:
     def __init__(
         self,
+        next_stage: Optional[str],
         train_fn: Callable,
         validate_fn: Callable,
         train_models: List[str],
@@ -31,6 +25,7 @@ class StageConfig:
         disc_models: List[str],
         inputs: List[str],
     ):
+        self.next_stage: Optional[str] = next_stage
         self.train_fn: Callable = train_fn
         self.validate_fn: Callable = validate_fn
         self.train_models: List[str] = train_models
@@ -40,47 +35,8 @@ class StageConfig:
 
 
 stages = {
-    "first": StageConfig(
-        train_fn=train_first,
-        validate_fn=validate_first,
-        train_models=[],
-        eval_models=[],
-        disc_models=[],
-        inputs=[],
-    ),
-    "first_tma": StageConfig(
-        train_fn=train_first,
-        validate_fn=validate_first,
-        train_models=[],
-        eval_models=[],
-        disc_models=[],
-        inputs=[],
-    ),
-    "second": StageConfig(
-        train_fn=train_second,
-        validate_fn=validate_second,
-        train_models=[],
-        eval_models=[],
-        disc_models=[],
-        inputs=[],
-    ),
-    "second_style": StageConfig(
-        train_fn=train_second,
-        validate_fn=validate_second,
-        train_models=[],
-        eval_models=[],
-        disc_models=[],
-        inputs=[],
-    ),
-    "second_joint": StageConfig(
-        train_fn=train_second,
-        validate_fn=validate_second,
-        train_models=[],
-        eval_models=[],
-        disc_models=[],
-        inputs=[],
-    ),
     "pre_acoustic": StageConfig(
+        next_stage="acoustic",
         train_fn=train_pre_acoustic,
         validate_fn=validate_acoustic,
         train_models=["text_encoder", "acoustic_style_encoder", "decoder"],
@@ -97,6 +53,7 @@ stages = {
         ],
     ),
     "acoustic": StageConfig(
+        next_stage="textual",
         train_fn=train_acoustic,
         validate_fn=validate_acoustic,
         train_models=[
@@ -122,6 +79,7 @@ stages = {
         ],
     ),
     "textual": StageConfig(
+        next_stage=None,
         train_fn=train_textual,
         validate_fn=validate_textual,
         train_models=[
@@ -149,6 +107,7 @@ stages = {
         ],
     ),
     "joint": StageConfig(
+        next_stage=None,
         train_fn=train_joint,
         validate_fn=validate_textual,
         train_models=[
@@ -210,8 +169,13 @@ class StageContext:
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
         self.optimizer.reset_lr(name, train)
+        train.reset_out_dir(name)
+        self.last_batch_load = None
         self.out_dir = train.out_dir
         self.load_batch_sizes()
+
+    def get_next_stage(self) -> Optional[str]:
+        return stages[self.name].next_stage
 
     def set_batch_size(self, i: int, batch_size: int) -> None:
         self.batch_sizes[str(i)] = batch_size
@@ -265,7 +229,7 @@ class StageContext:
         if train.accelerator.is_main_process:
             iterator = tqdm.tqdm(
                 iterable=enumerate(train.val_dataloader),
-                desc="Validating",
+                desc=f"Validating {self.name}",
                 total=len(train.val_dataloader),
                 unit="steps",
                 bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
@@ -304,9 +268,9 @@ class StageContext:
                     train.writer.add_audio(
                         f"eval/sample_{index}_gt", audio_gt, 0, sample_rate=sample_rate
                     )
+                if train.accelerator.is_main_process:
                     interim = combine_logs(logs)
-                    interim.calculate_metrics()
-                    if progress_bar is not None:
+                    if progress_bar is not None and interim is not None:
                         progress_bar.set_postfix({"loss": f"{interim.total():.3f}"})
 
             except Exception as e:
@@ -318,10 +282,11 @@ class StageContext:
                 continue
         progress_bar.close() if progress_bar is not None else None
         validation = combine_logs(logs)
-        validation.broadcast(train.manifest, train.stage, validation=True)
-        total = validation.total()
-        if total < train.manifest.best_loss:
-            train.manifest.best_loss = total
+        if validation is not None:
+            validation.broadcast(train.manifest, train.stage, validation=True)
+            total = validation.total()
+            if total < train.manifest.best_loss:
+                train.manifest.best_loss = total
         for key in train.model:
             train.model[key].train()
 
