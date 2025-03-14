@@ -112,3 +112,48 @@ def train_textual(batch, model, train) -> LossLog:
         train.accelerator.backward(log.total())
 
     return log.detach()
+
+
+def train_joint(batch, model, train) -> LossLog:
+    state = BatchContext(train, model, batch.text_length)
+    with train.accelerator.autocast():
+        pred = state.textual_prediction_single(batch)
+        train.stage.optimizer.zero_grad()
+        d_loss = train.discriminator_loss(
+            batch.audio_gt.detach().unsqueeze(1).float(), pred.audio.detach()
+        ).mean()
+        train.accelerator.backward(d_loss)
+        train.stage.optimizer.step("msd")
+        train.stage.optimizer.step("mpd")
+        train.stage.optimizer.zero_grad()
+        log = build_loss_log(train)
+        log.add_loss(
+            "mel",
+            train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
+        )
+        log.add_loss(
+            "gen",
+            train.generator_loss(
+                batch.audio_gt.detach().unsqueeze(1).float(), pred.audio
+            ).mean(),
+        )
+        log.add_loss(
+            "slm",
+            train.wavlm_loss(batch.audio_gt.detach(), pred.audio),
+        )
+        if pred.magnitude is not None and pred.phase is not None:
+            log.add_loss(
+                "magphase",
+                magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
+            )
+        loss_ce, loss_dur = compute_duration_ce_loss(
+            state.duration_prediction,
+            state.duration_results[1].sum(dim=-1),
+            batch.text_length,
+        )
+        log.add_loss("duration_ce", loss_ce)
+        log.add_loss("duration", loss_dur)
+        train.accelerator.backward(log.total())
+        log.add_loss("discriminator", d_loss)
+
+    return log.detach()

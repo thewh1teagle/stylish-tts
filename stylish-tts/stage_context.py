@@ -15,7 +15,7 @@ from stages import (
 )
 
 from loss_log import combine_logs
-from stage_train import train_pre_acoustic, train_acoustic, train_textual
+from stage_train import train_pre_acoustic, train_acoustic, train_textual, train_joint
 from stage_validate import validate_acoustic, validate_textual
 from optimizers import build_optimizer
 from utils import get_image
@@ -138,6 +138,33 @@ stages = {
             "text_aligner",
         ],
         disc_models=[],
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "mel_length",
+            "audio_gt",
+            "pitch",
+            "sentence_embedding",
+        ],
+    ),
+    "joint": StageConfig(
+        train_fn=train_joint,
+        validate_fn=validate_textual,
+        train_models=[
+            "text_encoder",
+            "acoustic_style_encoder",
+            "decoder",
+            "acoustic_prosody_encoder",
+            "duration_predictor",
+            "pitch_energy_predictor",
+            "bert",
+            "bert_encoder",
+        ],
+        eval_models=[
+            "text_aligner",
+        ],
+        disc_models=["msd", "mpd"],
         inputs=[
             "text",
             "text_length",

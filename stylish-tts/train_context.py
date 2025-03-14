@@ -1,7 +1,9 @@
 from config_loader import Config, ModelConfig
 from batch_manager import BatchManager
-from typing import Callable, Optional, Any, List
+from typing import Optional, Any, List
+import os.path as osp
 from accelerate import Accelerator
+from accelerate import DistributedDataParallelKwargs
 import logging
 from torch.utils.data import DataLoader
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
@@ -32,22 +34,48 @@ class Manifest:
 
 
 class TrainContext:
-    def __init__(self) -> None:
-        self.base_output_dir: Optional[str] = None
-        self.out_dir: str = ""
-        self.config: Optional[Config] = None
-        self.model_config: Optional[ModelConfig] = None
+    def __init__(
+        self,
+        stage_name: str,
+        base_out_dir: str,
+        config: Config,
+        model_config: ModelConfig,
+        logger: logging.Logger,
+    ) -> None:
+        self.base_output_dir: str = base_out_dir
+        self.out_dir: str = osp.join(base_out_dir, stage_name)
+        self.config: Config = config
+        self.model_config: ModelConfig = model_config
         self.batch_manager: Optional[BatchManager] = None
         self.stage: "Optional[StageContext]" = None
         self.manifest: Manifest = Manifest()
         self.writer: Optional[SummaryWriter] = None
 
-        self.accelerator: Optional[Accelerator] = None
+        ddp_kwargs = DistributedDataParallelKwargs(
+            broadcast_buffers=False, find_unused_parameters=True
+        )
+        self.accelerator = Accelerator(
+            project_dir=self.out_dir,
+            split_batches=True,
+            kwargs_handlers=[ddp_kwargs],
+            mixed_precision=self.config.training.mixed_precision,
+            step_scheduler_with_optimizer=False,
+        )
+        self.accelerator.even_batches = False
+
+        if self.accelerator.is_main_process:
+            self.writer = SummaryWriter(self.out_dir + "/tensorboard")
+
+        # TODO Replace these with json files, pickling is bad
+        self.accelerator.register_for_checkpointing(self.config)
+        self.accelerator.register_for_checkpointing(self.model_config)
+        self.accelerator.register_for_checkpointing(self.manifest)
+
         self.val_dataloader: Optional[DataLoader] = None
 
         self.model: Optional[Any] = None
 
-        self.logger: Optional[logging.Logger] = None
+        self.logger: logging.Logger = logger
 
         self.diffusion_sampler: Optional[DiffusionSampler] = None  # Diffusion Sampler
 

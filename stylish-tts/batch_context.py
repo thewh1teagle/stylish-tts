@@ -291,6 +291,31 @@ class BatchContext:
         )
         return prediction
 
+    def textual_bootstrap_prediction(self, batch):
+        _ = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=False,
+            use_random_choice=False,
+        )
+        prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
+        plbert_embedding = self.model.bert(
+            batch.text, attention_mask=(~self.text_mask).int()
+        )
+        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        self.duration_prediction, prosody = self.model.duration_predictor(
+            duration_encoding,
+            prosody_embedding,
+            batch.text_length,
+            self.duration_results[1],
+            self.text_mask,
+        )
+        self.pitch_prediction, self.energy_prediction = (
+            self.model.pitch_energy_predictor(prosody, prosody_embedding)
+        )
+
     # def pretrain_decoding(self, pitch, style, audio_gt, probing=False):
     #    mels = self.to_mel(audio_gt)[:, :, :-1]
     #    return self.model.decoder(

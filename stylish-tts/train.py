@@ -5,16 +5,11 @@ import shutil
 import logging
 import random
 from logging import StreamHandler
-from accelerate import Accelerator
-from accelerate import DistributedDataParallelKwargs
 from config_loader import load_config_yaml, load_model_config_yaml
 from train_context import TrainContext
 from text_utils import TextCleaner
 
 import numpy as np
-
-#  warnings.simplefilter("ignore")
-from torch.utils.tensorboard.writer import SummaryWriter
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
@@ -74,59 +69,37 @@ def setup_logger(logger, out_dir):
 @click.option("--stage", default="first_tma", type=str)
 @click.option("--checkpoint", default="", type=str)
 def main(config_path, model_config_path, out_dir, stage, checkpoint):
-    train = TrainContext()
     np.random.seed(1)
     random.seed(1)
     if osp.exists(config_path):
-        train_config = load_config_yaml(config_path)
-        train.config = train_config
+        config = load_config_yaml(config_path)
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
         logger.error(f"Config file not found at {config_path}")
         exit(1)
 
     if osp.exists(model_config_path):
-        train.model_config = load_model_config_yaml(model_config_path)
+        model_config = load_model_config_yaml(model_config_path)
     else:
         # TODO: we may be able to pull it out of the model if a model is passed in instead
         logger.error(f"Config file not found at {model_config_path}")
         exit(1)
 
-    train.base_output_dir = out_dir
-    train.out_dir = osp.join(out_dir, stage)
+    train_logger = logging.getLogger(__name__)
+
+    train = TrainContext(stage, out_dir, config, model_config, train_logger)
 
     if not osp.exists(train.out_dir):
         os.makedirs(train.out_dir, exist_ok=True)
-
     if not osp.exists(train.out_dir):
         exit(f"Failed to create or find log directory at {train.out_dir}.")
+    setup_logger(train_logger, train.out_dir)
+
     shutil.copy(config_path, osp.join(train.out_dir, osp.basename(config_path)))
     shutil.copy(
         model_config_path, osp.join(train.out_dir, osp.basename(model_config_path))
     )
     save_git_diff(train.out_dir)
-
-    train.logger = logging.getLogger(__name__)
-    setup_logger(train.logger, train.out_dir)
-
-    ddp_kwargs = DistributedDataParallelKwargs(
-        broadcast_buffers=False, find_unused_parameters=True
-    )
-    train.accelerator = Accelerator(
-        project_dir=train.out_dir,
-        split_batches=True,
-        kwargs_handlers=[ddp_kwargs],
-        mixed_precision=train.config.training.mixed_precision,
-        step_scheduler_with_optimizer=False,
-    )
-    train.accelerator.even_batches = False
-
-    if train.accelerator.is_main_process:
-        train.writer = SummaryWriter(train.out_dir + "/tensorboard")
-
-    train.accelerator.register_for_checkpointing(train.config)
-    train.accelerator.register_for_checkpointing(train.model_config)
-    train.accelerator.register_for_checkpointing(train.manifest)
 
     # Set up data loaders and batch manager
     if not osp.exists(train.config.dataset.train_data):
@@ -307,8 +280,10 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                 if next_log is not None:
                     logs.append(next_log)
                     if loss is None:
-                        loss = next_log.metrics["mel"]
-                    loss = loss * 0.9 + next_log.metrics["mel"] * 0.1
+                        loss = next_log.total()  # next_log.metrics["mel"]
+                    loss = (
+                        loss * 0.9 + next_log.total() * 0.1
+                    )  # next_log.metrics["mel"] * 0.1
                 if len(logs) >= train.config.training.log_interval:
                     progress_bar.clear() if progress_bar is not None else None
                     combine_logs(logs).broadcast(train.manifest, train.stage)
