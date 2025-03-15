@@ -42,6 +42,10 @@ class TrainingPlanConfig(BaseModel):
         default=10,
         description="Number of epochs for training of textual models stage (third stage).",
     )
+    joint: int = Field(
+        default=10,
+        description="Number of epochs for joint training of textual models stage (fourth stage).",
+    )
     second_style: int = Field(
         default=10,
         description="Number of epochs for the second stage with style training.",

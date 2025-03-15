@@ -129,6 +129,7 @@ def calculate_lr(key, stage_name, *, train):
         or stage_name == "second_style"
         or stage_name == "second_joint"
         or stage_name == "textual"
+        or stage_name == "joint"
     )
     lr = train.config.optimizer.lr
     weight_decay = 1e-4

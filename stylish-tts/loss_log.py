@@ -65,9 +65,6 @@ class LossLog:
             logging.debug(f"self.weights: {self.weights}")
             return 1
 
-    def update_loss(self, key, value, count):
-        return weight
-
     def calculate_metrics(self):
         total = 0
         total_weight = 0
