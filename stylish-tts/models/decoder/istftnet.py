@@ -5,6 +5,7 @@ from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import remove_weight_norm, spectral_norm
 from torch.nn.utils.parametrizations import weight_norm
 from ..common import init_weights, get_padding
+from utils import DecoderPrediction
 
 import math
 import random
@@ -679,7 +680,7 @@ class Decoder(nn.Module):
             gen_istft_hop_size,
         )
 
-    def forward(self, asr, F0_curve, N, s):
+    def forward(self, asr, F0_curve, N, s, probing=False):
         if self.training:
             downlist = [0, 3, 7]
             F0_down = downlist[random.randint(0, 2)]
@@ -721,4 +722,4 @@ class Decoder(nn.Module):
                 res = False
 
         x, mag, phase = self.generator(x, s, F0_curve)
-        return x, mag, phase
+        return DecoderPrediction(audio=x, magnitude=mag, phase=phase)

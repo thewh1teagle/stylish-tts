@@ -450,7 +450,7 @@ def build_dataloader(
             train=train,
         ),
         collate_fn=collate_fn,
-        pin_memory=(device != "cpu"),
+        pin_memory=False,  # (device != "cpu"),
     )
 
     return data_loader
