@@ -142,26 +142,28 @@ def valid_stage_list():
 
 
 class StageContext:
-    def __init__(self, name: str, train) -> None:
+    def __init__(
+        self, name: str, train, train_time_bins: dict, val_time_bins: dict
+    ) -> None:
         self.name: str = name
         self.max_epoch: int = train.config.training_plan.dict()[name]
-        self.steps_per_epoch: int = 1000
+        self.train_time_bins: dict = train_time_bins
+        self.val_time_bins: dict = val_time_bins
+
+        self.batch_sizes: Dict[str, int] = {}
+        self.last_batch_load = None
+        self.out_dir = train.out_dir
+        self.load_batch_sizes()
+        train.manifest.steps_per_epoch = self.get_steps_per_epoch()
 
         self.train_fn: Callable = stages[name].train_fn
         self.validate_fn: Callable = stages[name].validate_fn
         self.optimizer = build_optimizer(self.name, train=train)
         self.optimizer.prepare(train.accelerator)
-        self.batch_sizes: Dict[str, int] = {}
-        self.last_batch_load = None
-        self.out_dir = train.out_dir
-        self.load_batch_sizes()
 
     def begin_stage(self, name, train):
         self.name = name
         self.max_epoch = train.config.training_plan.dict()[name]
-        # TODO: Fix this when we untangle scheduler
-        self.steps_per_epoch = 1000
-        # self.steps_per_epoch = train.batch_manager.get_step_count()
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
         self.optimizer.reset_lr(name, train)
@@ -202,6 +204,23 @@ class StageContext:
         with open(batch_file, "w") as o:
             json.dump(self.batch_sizes, o)
 
+    def get_steps_per_val(self) -> int:
+        return self.get_steps(self.val_time_bins)
+
+    def get_steps_per_epoch(self) -> int:
+        return self.get_steps(self.train_time_bins)
+
+    def get_steps(self, time_bins):
+        total = 0
+        for key in time_bins.keys():
+            val = time_bins[key]
+            total_batch = self.get_batch_size(key)
+            if total_batch > 0:
+                total += len(val) // total_batch + 1
+                # if not self.drop_last and len(val) % total_batch != 0:
+                #     total += 1
+        return total
+
     def train_batch(self, inputs, train):
         config = stages[self.name]
         batch = prepare_batch(inputs, train.config.training.device, config.inputs)
@@ -226,7 +245,7 @@ class StageContext:
             iterator = tqdm.tqdm(
                 iterable=enumerate(train.val_dataloader),
                 desc=f"Validating {self.name}",
-                total=len(train.val_dataloader),
+                total=self.get_steps_per_val(),
                 unit="steps",
                 bar_format="{desc} |{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",
                 colour="BLUE",

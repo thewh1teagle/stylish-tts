@@ -45,7 +45,7 @@ class LossLog:
             lr_string = f", lr: {lr:.7f}"
             self.logger.info(
                 f"Epoch [{manifest.current_epoch}/{stage.max_epoch}], "
-                + f"Step [{manifest.current_step}/{stage.steps_per_epoch}], "
+                + f"Step [{manifest.current_step}/{manifest.steps_per_epoch}], "
                 + loss_string
                 + lr_string
             )
@@ -85,6 +85,7 @@ class LossLog:
 
     def add_loss(self, key, value):
         self.metrics[key] = value
+        self.total_loss = None
 
 
 def combine_logs(loglist):

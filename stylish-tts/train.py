@@ -122,9 +122,10 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         model_config=train.model_config,
         pitch_path=train.config.dataset.pitch_path,
     )
+    val_time_bins = val_dataset.time_bins()
     train.val_dataloader = build_dataloader(
         val_dataset,
-        val_dataset.time_bins(),
+        val_time_bins,
         validation=True,
         num_workers=4,
         device=train.config.training.device,
@@ -168,7 +169,9 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
 
     if not is_valid_stage(stage):
         exit(f"{stage} is not a valid stage. Must be one of {valid_stage_list()}")
-    train.stage = StageContext(stage, train)
+    train.stage = StageContext(
+        stage, train, train.batch_manager.time_bins, val_time_bins
+    )
 
     train.manifest.current_epoch = 1
     train.manifest.current_total_step = 0
@@ -213,7 +216,6 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         if next_stage is not None:
             train.manifest.current_epoch = 1
             train.manifest.current_step = 0
-            train.manifest.steps_per_epoch = 1000  # TODO Figure this out
             train.manifest.stage = next_stage
             train.stage.begin_stage(next_stage, train)
             if not osp.exists(train.out_dir):
@@ -246,7 +248,6 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
     # train.stage.validate(train)
     while train.manifest.current_epoch <= train.stage.max_epoch:
         train.batch_manager.init_epoch(train, should_fast_forward=should_fast_forward)
-        train.stage.steps_per_epoch = train.batch_manager.get_step_count()
 
         _ = [train.model[key].train() for key in train.model]
         progress_bar = None
@@ -254,7 +255,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             iterator = tqdm.tqdm(
                 iterable=enumerate(train.batch_manager.loader),
                 desc=f"Train {train.manifest.stage} [{train.manifest.current_epoch}/{train.stage.max_epoch}]",
-                total=train.stage.steps_per_epoch,
+                total=train.manifest.steps_per_epoch,
                 unit="steps",
                 initial=train.manifest.current_step,
                 bar_format="{desc}{bar}| {n_fmt}/{total_fmt} {remaining}{postfix} ",

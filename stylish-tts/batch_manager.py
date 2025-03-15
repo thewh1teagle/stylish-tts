@@ -60,14 +60,11 @@ class BatchManager:
             self.process_count = accelerator.num_processes
             accelerator.even_batches = False
         self.loader: DataLoader = None
-        # TODO: Fix this when we untangle the scheduler
-        # self.epoch_step_count: int = len(self.loader.batch_sampler)
-        self.epoch_step_count: int = 1000
         self.last_oom: int = -1
         self.skip_forward: bool = False
 
-    def get_step_count(self) -> int:
-        return self.epoch_step_count // self.process_count
+    # def get_step_count(self) -> int:
+    #     return self.epoch_step_count // self.process_count
 
     def probe_loop(self, train) -> None:
         if self.process_count > 1:
@@ -157,6 +154,7 @@ class BatchManager:
             epoch=train.manifest.current_epoch,
             train=train,
         )
+        train.manifest.steps_per_epoch = train.stage.get_steps_per_epoch()
         self.loader = train.accelerator.prepare(self.loader)
         if should_fast_forward:
             self.loader = train.accelerator.skip_first_batches(
@@ -167,8 +165,6 @@ class BatchManager:
         #     self.resume_loader = None
         self.last_oom = -1
         self.skip_forward = False
-
-        self.epoch_step_count = len(self.loader.batch_sampler)
 
     def train_iterate(
         self, batch, train, progress_bar=None, debug=False
@@ -220,9 +216,9 @@ class BatchManager:
                     raise e
         step = (
             train.manifest.current_step
-            + (train.manifest.current_epoch - 1) * train.stage.steps_per_epoch
+            + (train.manifest.current_epoch - 1) * train.manifest.steps_per_epoch
         )
-        step_limit = train.stage.max_epoch * train.stage.steps_per_epoch
+        step_limit = train.stage.max_epoch * train.manifest.steps_per_epoch
         train.stage.optimizer.scheduler(step, step_limit)
         train.stage.optimizer.step_discriminator_schedulers()
         return result

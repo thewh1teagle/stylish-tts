@@ -416,6 +416,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
             sample_keys = list(samples.keys())
 
     def __len__(self):
+        return self.train.stage.get_steps_per_epoch()
         total = 0
         for key in self.time_bins.keys():
             val = self.time_bins[key]
