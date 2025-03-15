@@ -8,9 +8,7 @@ import tqdm
 import torch
 import torchaudio
 import torch.utils.data
-from huggingface_hub import hf_hub_download
 from safetensors import safe_open
-from librosa.filters import mel as librosa_mel_fn
 from sentence_transformers import SentenceTransformer
 
 import logging
@@ -20,117 +18,18 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
-mel_window = {}
-
-
-def param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device):
-    return f"{sampling_rate}-{n_fft}-{num_mels}-{fmin}-{fmax}-{win_size}-{device}"
-
-
-def mel_spectrogram(
-    y,
-    n_fft,
-    num_mels,
-    sampling_rate,
-    hop_size,
-    win_size,
-    fmin,
-    fmax,
-    center=True,
-    in_dataset=False,
-):
-    global mel_window
-    # device = torch.device("cpu") if in_dataset else y.device
-    device = "cpu"
-    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
-    if ps in mel_window:
-        mel_basis, hann_window = mel_window[ps]
-        # print(mel_basis, hann_window)
-        # mel_basis, hann_window = mel_basis.to(y.device), hann_window.to(y.device)
-    else:
-        mel = librosa_mel_fn(
-            sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
-        )
-        mel_basis = torch.from_numpy(mel).float().to(device)
-        hann_window = torch.hann_window(win_size).to(device)
-        mel_window[ps] = (mel_basis.clone(), hann_window.clone())
-
-    spec = torch.stft(
-        y.to(device),
-        n_fft,
-        hop_length=hop_size,
-        win_length=win_size,
-        window=hann_window.to(device),
-        center=True,
-        return_complex=True,
-    )
-
-    spec = mel_basis.to(device) @ spec.abs()
-    # spec = spectral_normalize_torch(spec)
-
-    return spec  # [batch_size,n_fft/2+1,frames]
-
-
-to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300
-)
-mean, std = -4, 4
-
-
-def preprocess(wave):
-    # wave_tensor = torch.from_numpy(wave).float()
-    wave_tensor = wave
-    mel_tensor = to_mel(wave_tensor)
-    # mel_tensor = mel_spectrogram(
-    #    y=wave_tensor,
-    #    n_fft=2048,
-    #    num_mels=80,
-    #    sampling_rate=24000,
-    #    hop_size=300,
-    #    win_size=1200,
-    #    fmin=50,
-    #    fmax=550,
-    # )
-    mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
-    return mel_tensor
-
-
-def amp_pha_specturm(y, n_fft, hop_size, win_size):
-    hann_window = torch.hann_window(win_size).to(y.device)
-
-    stft_spec = torch.stft(
-        y,
-        n_fft,
-        hop_length=hop_size,
-        win_length=win_size,
-        window=hann_window,
-        center=True,
-        return_complex=True,
-    )  # [batch_size, n_fft//2+1, frames, 2]
-
-    log_amplitude = torch.log(
-        stft_spec.abs() + 1e-5
-    )  # [batch_size, n_fft//2+1, frames]
-    phase = stft_spec.angle()  # [batch_size, n_fft//2+1, frames]
-
-    return log_amplitude, phase, stft_spec.real, stft_spec.imag
 
 
 class FilePathDataset(torch.utils.data.Dataset):
     def __init__(
         self,
+        *,
         data_list,
         root_path,
         text_cleaner,
-        sr=24000,
-        data_augmentation=False,
-        validation=False,
-        OOD_data="Data/OOD_texts.txt",
-        min_length=50,
-        multispeaker=False,
-        pitch_path="",
+        model_config,
+        pitch_path,
     ):
-        self.cache = {}
         self.pitch = {}
         with safe_open(pitch_path, framework="pt", device="cpu") as f:
             for key in f.keys():
@@ -145,30 +44,42 @@ class FilePathDataset(torch.utils.data.Dataset):
             sentences.append(fields[3])
         self.sentences = sentences
         self.text_cleaner = text_cleaner
-        self.sr = sr
 
         self.df = pd.DataFrame(self.data_list)
 
-        self.mean, self.std = -4, 4
-        self.data_augmentation = data_augmentation and (not validation)
-        self.max_mel_length = 192
+        self.to_mel = torchaudio.transforms.MelSpectrogram(
+            n_mels=model_config.n_mels,
+            n_fft=model_config.n_fft,
+            win_length=model_config.win_length,
+            hop_length=model_config.hop_length,
+        )
 
-        self.min_length = min_length
-        with open(
-            hf_hub_download(
-                repo_id="stylish-tts/train-ood-texts",
-                repo_type="dataset",
-                filename="OOD_texts.txt",
-            ),
-            "r",
-            encoding="utf-8",
-        ) as f:
-            tl = f.readlines()
-        idx = 1 if ".wav" in tl[0].split("|")[0] else 0
-        self.ptexts = [t.split("|")[idx] for t in tl]
+        # self.min_length = min_length
+        # with open(
+        #     hf_hub_download(
+        #         repo_id="stylish-tts/train-ood-texts",
+        #         repo_type="dataset",
+        #         filename="OOD_texts.txt",
+        #     ),
+        #     "r",
+        #     encoding="utf-8",
+        # ) as f:
+        #     tl = f.readlines()
+        # idx = 1 if ".wav" in tl[0].split("|")[0] else 0
+        # self.ptexts = [t.split("|")[idx] for t in tl]
 
         self.root_path = root_path
-        self.multispeaker = multispeaker
+        self.multispeaker = model_config.multispeaker
+        self.sample_rate = model_config.sample_rate
+        self.hop_length = model_config.hop_length
+
+    def preprocess(self, wave):
+        mean, std = -4, 4
+        # wave_tensor = torch.from_numpy(wave).float()
+        wave_tensor = wave
+        mel_tensor = self.to_mel(wave_tensor)
+        mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
+        return mel_tensor
 
     def time_bins(self):
         sample_lengths = []
@@ -186,18 +97,22 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave_path = data[0]
             wave, sr = sf.read(osp.join(self.root_path, wave_path))
             wave_len = wave.shape[0]
-            if sr != 24000:
-                wave_len *= 24000 / sr
+            if sr != self.sample_rate:
+                wave_len *= self.sample_rate / sr
             sample_lengths.append(wave_len)
         iterator.clear()
         iterator.close()
         time_bins = {}
         for i in range(len(sample_lengths)):
-            bin_num = get_time_bin(sample_lengths[i])
+            bin_num = get_time_bin(sample_lengths[i], self.hop_length)
             if bin_num != -1:
                 if bin_num not in time_bins:
                     time_bins[bin_num] = []
                 time_bins[bin_num].append(i)
+            else:
+                exit(
+                    f"Segment Length Too Short. Must be at least 0.25 seconds: {self.data_list[i][0]}"
+                )
         return time_bins
 
     def __len__(self):
@@ -206,7 +121,7 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         data = self.data_list[idx]
         path = data[0]
-        wave, text_tensor, speaker_id, mel_tensor = self._cache_tensor(data)
+        wave, text_tensor, speaker_id, mel_tensor = self._load_tensor(data)
 
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
@@ -224,17 +139,17 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         # get OOD text
 
-        ps = ""
+        # ps = ""
         ref_text = torch.LongTensor()
-        while len(ps) < self.min_length:
-            rand_idx = np.random.randint(0, len(self.ptexts) - 1)
-            ps = self.ptexts[rand_idx]
+        # while len(ps) < self.min_length:
+        #     rand_idx = np.random.randint(0, len(self.ptexts) - 1)
+        #     ps = self.ptexts[rand_idx]
 
-            text = self.text_cleaner(ps)
-            text.insert(0, 0)
-            text.append(0)
+        #     text = self.text_cleaner(ps)
+        #     text.insert(0, 0)
+        #     text.append(0)
 
-            ref_text = torch.LongTensor(text)
+        #     ref_text = torch.LongTensor(text)
 
         pitch = None
         if path in self.pitch:
@@ -262,17 +177,17 @@ class FilePathDataset(torch.utils.data.Dataset):
         wave, sr = sf.read(osp.join(self.root_path, wave_path))
         if wave.shape[-1] == 2:
             wave = wave[:, 0].squeeze()
-        if sr != 24000:
-            wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
+        if sr != self.sample_rate:
+            wave = librosa.resample(wave, orig_sr=sr, target_sr=self.sample_rate)
             logger.debug(f"{wave_path}, {sr}")
 
         pad_start = 5000
         pad_end = 5000
-        time_bin = get_time_bin(wave.shape[0])
+        time_bin = get_time_bin(wave.shape[0], self.hop_length)
         if time_bin != -1:
             frame_count = get_frame_count(time_bin)
-            pad_start = (frame_count * 300 - wave.shape[0]) // 2
-            pad_end = frame_count * 300 - wave.shape[0] - pad_start
+            pad_start = (frame_count * self.hop_length - wave.shape[0]) // 2
+            pad_end = frame_count * self.hop_length - wave.shape[0] - pad_start
         wave = np.concatenate(
             [np.zeros([pad_start]), wave, np.zeros([pad_end])], axis=0
         )
@@ -285,28 +200,18 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         text = torch.LongTensor(text)
 
-        return wave, text, speaker_id
+        mel_tensor = self.preprocess(wave).squeeze()
 
-    def _cache_tensor(self, data):
-        # path = data[0]
-        # if path in self.cache:
-        # (wave, text_tensor, speaker_id, mel_tensor) = self.cache[path]
-        # else:
-        wave, text_tensor, speaker_id = self._load_tensor(data)
-        mel_tensor = preprocess(wave).squeeze()
-        # self.cache[path] = (wave, text_tensor, speaker_id,
-        #                    mel_tensor)
-        return (wave, text_tensor, speaker_id, mel_tensor)
+        return (wave, text, speaker_id, mel_tensor)
 
     def _load_data(self, data):
-        wave, text_tensor, speaker_id, mel_tensor = self._cache_tensor(data)
+        max_mel_length = 192
+        wave, text_tensor, speaker_id, mel_tensor = self._load_tensor(data)
 
         mel_length = mel_tensor.size(1)
-        if mel_length > self.max_mel_length:
-            random_start = np.random.randint(0, mel_length - self.max_mel_length)
-            mel_tensor = mel_tensor[
-                :, random_start : random_start + self.max_mel_length
-            ]
+        if mel_length > max_mel_length:
+            random_start = np.random.randint(0, mel_length - max_mel_length)
+            mel_tensor = mel_tensor[:, random_start : random_start + max_mel_length]
 
         return mel_tensor, speaker_id
 
@@ -353,10 +258,6 @@ class Collater(object):
             (batch_size, batch[0][7].shape[-1])
         ).float()  # [None for _ in range(batch_size)]
         pitches = torch.zeros((batch_size, max_mel_length)).float()
-        log_amplitudes = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
-        phases = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
-        reals = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
-        imags = torch.zeros(batch_size, 1025, lengths[0] + 1).float()
         sentence_embeddings = torch.zeros(batch_size, 384).float()
 
         for bid, (
@@ -389,14 +290,6 @@ class Collater(object):
             waves[bid] = wave
             if pitch is not None:
                 pitches[bid] = pitch
-            # TODO: hard coded fix
-            log_amplitude, phase, rea, imag = amp_pha_specturm(
-                wave, n_fft=2048, hop_size=300, win_size=1200
-            )
-            log_amplitudes[bid] = log_amplitude
-            phases[bid] = phase
-            reals[bid] = rea
-            imags[bid] = imag
             sentence_embeddings[bid] = sentence
 
         result = (
@@ -410,10 +303,6 @@ class Collater(object):
             ref_mels,
             paths,
             pitches,
-            log_amplitudes,
-            phases,
-            reals,
-            imags,
             sentence_embeddings,
         )
         return result
@@ -558,16 +447,14 @@ def get_frame_count(i):
     return i * 20 + 20 + 40
 
 
-def get_time_bin(sample_count):
+def get_time_bin(sample_count, hop_length):
     result = -1
-    frames = sample_count // 300
+    frames = sample_count // hop_length
     if frames >= 20:
         result = (frames - 20) // 20
     return result
 
 
-def get_padded_time_bin(sample_count):
-    result = -1
-    frames = sample_count // 300
+def get_padded_time_bin(sample_count, hop_length):
+    frames = sample_count // hop_length
     return (frames - 60) // 20
-    return result

@@ -416,6 +416,7 @@ def padDiff(x):
 class Generator(torch.nn.Module):
     def __init__(
         self,
+        *,
         style_dim,
         resblock_kernel_sizes,
         upsample_rates,
@@ -424,6 +425,7 @@ class Generator(torch.nn.Module):
         upsample_kernel_sizes,
         gen_istft_n_fft,
         gen_istft_hop_size,
+        sample_rate,
     ):
         super(Generator, self).__init__()
 
@@ -432,7 +434,7 @@ class Generator(torch.nn.Module):
         resblock = AdaINResBlock1
 
         self.m_source = SourceModuleHnNSF(
-            sampling_rate=24000,
+            sampling_rate=sample_rate,
             upsample_scale=np.prod(upsample_rates) * gen_istft_hop_size,
             harmonic_num=8,
             voiced_threshod=10,
@@ -634,17 +636,17 @@ class UpSample1d(nn.Module):
 class Decoder(nn.Module):
     def __init__(
         self,
-        dim_in=512,
-        F0_channel=512,
-        style_dim=64,
-        dim_out=80,
-        resblock_kernel_sizes=[3, 7, 11],
-        upsample_rates=[10, 6],
-        upsample_initial_channel=512,
-        resblock_dilation_sizes=[[1, 3, 5], [1, 3, 5], [1, 3, 5]],
-        upsample_kernel_sizes=[20, 12],
-        gen_istft_n_fft=20,
-        gen_istft_hop_size=5,
+        *,
+        dim_in,
+        style_dim,
+        resblock_kernel_sizes,
+        upsample_rates,
+        upsample_initial_channel,
+        resblock_dilation_sizes,
+        upsample_kernel_sizes,
+        gen_istft_n_fft,
+        gen_istft_hop_size,
+        sample_rate,
     ):
         super().__init__()
 
@@ -670,14 +672,15 @@ class Decoder(nn.Module):
         )
 
         self.generator = Generator(
-            style_dim,
-            resblock_kernel_sizes,
-            upsample_rates,
-            upsample_initial_channel,
-            resblock_dilation_sizes,
-            upsample_kernel_sizes,
-            gen_istft_n_fft,
-            gen_istft_hop_size,
+            style_dim=style_dim,
+            resblock_kernel_sizes=resblock_kernel_sizes,
+            upsample_rates=upsample_rates,
+            upsample_initial_channel=upsample_initial_channel,
+            resblock_dilation_sizes=resblock_dilation_sizes,
+            upsample_kernel_sizes=upsample_kernel_sizes,
+            gen_istft_n_fft=gen_istft_n_fft,
+            gen_istft_hop_size=gen_istft_hop_size,
+            sample_rate=sample_rate,
         )
 
     def forward(self, asr, F0_curve, N, s, probing=False):

@@ -390,7 +390,7 @@ class Generator(torch.nn.Module):
         gen_istft_n_fft,
         gen_istft_hop_size,
         depth,
-        dim_head,
+        sample_rate,
         # gin_channels=0,
     ):
         super(Generator, self).__init__()
@@ -404,7 +404,7 @@ class Generator(torch.nn.Module):
         resblock = AdaINResBlock1
 
         self.m_source = SourceModuleHnNSF(
-            sampling_rate=24000,
+            sampling_rate=sample_rate,
             upsample_scale=np.prod(upsample_rates) * gen_istft_hop_size,
             harmonic_num=8,
             voiced_threshod=10,
@@ -468,7 +468,7 @@ class Generator(torch.nn.Module):
                 Conformer(
                     dim=ch,
                     depth=depth,
-                    dim_head=dim_head,
+                    dim_head=64,
                     heads=8,
                     ff_mult=4,
                     conv_expansion_factor=2,
@@ -637,7 +637,7 @@ class Decoder(nn.Module):
         gen_istft_n_fft,
         gen_istft_hop_size,
         conformer_depth,
-        conformer_dim_head,
+        sample_rate,
     ):
         super().__init__()
 
@@ -674,7 +674,7 @@ class Decoder(nn.Module):
             gen_istft_n_fft=gen_istft_n_fft,
             gen_istft_hop_size=gen_istft_hop_size,
             depth=conformer_depth,
-            dim_head=conformer_dim_head,
+            sample_rate=sample_rate,
         )
 
     def forward(self, asr, F0_curve, N, s, pretrain=False, probing=False):

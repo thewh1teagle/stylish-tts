@@ -116,13 +116,10 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
     text_cleaner = TextCleaner(train.model_config.symbol)
     val_list = get_data_path_list(train.config.dataset.val_data)
     val_dataset = FilePathDataset(
-        val_list,
-        train.config.dataset.wav_path,
-        OOD_data=train.config.dataset.OOD_data,
-        min_length=train.config.dataset.min_length,
-        validation=True,
-        multispeaker=train.model_config.model.multispeaker,
+        data_list=val_list,
+        root_path=train.config.dataset.wav_path,
         text_cleaner=text_cleaner,
+        model_config=train.model_config,
         pitch_path=train.config.dataset.pitch_path,
     )
     train.val_dataloader = build_dataloader(
@@ -131,7 +128,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         validation=True,
         num_workers=4,
         device=train.config.training.device,
-        multispeaker=train.model_config.model.multispeaker,
+        multispeaker=train.model_config.multispeaker,
         train=train,
     )
     train.val_dataloader = train.accelerator.prepare(train.val_dataloader)
@@ -142,7 +139,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         probe_batch_max=train.config.training.probe_batch_max,
         device=train.config.training.device,
         accelerator=train.accelerator,
-        multispeaker=train.model_config.model.multispeaker,
+        multispeaker=train.model_config.multispeaker,
         text_cleaner=text_cleaner,
         stage=stage,
         epoch=train.manifest.current_epoch,
@@ -165,7 +162,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         train.model_config.slm.model,
         None,
         # train.model.wd,
-        train.model_config.preprocess.sample_rate,
+        train.model_config.sample_rate,
         train.model_config.slm.sr,
     ).to(train.config.training.device)
 
@@ -277,8 +274,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             train.manifest.current_total_step += 1
             train.manifest.current_step += 1
             train.manifest.total_trained_audio_seconds += (
-                float(len(batch[0][0]) * len(batch[0]))
-                / train.model_config.preprocess.sample_rate
+                float(len(batch[0][0]) * len(batch[0])) / train.model_config.sample_rate
             )
             if train.accelerator.is_main_process:
                 if next_log is not None:

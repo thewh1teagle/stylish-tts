@@ -71,10 +71,6 @@ stages = {
             "mel_length",
             "audio_gt",
             "pitch",
-            "log_amplitude",
-            "phase",
-            "real",
-            "imaginary",
             "sentence_embedding",
         ],
     ),
@@ -255,7 +251,7 @@ class StageContext:
                     audio_out = audio_out.cpu().numpy().squeeze()
                     audio_gt = audio_gt.cpu().numpy().squeeze()
                     steps = train.manifest.current_total_step
-                    sample_rate = train.model_config.preprocess.sample_rate
+                    sample_rate = train.model_config.sample_rate
                     train.writer.add_figure(
                         f"eval/attention_{index}", get_image(attention), steps
                     )
@@ -302,10 +298,6 @@ batch_names = [
     "ref_mel",
     "path",
     "pitch",
-    "log_amplitude",
-    "phase",
-    "real",
-    "imaginary",
     "sentence_embedding",
 ]
 

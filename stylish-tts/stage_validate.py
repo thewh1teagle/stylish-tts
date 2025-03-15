@@ -22,11 +22,11 @@ def validate_textual(batch, train):
     log = build_loss_log(train)
     log.add_loss("mel", train.stft_loss(pred.audio.squeeze(1), batch.audio_gt))
     log.add_loss(
-        "F0",
-        torch.nn.functional.smooth_l1_loss(batch.pitch, state.pitch_prediction) / 10,
+        "pitch",
+        torch.nn.functional.smooth_l1_loss(batch.pitch, state.pitch_prediction),
     )
     log.add_loss(
-        "norm", torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction)
+        "energy", torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction)
     )
     loss_ce, loss_dur = compute_duration_ce_loss(
         state.duration_prediction,

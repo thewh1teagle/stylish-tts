@@ -1,7 +1,6 @@
 import random
 
 import torch
-import torchaudio
 
 from monotonic_align import mask_from_lens
 import train_context
@@ -26,12 +25,6 @@ class BatchContext:
             self.config.training.device
         )
         self.duration_results = None
-        self.resample = torchaudio.transforms.Resample(
-            self.train.model_config.preprocess.sample_rate, 16000
-        ).to(self.config.training.device)
-        self.to_mel = torchaudio.transforms.MelSpectrogram(
-            n_mels=80, n_fft=2048, win_length=1200, hop_length=300, sample_rate=24000
-        ).to(self.config.training.device)
         self.pitch_prediction = None
         self.energy_prediction = None
         self.duration_prediction = None
@@ -115,27 +108,6 @@ class BatchContext:
     def get_attention(self):
         return self.attention
 
-    # # def acoustic_pitch(self, mels: torch.Tensor):
-    # def acoustic_pitch(self, audio_gt: torch.Tensor):
-    #     with torch.no_grad():
-    #         # pitch, _, _ = self.model.pitch_extractor(mels.unsqueeze(1))
-    #         c = self.config
-    #         fmin = 50
-    #         fmax = 550
-    #         model = "full"
-    #         audio = self.resample(audio_gt).to(c.training.device)
-    #         pitch = torchcrepe.predict(
-    #             audio,
-    #             16000,
-    #             200,  # c.preprocess.hop_length,
-    #             fmin,
-    #             fmax,
-    #             model,
-    #             batch_size=2048,
-    #             device=c.training.device,
-    #         )[:, :-1]
-    #     return pitch
-
     def acoustic_energy(self, mels: torch.Tensor):
         with torch.no_grad():
             energy = log_norm(mels.unsqueeze(1)).squeeze(1)
@@ -170,6 +142,7 @@ class BatchContext:
             )
             yield (prediction, audio_gt, 0, energy.shape[-1])
         else:
+            hop_length = train.model_config.hop_length
             text_hop = text_encoding.shape[-1] // split
             text_start = 0
             text_end = text_hop + text_encoding.shape[-1] % split
@@ -185,7 +158,7 @@ class BatchContext:
                 pitch_slice = pitch[:, mel_start * 2 : mel_end * 2]
                 energy_slice = energy[:, mel_start * 2 : mel_end * 2]
                 audio_gt_slice = audio_gt[
-                    :, mel_start * 300 * 2 : mel_end * 300 * 2
+                    :, mel_start * hop_length * 2 : mel_end * hop_length * 2
                 ].detach()
                 prediction = self.train.model.decoder(
                     text_slice @ duration_slice,
@@ -314,9 +287,3 @@ class BatchContext:
         self.pitch_prediction, self.energy_prediction = (
             self.model.pitch_energy_predictor(prosody, prosody_embedding)
         )
-
-    # def pretrain_decoding(self, pitch, style, audio_gt, probing=False):
-    #    mels = self.to_mel(audio_gt)[:, :, :-1]
-    #    return self.model.decoder(
-    #        mels, pitch, None, style, pretrain=True, probing=probing
-    #    )

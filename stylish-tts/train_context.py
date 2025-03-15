@@ -83,9 +83,9 @@ class TrainContext:
             None  # Discriminator Loss
         )
         self.wavlm_loss: Optional[WavLMLoss] = None  # WavLM Loss
-        self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss().to(
-            self.config.training.device
-        )
+        self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss(
+            sample_rate=self.model_config.sample_rate, n_mels=self.model_config.n_mels
+        ).to(self.config.training.device)
 
         # Run parameters
         self.n_down: int = 1  # TODO: Use train.model.text_aligner.n_down

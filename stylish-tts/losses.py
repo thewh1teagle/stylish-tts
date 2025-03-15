@@ -30,7 +30,14 @@ class STFTLoss(torch.nn.Module):
     """STFT loss module."""
 
     def __init__(
-        self, fft_size=1024, shift_size=120, win_length=600, window=torch.hann_window
+        self,
+        *,
+        fft_size,
+        shift_size,
+        win_length,
+        window,
+        n_mels,
+        sample_rate,
     ):
         """Initialize STFT loss module."""
         super(STFTLoss, self).__init__()
@@ -38,8 +45,8 @@ class STFTLoss(torch.nn.Module):
         self.shift_size = shift_size
         self.win_length = win_length
         self.to_mel = torchaudio.transforms.MelSpectrogram(
-            n_mels=80,
-            sample_rate=24000,
+            n_mels=n_mels,
+            sample_rate=sample_rate,
             n_fft=fft_size,
             win_length=win_length,
             hop_length=shift_size,
@@ -74,10 +81,13 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
 
     def __init__(
         self,
+        *,
         fft_sizes=[1024, 2048, 512],
         hop_sizes=[120, 240, 50],
         win_lengths=[600, 1200, 240],
         window=torch.hann_window,
+        sample_rate,
+        n_mels,
     ):
         """Initialize Multi resolution STFT loss module.
         Args:
@@ -90,7 +100,16 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)
         self.stft_losses = torch.nn.ModuleList()
         for fs, ss, wl in zip(fft_sizes, hop_sizes, win_lengths):
-            self.stft_losses += [STFTLoss(fs, ss, wl, window)]
+            self.stft_losses += [
+                STFTLoss(
+                    fft_size=fs,
+                    shift_size=ss,
+                    win_length=wl,
+                    window=window,
+                    sample_rate=sample_rate,
+                    n_mels=n_mels,
+                )
+            ]
 
     def forward(self, x, y):
         """Calculate forward propagation.
@@ -208,16 +227,16 @@ def freev_loss(log, batch, pred, begin, end, audio_gt_slice, train):
         L_IP, L_GD, L_PTD = phase_loss(
             batch.phase,
             pred.phase,
-            train.model_config.preprocess.n_fft,
+            train.model_config.n_fft,
             phase.size()[-1],
         )
         # Losses defined on phase spectra
         loss_phase = L_IP + L_GD + L_PTD
         _, _, rea_g_final, imag_g_final = amp_phase_spectrum(
             pred.audio.squeeze(1),
-            train.model_config.preprocess.n_fft,
-            train.model_config.preprocess.hop_length,
-            train.model_config.preprocess.win_length,
+            train.model_config.n_fft,
+            train.model_config.hop_length,
+            train.model_config.win_length,
         )
         loss_consistency = stft_consistency_loss(
             pred.real, rea_g_final, pred.imaginary, imag_g_final

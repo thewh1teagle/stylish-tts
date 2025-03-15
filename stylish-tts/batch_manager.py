@@ -41,19 +41,17 @@ class BatchManager:
         self.device: str = device
         self.multispeaker: bool = multispeaker
         self.stage: str = stage
+        self.hop_length: int = train.model_config.hop_length
 
         train_list = utils.get_data_path_list(self.train_path)
         if len(train_list) == 0:
             logger.error(f"Could not open train_list {self.train_path}")
             exit()
         self.dataset: FilePathDataset = FilePathDataset(
-            train_list,
-            dataset_config.wav_path,
-            OOD_data=dataset_config.OOD_data,
-            min_length=dataset_config.min_length,
-            validation=False,
-            multispeaker=multispeaker,
+            data_list=train_list,
+            root_path=dataset_config.wav_path,
             text_cleaner=text_cleaner,
+            model_config=train.model_config,
             pitch_path=dataset_config.pitch_path,
         )
         self.time_bins: Dict[int, List[int]] = self.dataset.time_bins()
@@ -177,7 +175,7 @@ class BatchManager:
     ) -> Optional[LossLog]:
         result = None
         max_attempts = 3
-        last_bin = get_padded_time_bin(batch[0].shape[-1])
+        last_bin = get_padded_time_bin(batch[0].shape[-1], self.hop_length)
         if last_bin == -1 or (last_bin == self.last_oom and self.skip_forward):
             return result
         elif last_bin != self.last_oom:

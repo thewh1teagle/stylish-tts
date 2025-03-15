@@ -42,7 +42,7 @@ def train_acoustic(batch, model, train) -> LossLog:
             train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
         )
         log.add_loss(
-            "gen",
+            "generator",
             train.generator_loss(
                 batch.audio_gt.detach().unsqueeze(1).float(), pred.audio
             ).mean(),
@@ -95,12 +95,12 @@ def train_textual(batch, model, train) -> LossLog:
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
         log.add_loss(
-            "F0",
-            torch.nn.functional.smooth_l1_loss(batch.pitch, state.pitch_prediction)
-            / 10,
+            "pitch",
+            torch.nn.functional.smooth_l1_loss(batch.pitch, state.pitch_prediction),
         )
         log.add_loss(
-            "norm", torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction)
+            "energy",
+            torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
         )
         loss_ce, loss_dur = compute_duration_ce_loss(
             state.duration_prediction,
@@ -132,7 +132,7 @@ def train_joint(batch, model, train) -> LossLog:
             train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
         )
         log.add_loss(
-            "gen",
+            "generator",
             train.generator_loss(
                 batch.audio_gt.detach().unsqueeze(1).float(), pred.audio
             ).mean(),
