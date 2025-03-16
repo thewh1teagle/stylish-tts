@@ -769,7 +769,7 @@ def build_model(model_config: ModelConfig):
             gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
             gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
             conformer_depth=model_config.decoder.depth,
-            sample_rate=model_confid.sample_rate,
+            sample_rate=model_config.sample_rate,
         )
     # elif model_config.decoder.type == "vocos":
     #     from .decoder.vocos import Decoder
