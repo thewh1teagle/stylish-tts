@@ -118,6 +118,7 @@ def train_joint(batch, model, train) -> LossLog:
     state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
         pred = state.textual_prediction_single(batch)
+        energy = state.acoustic_energy(batch.mel)
         train.stage.optimizer.zero_grad()
         d_loss = train.discriminator_loss(
             batch.audio_gt.detach().unsqueeze(1).float(), pred.audio.detach()
@@ -146,6 +147,14 @@ def train_joint(batch, model, train) -> LossLog:
                 "magphase",
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
+        log.add_loss(
+            "pitch",
+            torch.nn.functional.smooth_l1_loss(batch.pitch, state.pitch_prediction),
+        )
+        log.add_loss(
+            "energy",
+            torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
+        )
         loss_ce, loss_dur = compute_duration_ce_loss(
             state.duration_prediction,
             state.duration_results[1].sum(dim=-1),
