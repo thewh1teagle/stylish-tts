@@ -16,6 +16,7 @@ class LossLog:
         self.logger = logger
         self.writer = writer
         self.weights = loss_weight
+        self.weight_dict = loss_weight.model_dump()
         self.metrics = {}
         self.total_loss = None
 
@@ -58,8 +59,8 @@ class LossLog:
             )
 
     def weight(self, key: str):
-        if key in self.weights:
-            return self.weights[key]
+        if key in self.weight_dict:
+            return self.weight_dict[key]
         else:
             # logging.error(f"WARNING: Unknown weight for key {key}, defaulting to 1")
             logging.debug(f"self.weights: {self.weights}")
@@ -73,7 +74,7 @@ class LossLog:
             loss = value * weight
             total += loss
             total_weight += weight
-        self.total_loss = total / total_weight
+        self.total_loss = total  # / total_weight
 
     def detach(self):
         for key, value in self.metrics.items():
