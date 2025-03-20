@@ -71,7 +71,7 @@ class LoggerManager:
 @click.option("--out_dir", type=str)
 @click.option("--stage", default="first_tma", type=str)
 @click.option("--checkpoint", default="", type=str)
-@click.option("--reset_stage", default=False, type=bool, description="Reset scheduler and optimizer for current stage")
+@click.option("--reset_stage", default=False, type=bool)
 def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage):
     np.random.seed(1)
     random.seed(1)
