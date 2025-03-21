@@ -287,9 +287,15 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                 if next_log is not None:
                     logs.append(next_log)
                     if loss is None:
-                        loss = next_log.metrics["mel"]
+                        if "mel" in next_log.metrics:
+                            loss = next_log.metrics["mel"]
+                        else:
+                            loss = next_log.total()
                     else:
-                        loss = loss * 0.9 + next_log.metrics["mel"] * 0.1
+                        if "mel" in next_log.metrics:
+                            loss = loss * 0.9 + next_log.metrics["mel"] * 0.1
+                        else:
+                            loss = loss * 0.9 + next_log.total() * 0.1
                 if len(logs) >= train.config.training.log_interval:
                     progress_bar.clear() if progress_bar is not None else None
                     combine_logs(logs).broadcast(train.manifest, train.stage)
