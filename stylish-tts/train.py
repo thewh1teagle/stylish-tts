@@ -71,7 +71,8 @@ class LoggerManager:
 @click.option("--out_dir", type=str)
 @click.option("--stage", default="first_tma", type=str)
 @click.option("--checkpoint", default="", type=str)
-def main(config_path, model_config_path, out_dir, stage, checkpoint):
+@click.option("--reset_stage", default=False, type=bool)
+def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage):
     np.random.seed(1)
     random.seed(1)
     if osp.exists(config_path):
@@ -183,8 +184,13 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint):
         train.config = config
         # if we are not loading on a epoch boundary we need to resume the loader and skip to the correct step
         if train.manifest.stage == stage:
-            if train.manifest.current_step != 0:
+            if train.manifest.current_step != 0 and not reset_stage:
                 should_fast_forward = True
+            if reset_stage:
+                train.manifest.current_epoch = 1
+                train.manifest.current_step = 0
+                # TODO: Do we need some create a different function to reset the optimizer and scheduler?
+                train.stage.begin_stage(stage, train)
         else:
             train.manifest.current_epoch = 1
             train.manifest.current_step = 0
