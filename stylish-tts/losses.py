@@ -67,17 +67,35 @@ class STFTLoss(torch.nn.Module):
             Tensor: Log STFT magnitude loss value.
         """
         x_mag = self.to_mel(x)
-        x_norm = torch.log(torch.linalg.vector_norm(x_mag, dim=2))
-        x_log = torch.log(1e-5 + x_mag)
+        # x_norm = torch.log(torch.linalg.vector_norm(x_mag, dim=2))
+        x_log = torch.log(1 + x_mag)
 
         y_mag = self.to_mel(y)
-        y_norm = torch.log(torch.linalg.vector_norm(y_mag, dim=2))
-        y_log = torch.log(1e-5 + y_mag)
+        # y_norm = torch.log(torch.linalg.vector_norm(y_mag, dim=2))
+        y_log = torch.log(1 + y_mag)
 
-        sc_loss = self.spectral_convergence_loss(x_mag, y_mag)
-        energy_loss = F.smooth_l1_loss(x_norm, y_norm)
-        log_loss = F.l1_loss(x_log, y_log)
-        return sc_loss, energy_loss, log_loss
+        sc_loss = self.spectral_convergence_loss(x_log, y_log)
+        # energy_loss = F.smooth_l1_loss(x_norm, y_norm)
+        # log_loss = F.l1_loss(x_log, y_log)
+        return sc_loss  # , energy_loss, log_loss
+
+
+class Resolution:
+    def __init__(self, *, fft, hop, window, mels):
+        self.fft = fft
+        self.hop = hop
+        self.window = window
+        self.mels = mels
+
+
+resolutions = [
+    Resolution(fft=256, hop=31, window=67, mels=40),
+    Resolution(fft=256, hop=67, window=127, mels=40),
+    Resolution(fft=512, hop=127, window=257, mels=80),
+    Resolution(fft=1024, hop=257, window=509, mels=120),
+    Resolution(fft=2048, hop=509, window=1021, mels=120),
+    Resolution(fft=4096, hop=1021, window=2053, mels=120),
+]
 
 
 class MultiResolutionSTFTLoss(torch.nn.Module):
@@ -86,12 +104,13 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
     def __init__(
         self,
         *,
-        fft_sizes=[1024, 2048, 512],
-        hop_sizes=[120, 240, 50],
-        win_lengths=[600, 1200, 240],
+        # fft_sizes=[1024, 2048, 512],
+        # hop_sizes=[120, 240, 50],
+        # win_lengths=[600, 1200, 240],
+        resolution_list=resolutions,
         window=torch.hann_window,
         sample_rate,
-        n_mels,
+        # n_mels,
     ):
         """Initialize Multi resolution STFT loss module.
         Args:
@@ -101,17 +120,16 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
             window (str): Window function type.
         """
         super(MultiResolutionSTFTLoss, self).__init__()
-        assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)
         self.stft_losses = torch.nn.ModuleList()
-        for fs, ss, wl in zip(fft_sizes, hop_sizes, win_lengths):
+        for item in resolution_list:
             self.stft_losses += [
                 STFTLoss(
-                    fft_size=fs,
-                    shift_size=ss,
-                    win_length=wl,
+                    fft_size=item.fft,
+                    shift_size=item.hop,
+                    win_length=item.window,
                     window=window,
                     sample_rate=sample_rate,
-                    n_mels=n_mels,
+                    n_mels=item.mels,
                 )
             ]
 
@@ -125,22 +143,23 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
             Tensor: Multi resolution log STFT magnitude loss value.
         """
         sc_loss = 0.0
-        energy_loss = 0.0
-        log_loss = 0.0
+        # energy_loss = 0.0
+        # log_loss = 0.0
         for f in self.stft_losses:
-            sc_l, energy_l, log_l = f(x, y)
+            # sc_l, energy_l, log_l = f(x, y)
+            sc_l = f(x, y)
             sc_loss += sc_l
-            energy_loss += energy_l
-            log_loss += log_l
+            # energy_loss += energy_l
+            # log_loss += log_l
         sc_loss /= len(self.stft_losses)
-        energy_loss /= len(self.stft_losses)
-        log_loss /= len(self.stft_losses)
+        # energy_loss /= len(self.stft_losses)
+        # log_loss /= len(self.stft_losses)
 
         log.add_loss("mel", sc_loss)
         # log.add_loss("mel_energy", energy_loss)
-        log.add_loss("mel_log", log_loss)
+        # log.add_loss("mel_log", log_loss)
 
-        return sc_loss, energy_loss, log_loss
+        return sc_loss  # , energy_loss, log_loss
 
 
 mp_window = torch.hann_window(20).to("cuda")

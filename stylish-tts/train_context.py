@@ -84,7 +84,7 @@ class TrainContext:
         )
         self.wavlm_loss: Optional[WavLMLoss] = None  # WavLM Loss
         self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss(
-            sample_rate=self.model_config.sample_rate, n_mels=self.model_config.n_mels
+            sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
 
         # Run parameters
