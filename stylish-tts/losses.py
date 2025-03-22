@@ -8,12 +8,12 @@ from transformers import AutoModel
 import numpy as np
 
 
-class SpectralConvergengeLoss(torch.nn.Module):
+class SpectralConvergenceLoss(torch.nn.Module):
     """Spectral convergence loss module."""
 
     def __init__(self):
         """Initilize spectral convergence loss module."""
-        super(SpectralConvergengeLoss, self).__init__()
+        super(SpectralConvergenceLoss, self).__init__()
 
     def forward(self, x_mag, y_mag):
         """Calculate forward propagation.
@@ -23,7 +23,9 @@ class SpectralConvergengeLoss(torch.nn.Module):
         Returns:
             Tensor: Spectral convergence loss value.
         """
-        return torch.norm(y_mag - x_mag, p=1) / torch.norm(y_mag, p=1)
+        num = torch.linalg.matrix_norm(y_mag - x_mag)
+        denom = torch.linalg.matrix_norm(y_mag)
+        return (num / denom).mean()
 
 
 class STFTLoss(torch.nn.Module):
@@ -53,7 +55,7 @@ class STFTLoss(torch.nn.Module):
             window_fn=window,
         )
 
-        self.spectral_convergenge_loss = SpectralConvergengeLoss()
+        self.spectral_convergence_loss = SpectralConvergenceLoss()
 
     def forward(self, x, y):
         """Calculate forward propagation.
@@ -65,15 +67,17 @@ class STFTLoss(torch.nn.Module):
             Tensor: Log STFT magnitude loss value.
         """
         x_mag = self.to_mel(x)
-        mean, std = -4, 4
-        x_mag = (torch.log(1e-5 + x_mag) - mean) / std
+        x_norm = torch.log(torch.linalg.vector_norm(x_mag, dim=2))
+        x_log = torch.log(1e-5 + x_mag)
 
         y_mag = self.to_mel(y)
-        mean, std = -4, 4
-        y_mag = (torch.log(1e-5 + y_mag) - mean) / std
+        y_norm = torch.log(torch.linalg.vector_norm(y_mag, dim=2))
+        y_log = torch.log(1e-5 + y_mag)
 
-        sc_loss = self.spectral_convergenge_loss(x_mag, y_mag)
-        return sc_loss
+        sc_loss = self.spectral_convergence_loss(x_mag, y_mag)
+        energy_loss = F.smooth_l1_loss(x_norm, y_norm)
+        log_loss = F.l1_loss(x_log, y_log)
+        return sc_loss, energy_loss, log_loss
 
 
 class MultiResolutionSTFTLoss(torch.nn.Module):
@@ -111,7 +115,7 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
                 )
             ]
 
-    def forward(self, x, y):
+    def forward(self, x, y, log):
         """Calculate forward propagation.
         Args:
             x (Tensor): Predicted signal (B, T).
@@ -121,12 +125,22 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
             Tensor: Multi resolution log STFT magnitude loss value.
         """
         sc_loss = 0.0
+        energy_loss = 0.0
+        log_loss = 0.0
         for f in self.stft_losses:
-            sc_l = f(x, y)
+            sc_l, energy_l, log_l = f(x, y)
             sc_loss += sc_l
+            energy_loss += energy_l
+            log_loss += log_l
         sc_loss /= len(self.stft_losses)
+        energy_loss /= len(self.stft_losses)
+        log_loss /= len(self.stft_losses)
 
-        return sc_loss
+        log.add_loss("mel", sc_loss)
+        # log.add_loss("mel_energy", energy_loss)
+        log.add_loss("mel_log", log_loss)
+
+        return sc_loss, energy_loss, log_loss
 
 
 mp_window = torch.hann_window(20).to("cuda")

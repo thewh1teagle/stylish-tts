@@ -10,10 +10,7 @@ def train_pre_acoustic(batch, model, train) -> LossLog:
         pred = state.acoustic_prediction_single(batch, use_random_mono=True)
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
-        log.add_loss(
-            "mel",
-            train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
-        )
+        train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
         if pred.magnitude is not None and pred.phase is not None:
             log.add_loss(
                 "magphase",
@@ -37,10 +34,7 @@ def train_acoustic(batch, model, train) -> LossLog:
         train.stage.optimizer.zero_grad()
 
         log = build_loss_log(train)
-        log.add_loss(
-            "mel",
-            train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
-        )
+        train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
         log.add_loss(
             "generator",
             train.generator_loss(
@@ -108,10 +102,7 @@ def train_textual(batch, model, train) -> LossLog:
         energy = state.acoustic_energy(batch.mel)
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
-        log.add_loss(
-            "mel",
-            train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
-        )
+        train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
         log.add_loss(
             "slm",
             train.wavlm_loss(batch.audio_gt.detach(), pred.audio),
@@ -155,10 +146,7 @@ def train_joint(batch, model, train) -> LossLog:
         train.stage.optimizer.step("mpd")
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
-        log.add_loss(
-            "mel",
-            train.stft_loss(pred.audio.squeeze(1), batch.audio_gt),
-        )
+        train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
         log.add_loss(
             "generator",
             train.generator_loss(
