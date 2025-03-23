@@ -9,7 +9,7 @@ training:
   # Keep this as 'no' if you have the VRAM.
   # Lower precision slows training.
   # "bf16", "fp16", or "no" for no mixed precision
-  mixed_precision: "no" 
+  mixed_precision: "no"
   # Maximum number of segments per batch.
   # Increasing this slows training overall even if
   # epochs go by faster.
@@ -21,8 +21,10 @@ training:
 training_plan:
   pre_acoustic: 12
   acoustic: 24
+  pre_textual: 12
   textual: 24
   joint: 24
+  sbert: 12
 
 # See README.md for specifications on the dataset and
 # how to generate these files.
@@ -31,7 +33,6 @@ dataset:
   val_data: "path/to/your/val-list.txt"
   wav_path: "path/to/your/wav-files"
   pitch_path: "path/to/your/pitch.safetensors"
-
 
 # Weights are pre-tuned. Do not change these unless you
 # know what you are doing.
