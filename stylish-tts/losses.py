@@ -67,17 +67,18 @@ class STFTLoss(torch.nn.Module):
             Tensor: Log STFT magnitude loss value.
         """
         x_mag = self.to_mel(x)
-        # x_norm = torch.log(torch.linalg.vector_norm(x_mag, dim=2))
+        x_norm = torch.log(torch.norm(x_mag, dim=2))
         x_log = torch.log(1 + x_mag)
 
         y_mag = self.to_mel(y)
-        # y_norm = torch.log(torch.linalg.vector_norm(y_mag, dim=2))
+        y_norm = torch.log(torch.norm(y_mag, dim=2))
         y_log = torch.log(1 + y_mag)
 
-        sc_loss = self.spectral_convergence_loss(x_log, y_log)
-        # energy_loss = F.smooth_l1_loss(x_norm, y_norm)
+        sc_loss = F.mse_loss(x_log, y_log) * 2
+        # sc_loss = self.spectral_convergence_loss(x_log, y_log)
+        energy_loss = F.smooth_l1_loss(x_norm, y_norm)
         # log_loss = F.l1_loss(x_log, y_log)
-        return sc_loss  # , energy_loss, log_loss
+        return sc_loss, energy_loss  # , log_loss
 
 
 class Resolution:
@@ -143,23 +144,23 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
             Tensor: Multi resolution log STFT magnitude loss value.
         """
         sc_loss = 0.0
-        # energy_loss = 0.0
+        energy_loss = 0.0
         # log_loss = 0.0
         for f in self.stft_losses:
             # sc_l, energy_l, log_l = f(x, y)
-            sc_l = f(x, y)
+            sc_l, energy_l = f(x, y)
             sc_loss += sc_l
-            # energy_loss += energy_l
+            energy_loss += energy_l
             # log_loss += log_l
         sc_loss /= len(self.stft_losses)
-        # energy_loss /= len(self.stft_losses)
+        energy_loss /= len(self.stft_losses)
         # log_loss /= len(self.stft_losses)
 
         log.add_loss("mel", sc_loss)
-        # log.add_loss("mel_energy", energy_loss)
+        log.add_loss("mel_energy", energy_loss)
         # log.add_loss("mel_log", log_loss)
 
-        return sc_loss  # , energy_loss, log_loss
+        return sc_loss, energy_loss  # , log_loss
 
 
 mp_window = torch.hann_window(20).to("cuda")
@@ -253,15 +254,21 @@ def amp_phase_spectrum(y, n_fft, hop_size, win_size):
     return log_amplitude, phase, stft_spec.real, stft_spec.imag
 
 
-def freev_loss(log, batch, pred, begin, end, audio_gt_slice, train):
+def freev_loss(log, pred, gt_audio, train):
     if pred.log_amplitude is not None:
-        loss_amplitude = amplitude_loss(batch.log_amplitude, pred.log_amplitude)
+        gt_log_amplitude, gt_phase, gt_real, gt_imag = amp_phase_spectrum(
+            gt_audio,
+            train.model_config.n_fft,
+            train.model_config.hop_length,
+            train.model_config.win_length,
+        )
+        loss_amplitude = amplitude_loss(gt_log_amplitude, pred.log_amplitude)
 
         L_IP, L_GD, L_PTD = phase_loss(
-            batch.phase,
+            gt_phase,
             pred.phase,
             train.model_config.n_fft,
-            phase.size()[-1],
+            pred.phase.size()[-1],
         )
         # Losses defined on phase spectra
         loss_phase = L_IP + L_GD + L_PTD
@@ -274,14 +281,14 @@ def freev_loss(log, batch, pred, begin, end, audio_gt_slice, train):
         loss_consistency = stft_consistency_loss(
             pred.real, rea_g_final, pred.imaginary, imag_g_final
         )
-        loss_real_part = F.l1_loss(batch.real, pred.real)
-        loss_imaginary_part = F.l1_loss(batch.imagineary, pred.imaginary)
+        loss_real_part = F.l1_loss(gt_real, pred.real)
+        loss_imaginary_part = F.l1_loss(gt_imag, pred.imaginary)
         loss_stft_reconstruction = loss_consistency + 2.25 * (
             loss_real_part + loss_imaginary_part
         )
-        log.add_loss("amplitude", loss_amplitude)
-        log.add_loss("phase", loss_phase)
-        log.add_loss("stft_reconstruction", loss_stft_reconstruction)
+        log.add_loss("amplitude", 4.5 * loss_amplitude)
+        log.add_loss("phase", 9 * loss_phase)
+        log.add_loss("stft_reconstruction", 2 * loss_stft_reconstruction)
 
 
 def feature_loss(fmap_r, fmap_g):

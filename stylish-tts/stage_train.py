@@ -1,7 +1,8 @@
+import math
 import torch
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
-from losses import magphase_loss, compute_duration_ce_loss
+from losses import magphase_loss, compute_duration_ce_loss, freev_loss
 
 
 def train_pre_acoustic(batch, model, train) -> LossLog:
@@ -16,7 +17,8 @@ def train_pre_acoustic(batch, model, train) -> LossLog:
                 "magphase",
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
-        train.accelerator.backward(log.total())
+    # freev_loss(log, pred, batch.audio_gt, train)
+    train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
     return log.detach()
 
 
@@ -52,8 +54,12 @@ def train_acoustic(batch, model, train) -> LossLog:
             )
 
         loss_s2s = 0
-        for pred, text, length in zip(state.s2s_pred, batch.text, batch.text_length):
-            loss_s2s += torch.nn.functional.cross_entropy(pred[:length], text[:length])
+        for pred_align, text, length in zip(
+            state.s2s_pred, batch.text, batch.text_length
+        ):
+            loss_s2s += torch.nn.functional.cross_entropy(
+                pred_align[:length], text[:length]
+            )
         loss_s2s /= batch.text.size(0)
         log.add_loss("s2s", loss_s2s)
 
@@ -61,8 +67,8 @@ def train_acoustic(batch, model, train) -> LossLog:
             "mono", torch.nn.functional.l1_loss(*(state.duration_results)) * 10
         )
 
-        # freev_loss(log, batch, pred, begin, end, batch.audio_gt, train)
-        train.accelerator.backward(log.total())
+        # freev_loss(log, pred, batch.audio_gt, train)
+        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
         log.add_loss("discriminator", d_loss)
 
     return log.detach()
@@ -90,7 +96,7 @@ def train_pre_textual(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
-        train.accelerator.backward(log.total())
+        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
 
     return log.detach()
 
@@ -127,7 +133,7 @@ def train_textual(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
-        train.accelerator.backward(log.total())
+        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
 
     return log.detach()
 
@@ -177,7 +183,7 @@ def train_joint(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
-        train.accelerator.backward(log.total())
+        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
         log.add_loss("discriminator", d_loss)
 
     return log.detach()
