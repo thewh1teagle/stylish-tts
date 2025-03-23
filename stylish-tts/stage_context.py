@@ -178,6 +178,13 @@ stages = {
             "textual_prosody_encoder",
             "acoustic_style_encoder",
             "acoustic_prosody_encoder",
+            "duration_predictor",
+            "pitch_energy_predictor",
+            "bert",
+            "bert_encoder",
+            "text_encoder",
+            "decoder",
+            "text_aligner",
         ],
         disc_models=[],
         inputs=[

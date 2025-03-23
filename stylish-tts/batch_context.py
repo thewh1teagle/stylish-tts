@@ -273,8 +273,8 @@ class BatchContext:
             apply_attention_mask=False,
             use_random_choice=False,
         )
-        style_embedding = self.textual_style_embedding(batch.mel)
-        prosody_embedding = self.textual_prosody_embedding(batch.mel)
+        style_embedding = self.textual_style_embedding(batch.sentence_embedding)
+        prosody_embedding = self.textual_prosody_embedding(batch.sentence_embedding)
         plbert_embedding = self.model.bert(
             batch.text, attention_mask=(~self.text_mask).int()
         )
