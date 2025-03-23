@@ -262,6 +262,41 @@ class BatchContext:
             style_embedding,
         )
         return prediction
+    
+    def sbert_prediction_single(self, batch):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=False,
+            use_random_choice=False,
+        )
+        style_embedding = self.textual_style_embedding(batch.mel)
+        prosody_embedding = self.textual_prosody_embedding(batch.mel)
+        plbert_embedding = self.model.bert(
+            batch.text, attention_mask=(~self.text_mask).int()
+        )
+        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        self.duration_prediction, prosody = self.model.duration_predictor(
+            duration_encoding,
+            prosody_embedding,
+            batch.text_length,
+            self.duration_results[1],
+            self.text_mask,
+        )
+        self.pitch_prediction, self.energy_prediction = (
+            self.model.pitch_energy_predictor(prosody, prosody_embedding)
+        )
+        prediction = self.decoding_single(
+            text_encoding,
+            duration,
+            self.pitch_prediction,
+            self.energy_prediction,
+            style_embedding,
+        )
+        return prediction
 
     def textual_bootstrap_prediction(self, batch):
         _ = self.acoustic_duration(

@@ -193,3 +193,28 @@ def train_joint(batch, model, train) -> LossLog:
         log.add_loss("discriminator", d_loss)
 
     return log.detach()
+
+
+def train_sbert(batch, model, train) -> LossLog:
+    """Training function for the sbert stage."""
+    state = BatchContext(train=train, model=model, text_length=batch.text_length)
+    with train.accelerator.autocast():
+        # 1. Get textual and acoustic embeddings
+        textual_style_embedding = state.textual_style_embedding(batch.sentence_embedding)
+        textual_prosody_embedding = state.textual_prosody_embedding(batch.sentence_embedding)
+        acoustic_style_embedding = state.acoustic_style_embedding(batch.mel)
+        acoustic_prosody_embedding = state.acoustic_prosody_embedding(batch.mel)
+
+        train.stage.optimizer.zero_grad()
+        log = build_loss_log(train)
+
+        # 2. Calculate Loss
+        style_loss = torch.nn.functional.l1_loss(textual_style_embedding, acoustic_style_embedding)
+        prosody_loss = torch.nn.functional.l1_loss(textual_prosody_embedding, acoustic_prosody_embedding)
+
+        log.add_loss("sbert_style_loss", style_loss)
+        log.add_loss("sbert_prosody_loss", prosody_loss)
+
+        train.accelerator.backward(log.total())
+
+    return log.detach()
