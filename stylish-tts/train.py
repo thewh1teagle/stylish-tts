@@ -275,6 +275,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             iterator = enumerate(train.batch_manager.loader)
         loss = None
         for _, batch in iterator:
+            postfix = {}
             next_log = train.batch_manager.train_iterate(
                 batch, train, progress_bar=progress_bar
             )
@@ -296,6 +297,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                             loss = loss * 0.9 + next_log.metrics["mel"] * 0.1
                         else:
                             loss = loss * 0.9 + next_log.total() * 0.1
+                    postfix = {"mel_loss": f"{loss:.3f}"}
                 if len(logs) >= train.config.training.log_interval:
                     progress_bar.clear() if progress_bar is not None else None
                     combine_logs(logs).broadcast(train.manifest, train.stage)
@@ -308,7 +310,6 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             do_save = num % save_step == 0
             next_val = val_step - num % val_step - 1
             next_save = save_step - num % save_step - 1
-            postfix = {"mel_loss": f"{loss:.3f}"}
             if next_val < next_save:
                 postfix["val"] = str(next_val)
             else:

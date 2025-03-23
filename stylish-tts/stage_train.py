@@ -18,7 +18,7 @@ def train_pre_acoustic(batch, model, train) -> LossLog:
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
     # freev_loss(log, pred, batch.audio_gt, train)
-    train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
+    train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
     return log.detach()
 
 
@@ -68,7 +68,9 @@ def train_acoustic(batch, model, train) -> LossLog:
         )
 
         # freev_loss(log, pred, batch.audio_gt, train)
-        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
+        train.accelerator.backward(
+            log.backwards_loss() * math.sqrt(batch.text.shape[0])
+        )
         log.add_loss("discriminator", d_loss)
 
     return log.detach()
@@ -96,7 +98,9 @@ def train_pre_textual(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
-        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
+        train.accelerator.backward(
+            log.backwards_loss() * math.sqrt(batch.text.shape[0])
+        )
 
     return log.detach()
 
@@ -133,7 +137,9 @@ def train_textual(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
-        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
+        train.accelerator.backward(
+            log.backwards_loss() * math.sqrt(batch.text.shape[0])
+        )
 
     return log.detach()
 
@@ -183,7 +189,9 @@ def train_joint(batch, model, train) -> LossLog:
         )
         log.add_loss("duration_ce", loss_ce)
         log.add_loss("duration", loss_dur)
-        train.accelerator.backward(log.total() * math.sqrt(batch.text.shape[0]))
+        train.accelerator.backward(
+            log.backwards_loss() * math.sqrt(batch.text.shape[0])
+        )
         log.add_loss("discriminator", d_loss)
 
     return log.detach()
