@@ -157,7 +157,7 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         # log_loss /= len(self.stft_losses)
 
         log.add_loss("mel", sc_loss)
-        log.add_loss("mel_energy", energy_loss)
+        # log.add_loss("mel_energy", energy_loss)
         # log.add_loss("mel_log", log_loss)
 
         return sc_loss, energy_loss  # , log_loss

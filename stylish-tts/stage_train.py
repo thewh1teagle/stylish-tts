@@ -17,7 +17,7 @@ def train_pre_acoustic(batch, model, train) -> LossLog:
                 "magphase",
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
-    # freev_loss(log, pred, batch.audio_gt, train)
+    freev_loss(log, pred, batch.audio_gt, train)
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
     return log.detach()
 
@@ -67,7 +67,7 @@ def train_acoustic(batch, model, train) -> LossLog:
             "mono", torch.nn.functional.l1_loss(*(state.duration_results)) * 10
         )
 
-        # freev_loss(log, pred, batch.audio_gt, train)
+        freev_loss(log, pred, batch.audio_gt, train)
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
