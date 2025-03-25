@@ -56,6 +56,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "acoustic": StageConfig(
@@ -78,6 +79,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "pre_textual": StageConfig(
@@ -106,6 +108,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "textual": StageConfig(
@@ -134,6 +137,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "joint": StageConfig(
@@ -162,6 +166,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
 }
@@ -352,6 +357,7 @@ batch_names = [
     "path",
     "pitch",
     "sentence_embedding",
+    "voiced",
 ]
 
 

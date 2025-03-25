@@ -121,6 +121,8 @@ class SymbolConfig(BaseModel):
     letters_ipa: str = Field(
         ..., description="IPA phonetic characters including diacritics"
     )
+    voiced: str = Field(..., description="Set of characters which are voiced")
+    unvoiced: str = Field(..., description="Set of characters which are unvoiced")
 
 
 class TextAlignerConfig(BaseModel):

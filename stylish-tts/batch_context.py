@@ -113,6 +113,14 @@ class BatchContext:
             energy = log_norm(mels.unsqueeze(1)).squeeze(1)
         return energy
 
+    def calculate_pitch(self, batch, prediction=None):
+        if prediction is None:
+            prediction = batch.pitch
+        mask = batch.voiced.unsqueeze(1)
+        mask = mask @ self.duration_results[1]
+        mask = mask.squeeze(1).repeat_interleave(repeats=2, dim=1)
+        return prediction * mask
+
     def acoustic_style_embedding(self, mels: torch.Tensor):
         return self.model.acoustic_style_encoder(mels.unsqueeze(1))
 
@@ -196,10 +204,11 @@ class BatchContext:
         )
         energy = self.acoustic_energy(batch.mel)
         style_embedding = self.acoustic_style_embedding(batch.mel)
+        pitch = self.calculate_pitch(batch)
         prediction = self.decoding(
             text_encoding,
             duration,
-            batch.pitch,
+            pitch,
             energy,
             style_embedding,
             batch.audio_gt,
@@ -219,10 +228,11 @@ class BatchContext:
         )
         energy = self.acoustic_energy(batch.mel)
         style_embedding = self.acoustic_style_embedding(batch.mel)
+        pitch = self.calculate_pitch(batch)
         prediction = self.decoding_single(
             text_encoding,
             duration,
-            batch.pitch,
+            pitch,
             energy,
             style_embedding,
         )
@@ -254,10 +264,11 @@ class BatchContext:
         self.pitch_prediction, self.energy_prediction = (
             self.model.pitch_energy_predictor(prosody, prosody_embedding)
         )
+        pitch = self.calculate_pitch(batch, self.pitch_prediction)
         prediction = self.decoding_single(
             text_encoding,
             duration,
-            self.pitch_prediction,
+            pitch,
             self.energy_prediction,
             style_embedding,
         )

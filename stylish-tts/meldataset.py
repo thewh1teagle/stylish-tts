@@ -121,7 +121,9 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         data = self.data_list[idx]
         path = data[0]
-        wave, text_tensor, speaker_id, mel_tensor = self._load_tensor(data)
+        wave, text_tensor, speaker_id, mel_tensor, voiced_tensor = self._load_tensor(
+            data
+        )
 
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
@@ -169,6 +171,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave,
             pitch,
             sentence_embedding,
+            voiced_tensor,
         )
 
     def _load_tensor(self, data):
@@ -194,15 +197,19 @@ class FilePathDataset(torch.utils.data.Dataset):
         wave = torch.from_numpy(wave).float()
 
         text = self.text_cleaner(text)
+        voiced = self.text_cleaner.is_voiced(text)
 
         text.insert(0, 0)
         text.append(0)
-
         text = torch.LongTensor(text)
+
+        voiced.insert(0, 0)
+        voiced.append(0)
+        voiced = torch.tensor(voiced, dtype=torch.float32)
 
         mel_tensor = self.preprocess(wave).squeeze()
 
-        return (wave, text, speaker_id, mel_tensor)
+        return (wave, text, speaker_id, mel_tensor, voiced)
 
     def _load_data(self, data):
         max_mel_length = 192
@@ -259,6 +266,7 @@ class Collater(object):
         ).float()  # [None for _ in range(batch_size)]
         pitches = torch.zeros((batch_size, max_mel_length)).float()
         sentence_embeddings = torch.zeros(batch_size, 384).float()
+        voiced = torch.zeros((batch_size, max_text_length)).float()
 
         for bid, (
             label,
@@ -271,6 +279,7 @@ class Collater(object):
             wave,
             pitch,
             sentence,
+            voiced_one,
         ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -291,6 +300,7 @@ class Collater(object):
             if pitch is not None:
                 pitches[bid] = pitch
             sentence_embeddings[bid] = sentence
+            voiced[bid, :text_size] = voiced_one
 
         result = (
             waves,
@@ -304,6 +314,7 @@ class Collater(object):
             paths,
             pitches,
             sentence_embeddings,
+            voiced,
         )
         return result
 
