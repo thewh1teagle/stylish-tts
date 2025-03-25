@@ -204,7 +204,7 @@ class BatchContext:
         )
         energy = self.acoustic_energy(batch.mel)
         style_embedding = self.acoustic_style_embedding(batch.mel)
-        pitch = self.calculate_pitch(batch)
+        pitch = self.calculate_pitch(batch).detach()
         prediction = self.decoding(
             text_encoding,
             duration,
@@ -228,7 +228,7 @@ class BatchContext:
         )
         energy = self.acoustic_energy(batch.mel)
         style_embedding = self.acoustic_style_embedding(batch.mel)
-        pitch = self.calculate_pitch(batch)
+        pitch = self.calculate_pitch(batch).detach()
         prediction = self.decoding_single(
             text_encoding,
             duration,
