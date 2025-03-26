@@ -355,9 +355,23 @@ def padDiff(x):
     )
 
 
-class ResBlock1(torch.nn.Module):
-    def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5)):
-        super(ResBlock1, self).__init__()
+class AdaIN1d(nn.Module):
+    def __init__(self, style_dim, num_features):
+        super().__init__()
+        self.norm = nn.InstanceNorm1d(num_features, affine=False)
+        self.fc = nn.Linear(style_dim, num_features * 2)
+
+    def forward(self, x, s):
+        h = self.fc(s)
+        h = h.view(h.size(0), h.size(1), 1)
+        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        result = (1 + gamma) * self.norm(leaky_clamp(x, -1e10, 1e10)) + beta
+        return result
+
+
+class AdaINResBlock1(torch.nn.Module):
+    def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5), style_dim=64):
+        super(AdaINResBlock1, self).__init__()
         self.convs1 = nn.ModuleList(
             [
                 weight_norm(
@@ -430,19 +444,40 @@ class ResBlock1(torch.nn.Module):
         )
         self.convs2.apply(init_weights)
 
-    def forward(self, x, x_mask=None):
-        for c1, c2 in zip(self.convs1, self.convs2):
-            xt = F.leaky_relu(x, LRELU_SLOPE)
-            if x_mask is not None:
-                xt = xt * x_mask
+        self.adain1 = nn.ModuleList(
+            [
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+            ]
+        )
+
+        self.adain2 = nn.ModuleList(
+            [
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+            ]
+        )
+
+        self.alpha1 = nn.ParameterList(
+            [nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs1))]
+        )
+        self.alpha2 = nn.ParameterList(
+            [nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs2))]
+        )
+
+    def forward(self, x, s):
+        for c1, c2, n1, n2, a1, a2 in zip(
+            self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2
+        ):
+            xt = n1(x, s)
+            xt = xt + (1 / a1) * (torch.sin(a1 * xt) ** 2)  # Snake1D
             xt = c1(xt)
-            xt = F.leaky_relu(xt, LRELU_SLOPE)
-            if x_mask is not None:
-                xt = xt * x_mask
+            xt = n2(xt, s)
+            xt = xt + (1 / a2) * (torch.sin(a2 * xt) ** 2)  # Snake1D
             xt = c2(xt)
             x = xt + x
-        if x_mask is not None:
-            x = x * x_mask
         return x
 
 
@@ -534,8 +569,12 @@ class Generator(torch.nn.Module):
         self.noise_convs = nn.ModuleList()
         self.noise_res = nn.ModuleList()
         for _ in range(self.num_layers):
-            self.noise_convs.append(Conv1d(22, h.PSP_channel, kernel_size=1))
-            self.noise_res.append(ResBlock1(h.PSP_channel, 11, [1, 3, 5]))
+            self.noise_res.append(
+                AdaINResBlock1(h.PSP_channel + 22, 11, [1, 3, 5], h.style_dim)
+            )
+            self.noise_convs.append(
+                Conv1d(h.PSP_channel + 22, h.PSP_channel, kernel_size=1)
+            )
         self.stft = TorchSTFT(
             filter_length=20,
             hop_length=5,
@@ -616,7 +655,7 @@ class Generator(torch.nn.Module):
             nn.init.trunc_normal_(m.weight, std=0.02)
             nn.init.constant_(m.bias, 0)
 
-    def forward(self, mel, f0, inv_mel=None):
+    def forward(self, mel, f0, style, inv_mel=None):
         with torch.no_grad():
             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
             har_source, noi_source, uv = self.m_source(f0)
@@ -655,9 +694,10 @@ class Generator(torch.nn.Module):
         pha = self.norm(pha.transpose(1, 2))
         pha = pha.transpose(1, 2)
         for i in range(self.num_layers):
-            pha_source = self.noise_convs[i](har)
-            pha_source = self.noise_res[i](pha_source)
-            pha = pha + pha_source
+            pha_source = torch.cat([pha, har], dim=1)
+            pha_source = self.noise_res[i](pha_source, style)
+            pha = self.noise_convs[i](pha_source)
+            # pha = pha + pha_source
             pha = self.convnext[i](pha, cond_embedding_id=None)
         pha = self.final_layer_norm(pha.transpose(1, 2))
         pha = pha.transpose(1, 2)
@@ -963,7 +1003,7 @@ class Decoder(nn.Module):
             x = self.to_out(x)
         else:
             x = asr
-        audio, logamp, phase, real, imaginary = self.generator(x, F0_curve)
+        audio, logamp, phase, real, imaginary = self.generator(x, F0_curve, s)
         return DecoderPrediction(
             audio=audio,
             log_amplitude=logamp,
