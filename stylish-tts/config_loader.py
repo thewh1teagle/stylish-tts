@@ -246,19 +246,23 @@ class RingformerDecoderConfig(BaseModel):
     depth: int = Field(..., description="Number of conformer blocks in model")
 
 
-# class VocosDecoderConfig(BaseModel):
-#     """
-#     Configuration for Vocos decoder.
-#     """
+class VocosDecoderConfig(BaseModel):
+    """
+    Configuration for Vocos decoder.
+    """
 
-#     type: Literal["vocos"] = "vocos"
-#     hidden_dim: int = Field(..., description="Hidden dimension for Vocos.")
-#     intermediate_dim: int = Field(
-#         ..., description="Intermediate dimension size for Vocos."
-#     )
-#     num_layers: int = Field(..., description="Number of layers in Vocos model.")
-#     gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
-#     gen_istft_hop_size: int = Field(..., description="Hop size for iSTFT generator.")
+    type: Literal["vocos"] = "vocos"
+    intermediate_dim: int = Field(
+        ..., description="Intermediate dimension size for Vocos."
+    )
+    num_layers: int = Field(..., description="Number of layers in Vocos model.")
+    gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
+    gen_istft_win_length: int = Field(
+        ..., description="Window length for iSTFT generator."
+    )
+    gen_istft_hop_length: int = Field(
+        ..., description="Hop length for iSTFT generator."
+    )
 
 
 class FreevDecoderConfig(BaseModel):
@@ -412,7 +416,7 @@ class ModelConfig(BaseModel):
         # HiFiGANDecoderConfig,
         ISTFTNetDecoderConfig,
         RingformerDecoderConfig,
-        # VocosDecoderConfig,
+        VocosDecoderConfig,
         FreevDecoderConfig,
     ] = Field(..., description="Decoder (vocoder) configuration parameters.")
     text_encoder: TextEncoderConfig = Field(

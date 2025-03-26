@@ -52,6 +52,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             n_fft=model_config.n_fft,
             win_length=model_config.win_length,
             hop_length=model_config.hop_length,
+            sample_rate=model_config.sample_rate,
         )
 
         # self.min_length = min_length
