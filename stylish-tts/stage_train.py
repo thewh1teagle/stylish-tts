@@ -3,6 +3,41 @@ import torch
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
 from losses import magphase_loss, compute_duration_ce_loss, freev_loss
+from utils import length_to_mask
+
+
+def train_alignment(batch, model, train) -> LossLog:
+    log = build_loss_log(train)
+
+    blank = train.text_cleaner("ǁ")[0]
+    mask = length_to_mask(batch.mel_length // (2**train.n_down)).to(
+        train.config.training.device
+    )
+    ppgs, s2s_pred, _ = model.text_aligner(
+        batch.mel, src_key_padding_mask=mask, text_input=batch.text
+    )
+
+    train.stage.optimizer.zero_grad()
+    soft = ppgs.log_softmax(dim=2).transpose(0, 1)
+    loss_ctc = torch.nn.functional.ctc_loss(
+        soft,
+        batch.text,
+        batch.mel_length // (2**train.n_down),
+        batch.text_length,
+        blank=blank,
+    )
+    log.add_loss("ctc", loss_ctc)
+
+    loss_s2s = 0
+    for pred_align, text, length in zip(s2s_pred, batch.text, batch.text_length):
+        loss_s2s += torch.nn.functional.cross_entropy(
+            pred_align[:length], text[:length], ignore_index=-1
+        )
+    loss_s2s /= batch.text.size(0)
+    log.add_loss("s2s", loss_s2s)
+
+    train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
+    return log.detach()
 
 
 def train_pre_acoustic(batch, model, train) -> LossLog:

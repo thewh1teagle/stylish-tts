@@ -59,7 +59,7 @@ class BatchContext:
         )
 
         # --- Text Aligner Forward Pass ---
-        s2s_pred, s2s_attn = self.model.text_aligner(mels, mask, texts)
+        _, s2s_pred, s2s_attn = self.model.text_aligner(mels, mask, texts)
         # Remove the last token to make the shape match texts
         s2s_attn = s2s_attn.transpose(-1, -2)
         s2s_attn = s2s_attn[..., 1:]

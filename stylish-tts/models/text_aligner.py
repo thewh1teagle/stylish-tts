@@ -57,11 +57,10 @@ class TextAligner(nn.Module):
         x = self.cnns(x)
         x = self.projection(x)
         x = x.transpose(1, 2)
-        # ctc_logit = self.ctc_linear(x)
+        ctc_logit = self.ctc_linear(x)
         if text_input is not None:
             _, s2s_logit, s2s_attn = self.asr_s2s(x, src_key_padding_mask, text_input)
-            # return ctc_logit, s2s_logit, s2s_attn
-            return s2s_logit, s2s_attn
+            return ctc_logit, s2s_logit, s2s_attn
         else:
             return None  # ctc_logit
 
@@ -170,7 +169,6 @@ class ASRS2S(nn.Module):
 
         hidden_outputs, logit_outputs, alignments = [], [], []
         while len(hidden_outputs) < decoder_inputs.size(0):
-
             decoder_input = decoder_inputs[len(hidden_outputs)]
             hidden, logit, attention_weights = self.decode(decoder_input)
             hidden_outputs += [hidden]
@@ -184,7 +182,6 @@ class ASRS2S(nn.Module):
         return hidden_outputs, logit_outputs, alignments
 
     def decode(self, decoder_input):
-
         cell_input = torch.cat((decoder_input, self.attention_context), -1)
         self.decoder_hidden, self.decoder_cell = self.decoder_rnn(
             cell_input, (self.decoder_hidden, self.decoder_cell)
@@ -219,7 +216,6 @@ class ASRS2S(nn.Module):
         return hidden, logit, self.attention_weights
 
     def parse_decoder_outputs(self, hidden, logit, alignments):
-
         # -> [B, T_out + 1, max_time]
         alignments = torch.stack(alignments).transpose(0, 1)
         # [T_out + 1, B, n_symbols] -> [B, T_out + 1,  n_symbols]
