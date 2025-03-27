@@ -79,12 +79,6 @@ class LossWeightConfig(BaseModel):
     """
 
     mel: float = Field(..., description="Weight for mel spetral convergence loss.")
-    mel_energy: float = Field(
-        ..., description="Weight for mel reconstruction energy loss."
-    )
-    mel_log: float = Field(
-        ..., description="Weight for mel log-weighted reconstruction loss."
-    )
     generator: float = Field(..., description="Weight for generator loss.")
     slm: float = Field(
         ..., description="Weight for speech-language model feature matching loss."
