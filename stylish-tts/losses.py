@@ -291,61 +291,136 @@ def freev_loss(log, pred, gt_audio, train):
         log.add_loss("stft_reconstruction", 2 * loss_stft_reconstruction)
 
 
-def feature_loss(fmap_r, fmap_g):
-    loss = 0
-    for dr, dg in zip(fmap_r, fmap_g):
-        for rl, gl in zip(dr, dg):
-            loss += torch.mean(torch.abs(rl - gl))
-
-    return loss * 2
-
-
-def discriminator_loss(disc_real_outputs, disc_generated_outputs):
-    loss = 0
-    r_losses = []
-    g_losses = []
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-        r_loss = torch.mean((1 - dr) ** 2)
-        g_loss = torch.mean(dg**2)
-        loss += r_loss + g_loss
-        r_losses.append(r_loss.item())
-        g_losses.append(g_loss.item())
-
-    return loss, r_losses, g_losses
-
-
-def generator_loss(disc_outputs):
-    loss = 0
-    gen_losses = []
-    for dg in disc_outputs:
-        l = torch.mean((1 - dg) ** 2)
-        gen_losses.append(l)
-        loss += l
-
-    return loss, gen_losses
-
-
-""" https://dl.acm.org/doi/abs/10.1145/3573834.3574506 """
+# def feature_loss(fmap_r, fmap_g):
+# loss = 0
+# for dr, dg in zip(fmap_r, fmap_g):
+# for rl, gl in zip(dr, dg):
+# loss += torch.mean(torch.abs(rl - gl))
+#
+# return loss * 2
+#
+#
+# def discriminator_loss(disc_real_outputs, disc_generated_outputs):
+# loss = 0
+# r_losses = []
+# g_losses = []
+# for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+# r_loss = torch.mean((1 - dr) ** 2)
+# g_loss = torch.mean(dg**2)
+# loss += r_loss + g_loss
+# r_losses.append(r_loss.item())
+# g_losses.append(g_loss.item())
+#
+# return loss, r_losses, g_losses
+#
+#
+# def generator_loss(disc_outputs):
+# loss = 0
+# gen_losses = []
+# for dg in disc_outputs:
+# l = torch.mean((1 - dg) ** 2)
+# gen_losses.append(l)
+# loss += l
+#
+# return loss, gen_losses
 
 
-def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
-    loss = 0
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-        tau = 0.04
-        m_DG = torch.median((dr - dg))
-        L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
-        loss += tau - F.relu(tau - L_rel)
-    return loss
-
-
-def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
-    loss = 0
-    for dg, dr in zip(disc_real_outputs, disc_generated_outputs):
-        tau = 0.04
-        m_DG = torch.median((dr - dg))
-        L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
-        loss += tau - F.relu(tau - L_rel)
-    return loss
+# """ https://dl.acm.org/doi/abs/10.1145/3573834.3574506 """
+#
+#
+# def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
+# loss = 0
+# for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+# tau = 0.04
+# m_DG = torch.median((dr - dg))
+# L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
+# loss += tau - F.relu(tau - L_rel)
+# return loss
+#
+#
+# def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
+# loss = 0
+# for dg, dr in zip(disc_real_outputs, disc_generated_outputs):
+# tau = 0.04
+# m_DG = torch.median((dr - dg))
+# L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
+# loss += tau - F.relu(tau - L_rel)
+# return loss
+#
+#
+# class GeneratorLoss(torch.nn.Module):
+# def __init__(self, mpd, msd):
+# super(GeneratorLoss, self).__init__()
+# self.mpd = mpd
+# self.msd = msd
+#
+# def forward(self, y, y_hat):
+# y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = self.mpd(y, y_hat)
+# y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_hat)
+# loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+# loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+# loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
+# loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
+#
+# loss_rel = generator_TPRLS_loss(y_df_hat_r, y_df_hat_g) + generator_TPRLS_loss(
+# y_ds_hat_r, y_ds_hat_g
+# )
+#
+# loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_rel
+#
+# return loss_gen_all.mean()
+#
+#
+# class DiscriminatorLoss(torch.nn.Module):
+# def __init__(self, mpd, msd):
+# super(DiscriminatorLoss, self).__init__()
+# self.mpd = mpd
+# self.msd = msd
+# self.last_loss = 4
+#
+# def get_disc_lr_multiplier(self):
+# ideal_loss = 4.0
+# f_max = 2.0
+# h_min = 0.1
+# x_max = 4.5
+# x_min = 3.5
+# x = abs(self.last_loss - ideal_loss)
+# result = 1.0
+# if self.last_loss > ideal_loss:
+# x = min(x, x_max)
+# result = min(math.pow(f_max, x / x_max), f_max)
+# # f_x = tf.clip_by_value(tf.math.pow(f_max, x/x_max), 1.0, f_max)
+# else:
+# x = max(x, x_min)
+# result = max(math.pow(h_min, x / x_min), h_min)
+# # h_x = tf.clip_by_value(tf.math.pow(h_min, x/x_min), h_min, 1.0)
+# # return tf.cond(loss > ideal_loss, lambda: f_x, lambda: h_x)
+# return result
+#
+# def get_disc_lambda(self):
+# return lambda epoch: self.get_disc_lr_multiplier()
+#
+# def forward(self, y, y_hat):
+# # MPD
+# y_df_hat_r, y_df_hat_g, _, _ = self.mpd(y, y_hat)
+# loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(
+# y_df_hat_r, y_df_hat_g
+# )
+# # MSD
+# y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_hat)
+# loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(
+# y_ds_hat_r, y_ds_hat_g
+# )
+#
+# loss_rel = discriminator_TPRLS_loss(
+# y_df_hat_r, y_df_hat_g
+# ) + discriminator_TPRLS_loss(y_ds_hat_r, y_ds_hat_g)
+#
+# d_loss = loss_disc_s + loss_disc_f + loss_rel
+#
+# mean = d_loss.mean()
+# self.last_loss = mean.item()
+# return mean
 
 
 class GeneratorLoss(torch.nn.Module):
@@ -353,22 +428,24 @@ class GeneratorLoss(torch.nn.Module):
         super(GeneratorLoss, self).__init__()
         self.mpd = mpd
         self.msd = msd
+        self.gen_loss = GeneratorLossFunction()
+        self.fm_loss = FeatureMatchingLossFunction()
+        self.msd_weight = 0.1
 
-    def forward(self, y, y_hat):
-        y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = self.mpd(y, y_hat)
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_hat)
-        loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-        loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-        loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-
-        loss_rel = generator_TPRLS_loss(y_df_hat_r, y_df_hat_g) + generator_TPRLS_loss(
-            y_ds_hat_r, y_ds_hat_g
+    def forward(self, audio_gt, audio):
+        _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.mpd(y=audio_gt, y_hat=audio)
+        _, gen_score_mrd, fmap_rs_mrd, fmap_gs_mrd = self.msd(y=audio_gt, y_hat=audio)
+        loss_gen_mp, list_loss_gen_mp = self.gen_loss(disc_outputs=gen_score_mp)
+        loss_gen_mrd, list_loss_gen_mrd = self.gen_loss(disc_outputs=gen_score_mrd)
+        loss_gen_mp = loss_gen_mp / len(list_loss_gen_mp)
+        loss_gen_mrd = loss_gen_mrd / len(list_loss_gen_mrd)
+        loss_fm_mp = self.fm_loss(fmap_r=fmap_rs_mp, fmap_g=fmap_gs_mp) / len(
+            fmap_rs_mp
         )
-
-        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_rel
-
-        return loss_gen_all.mean()
+        loss_fm_mrd = self.fm_loss(fmap_r=fmap_rs_mrd, fmap_g=fmap_gs_mrd) / len(
+            fmap_rs_mrd
+        )
+        return loss_gen_mp + loss_fm_mp + self.msd_weight * (loss_gen_mrd + loss_fm_mrd)
 
 
 class DiscriminatorLoss(torch.nn.Module):
@@ -376,51 +453,128 @@ class DiscriminatorLoss(torch.nn.Module):
         super(DiscriminatorLoss, self).__init__()
         self.mpd = mpd
         self.msd = msd
-        self.last_loss = 4
+        self.disc_loss = DiscriminatorLossFunction()
+        self.msd_weight = 0.1
+        self.last_loss = 2.2
 
     def get_disc_lr_multiplier(self):
-        ideal_loss = 4.0
-        f_max = 2.0
-        h_min = 0.1
-        x_max = 4.5
-        x_min = 3.5
+        ideal_loss = 2.1
+        f_max = 4.0
+        h_min = 0.25
+        x_max = 0.2
+        x_min = 0.2
         x = abs(self.last_loss - ideal_loss)
         result = 1.0
         if self.last_loss > ideal_loss:
-            x = min(x, x_max)
             result = min(math.pow(f_max, x / x_max), f_max)
-            # f_x = tf.clip_by_value(tf.math.pow(f_max, x/x_max), 1.0, f_max)
         else:
-            x = max(x, x_min)
             result = max(math.pow(h_min, x / x_min), h_min)
-            # h_x = tf.clip_by_value(tf.math.pow(h_min, x/x_min), h_min, 1.0)
-        # return tf.cond(loss > ideal_loss, lambda: f_x, lambda: h_x)
         return result
 
     def get_disc_lambda(self):
         return lambda epoch: self.get_disc_lr_multiplier()
 
-    def forward(self, y, y_hat):
-        # MPD
-        y_df_hat_r, y_df_hat_g, _, _ = self.mpd(y, y_hat)
-        loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(
-            y_df_hat_r, y_df_hat_g
+    def forward(self, audio_gt, audio):
+        real_score_mp, gen_score_mp, _, _ = self.mpd(y=audio_gt, y_hat=audio)
+        real_score_mrd, gen_score_mrd, _, _ = self.msd(y=audio_gt, y_hat=audio)
+        loss_mp, loss_mp_real, _ = self.disc_loss(
+            disc_real_outputs=real_score_mp, disc_generated_outputs=gen_score_mp
         )
-        # MSD
-        y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_hat)
-        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(
-            y_ds_hat_r, y_ds_hat_g
+        loss_mrd, loss_mrd_real, _ = self.disc_loss(
+            disc_real_outputs=real_score_mrd, disc_generated_outputs=gen_score_mrd
         )
+        loss_mp /= len(loss_mp_real)
+        loss_mrd /= len(loss_mrd_real)
+        loss = loss_mp + self.msd_weight * loss_mrd
+        self.last_loss = loss.item()
+        return loss
 
-        loss_rel = discriminator_TPRLS_loss(
-            y_df_hat_r, y_df_hat_g
-        ) + discriminator_TPRLS_loss(y_ds_hat_r, y_ds_hat_g)
 
-        d_loss = loss_disc_s + loss_disc_f + loss_rel
+class GeneratorLossFunction(torch.nn.Module):
+    """
+    Generator Loss module. Calculates the loss for the generator based on discriminator outputs.
+    """
 
-        mean = d_loss.mean()
-        self.last_loss = mean.item()
-        return mean
+    def forward(
+        self, disc_outputs: List[torch.Tensor]
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        """
+        Args:
+            disc_outputs (List[Tensor]): List of discriminator outputs.
+
+        Returns:
+            Tuple[Tensor, List[Tensor]]: Tuple containing the total loss and a list of loss values from
+                                         the sub-discriminators
+        """
+        loss = torch.zeros(
+            1, device=disc_outputs[0].device, dtype=disc_outputs[0].dtype
+        )
+        gen_losses = []
+        for dg in disc_outputs:
+            l = torch.mean(torch.clamp(1 - dg, min=0))
+            gen_losses.append(l)
+            loss += l
+
+        return loss, gen_losses
+
+
+class DiscriminatorLossFunction(torch.nn.Module):
+    """
+    Discriminator Loss module. Calculates the loss for the discriminator based on real and generated outputs.
+    """
+
+    def forward(
+        self,
+        disc_real_outputs: List[torch.Tensor],
+        disc_generated_outputs: List[torch.Tensor],
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
+        """
+        Args:
+            disc_real_outputs (List[Tensor]): List of discriminator outputs for real samples.
+            disc_generated_outputs (List[Tensor]): List of discriminator outputs for generated samples.
+
+        Returns:
+            Tuple[Tensor, List[Tensor], List[Tensor]]: A tuple containing the total loss, a list of loss values from
+                                                       the sub-discriminators for real outputs, and a list of
+                                                       loss values for generated outputs.
+        """
+        loss = torch.zeros(
+            1, device=disc_real_outputs[0].device, dtype=disc_real_outputs[0].dtype
+        )
+        r_losses = []
+        g_losses = []
+        for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+            r_loss = torch.mean(torch.clamp(1 - dr, min=0))
+            g_loss = torch.mean(torch.clamp(1 + dg, min=0))
+            loss += r_loss + g_loss
+            r_losses.append(r_loss)
+            g_losses.append(g_loss)
+
+        return loss, r_losses, g_losses
+
+
+class FeatureMatchingLossFunction(torch.nn.Module):
+    """
+    Feature Matching Loss module. Calculates the feature matching loss between feature maps of the sub-discriminators.
+    """
+
+    def forward(
+        self, fmap_r: List[List[torch.Tensor]], fmap_g: List[List[torch.Tensor]]
+    ) -> torch.Tensor:
+        """
+        Args:
+            fmap_r (List[List[Tensor]]): List of feature maps from real samples.
+            fmap_g (List[List[Tensor]]): List of feature maps from generated samples.
+
+        Returns:
+            Tensor: The calculated feature matching loss.
+        """
+        loss = torch.zeros(1, device=fmap_r[0][0].device, dtype=fmap_r[0][0].dtype)
+        for dr, dg in zip(fmap_r, fmap_g):
+            for rl, gl in zip(dr, dg):
+                loss += torch.mean(torch.abs(rl - gl))
+
+        return loss
 
 
 class WavLMLoss(torch.nn.Module):

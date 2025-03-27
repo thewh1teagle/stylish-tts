@@ -17,7 +17,8 @@ from .plbert import PLBERT
 
 from .discriminators import (
     MultiPeriodDiscriminator,
-    MultiScaleSubbandCQTDiscriminator,
+    # MultiScaleSubbandCQTDiscriminator,
+    MultiResolutionDiscriminator,
 )
 
 from .duration_predictor import DurationPredictor
@@ -868,8 +869,8 @@ def build_model(model_config: ModelConfig):
         text_aligner=text_aligner,
         # pitch_extractor=pitch_extractor,
         mpd=MultiPeriodDiscriminator(),
-        msd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
-        # msd=MultiResolutionDiscriminator(),
+        # msd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
+        msd=MultiResolutionDiscriminator(),
         # slm discriminator head
         # wd=WavLMDiscriminator(
         #    model_config.slm.hidden,
