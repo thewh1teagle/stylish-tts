@@ -76,6 +76,17 @@ class LossLog:
             total_weight += weight
         self.total_loss = total  # / total_weight
 
+    def backwards_loss(self):
+        total = 0
+        for key, value in self.metrics.items():
+            if key == "generator":
+                loss = value
+            else:
+                loss = value / value.detach()
+            weight = self.weight(key)
+            total += loss * weight
+        return total
+
     def detach(self):
         for key, value in self.metrics.items():
             if torch.is_tensor(value):

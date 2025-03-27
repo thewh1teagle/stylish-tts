@@ -9,13 +9,14 @@ import tqdm
 
 from loss_log import combine_logs
 from stage_train import (
+    train_alignment,
     train_pre_acoustic,
     train_acoustic,
     train_pre_textual,
     train_textual,
     train_joint,
 )
-from stage_validate import validate_acoustic, validate_textual
+from stage_validate import validate_alignment, validate_acoustic, validate_textual
 from optimizers import build_optimizer
 from utils import get_image
 
@@ -41,6 +42,20 @@ class StageConfig:
 
 
 stages = {
+    "alignment": StageConfig(
+        next_stage="pre_acoustic",
+        train_fn=train_alignment,
+        validate_fn=validate_alignment,
+        train_models=["text_aligner"],
+        eval_models=[],
+        disc_models=[],
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "mel_length",
+        ],
+    ),
     "pre_acoustic": StageConfig(
         next_stage="acoustic",
         train_fn=train_pre_acoustic,
@@ -56,6 +71,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "acoustic": StageConfig(
@@ -78,6 +94,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "pre_textual": StageConfig(
@@ -106,6 +123,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "textual": StageConfig(
@@ -134,6 +152,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
     "joint": StageConfig(
@@ -162,6 +181,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "voiced",
         ],
     ),
 }
@@ -300,23 +320,29 @@ class StageContext:
                 )
                 logs.append(next_log)
                 if index < sample_count and train.accelerator.is_main_process:
-                    attention = attention.cpu().numpy().squeeze()
-                    audio_out = audio_out.cpu().numpy().squeeze()
-                    audio_gt = audio_gt.cpu().numpy().squeeze()
                     steps = train.manifest.current_total_step
                     sample_rate = train.model_config.sample_rate
-                    train.writer.add_figure(
-                        f"eval/attention_{index}", get_image(attention), steps
-                    )
-                    train.writer.add_audio(
-                        f"eval/sample_{index}",
-                        audio_out,
-                        steps,
-                        sample_rate=sample_rate,
-                    )
-                    train.writer.add_audio(
-                        f"eval/sample_{index}_gt", audio_gt, 0, sample_rate=sample_rate
-                    )
+                    if attention is not None:
+                        attention = attention.cpu().numpy().squeeze()
+                        train.writer.add_figure(
+                            f"eval/attention_{index}", get_image(attention), steps
+                        )
+                    if audio_out is not None:
+                        audio_out = audio_out.cpu().numpy().squeeze()
+                        train.writer.add_audio(
+                            f"eval/sample_{index}",
+                            audio_out,
+                            steps,
+                            sample_rate=sample_rate,
+                        )
+                    if audio_gt is not None:
+                        audio_gt = audio_gt.cpu().numpy().squeeze()
+                        train.writer.add_audio(
+                            f"eval/sample_{index}_gt",
+                            audio_gt,
+                            0,
+                            sample_rate=sample_rate,
+                        )
                 if train.accelerator.is_main_process:
                     interim = combine_logs(logs)
                     if progress_bar is not None and interim is not None:
@@ -352,6 +378,7 @@ batch_names = [
     "path",
     "pitch",
     "sentence_embedding",
+    "voiced",
 ]
 
 

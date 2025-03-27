@@ -33,6 +33,10 @@ class TrainingPlanConfig(BaseModel):
     Training plan configuration that defines the number of epochs for different stages.
     """
 
+    alignment: int = Field(
+        default=10,
+        description="Number of epochs for pretraining the text alignment model.",
+    )
     pre_acoustic: int = Field(
         default=10,
         description="Number of epochs for the pretraining of acoustic models (first stage).",
@@ -74,7 +78,13 @@ class LossWeightConfig(BaseModel):
     Loss weight configuration for various loss components.
     """
 
-    mel: float = Field(..., description="Weight for mel reconstruction loss.")
+    mel: float = Field(..., description="Weight for mel spetral convergence loss.")
+    mel_energy: float = Field(
+        ..., description="Weight for mel reconstruction energy loss."
+    )
+    mel_log: float = Field(
+        ..., description="Weight for mel log-weighted reconstruction loss."
+    )
     generator: float = Field(..., description="Weight for generator loss.")
     slm: float = Field(
         ..., description="Weight for speech-language model feature matching loss."
@@ -115,6 +125,8 @@ class SymbolConfig(BaseModel):
     letters_ipa: str = Field(
         ..., description="IPA phonetic characters including diacritics"
     )
+    voiced: str = Field(..., description="Set of characters which are voiced")
+    unvoiced: str = Field(..., description="Set of characters which are unvoiced")
 
 
 class TextAlignerConfig(BaseModel):
@@ -238,19 +250,23 @@ class RingformerDecoderConfig(BaseModel):
     depth: int = Field(..., description="Number of conformer blocks in model")
 
 
-# class VocosDecoderConfig(BaseModel):
-#     """
-#     Configuration for Vocos decoder.
-#     """
+class VocosDecoderConfig(BaseModel):
+    """
+    Configuration for Vocos decoder.
+    """
 
-#     type: Literal["vocos"] = "vocos"
-#     hidden_dim: int = Field(..., description="Hidden dimension for Vocos.")
-#     intermediate_dim: int = Field(
-#         ..., description="Intermediate dimension size for Vocos."
-#     )
-#     num_layers: int = Field(..., description="Number of layers in Vocos model.")
-#     gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
-#     gen_istft_hop_size: int = Field(..., description="Hop size for iSTFT generator.")
+    type: Literal["vocos"] = "vocos"
+    intermediate_dim: int = Field(
+        ..., description="Intermediate dimension size for Vocos."
+    )
+    num_layers: int = Field(..., description="Number of layers in Vocos model.")
+    gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
+    gen_istft_win_length: int = Field(
+        ..., description="Window length for iSTFT generator."
+    )
+    gen_istft_hop_length: int = Field(
+        ..., description="Hop length for iSTFT generator."
+    )
 
 
 class FreevDecoderConfig(BaseModel):
@@ -404,7 +420,7 @@ class ModelConfig(BaseModel):
         # HiFiGANDecoderConfig,
         ISTFTNetDecoderConfig,
         RingformerDecoderConfig,
-        # VocosDecoderConfig,
+        VocosDecoderConfig,
         FreevDecoderConfig,
     ] = Field(..., description="Decoder (vocoder) configuration parameters.")
     text_encoder: TextEncoderConfig = Field(

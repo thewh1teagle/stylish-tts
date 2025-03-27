@@ -17,7 +17,8 @@ from .plbert import PLBERT
 
 from .discriminators import (
     MultiPeriodDiscriminator,
-    MultiScaleSubbandCQTDiscriminator,
+    # MultiScaleSubbandCQTDiscriminator,
+    MultiResolutionDiscriminator,
 )
 
 from .duration_predictor import DurationPredictor
@@ -735,7 +736,7 @@ def build_model(model_config: ModelConfig):
         "istftnet",
         # "hifigan",
         "ringformer",
-        # "vocos",
+        "vocos",
         "freev",
     ], "Decoder type unknown"
 
@@ -771,18 +772,19 @@ def build_model(model_config: ModelConfig):
             conformer_depth=model_config.decoder.depth,
             sample_rate=model_config.sample_rate,
         )
-    # elif model_config.decoder.type == "vocos":
-    #     from .decoder.vocos import Decoder
+    elif model_config.decoder.type == "vocos":
+        from .decoder.vocos import Decoder
 
-    #     decoder = Decoder(
-    #         dim_in=model_config.decoder.hidden_dim,
-    #         style_dim=model_config.style_dim,
-    #         dim_out=model_config.n_mels,
-    #         intermediate_dim=model_config.decoder.intermediate_dim,
-    #         num_layers=model_config.decoder.num_layers,
-    #         gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
-    #         gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
-    #     )
+        decoder = Decoder(
+            dim_in=model_config.inter_dim,
+            style_dim=model_config.style_dim,
+            intermediate_dim=model_config.decoder.intermediate_dim,
+            num_layers=model_config.decoder.num_layers,
+            sample_rate=model_config.sample_rate,
+            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
+            gen_istft_win_length=model_config.decoder.gen_istft_win_length,
+            gen_istft_hop_length=model_config.decoder.gen_istft_hop_length,
+        )
     elif model_config.decoder.type == "freev":
         from .decoder.freev import Decoder
 
@@ -867,8 +869,8 @@ def build_model(model_config: ModelConfig):
         text_aligner=text_aligner,
         # pitch_extractor=pitch_extractor,
         mpd=MultiPeriodDiscriminator(),
-        msd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
-        # msd=MultiResolutionDiscriminator(),
+        # msd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
+        msd=MultiResolutionDiscriminator(),
         # slm discriminator head
         # wd=WavLMDiscriminator(
         #    model_config.slm.hidden,

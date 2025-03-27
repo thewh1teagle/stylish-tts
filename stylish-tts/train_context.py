@@ -8,6 +8,7 @@ import logging
 from torch.utils.data import DataLoader
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from torch.utils.tensorboard.writer import SummaryWriter
+from text_utils import TextCleaner
 
 
 class Manifest:
@@ -84,11 +85,12 @@ class TrainContext:
         )
         self.wavlm_loss: Optional[WavLMLoss] = None  # WavLM Loss
         self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss(
-            sample_rate=self.model_config.sample_rate, n_mels=self.model_config.n_mels
+            sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
 
         # Run parameters
         self.n_down: int = 1  # TODO: Use train.model.text_aligner.n_down
+        self.text_cleaner = TextCleaner(self.model_config.symbol)
 
     def reset_out_dir(self, stage_name):
         self.out_dir = osp.join(self.base_output_dir, stage_name)

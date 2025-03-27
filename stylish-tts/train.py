@@ -7,7 +7,6 @@ import random
 from logging import StreamHandler
 from config_loader import load_config_yaml, load_model_config_yaml
 from train_context import TrainContext
-from text_utils import TextCleaner
 
 import numpy as np
 
@@ -114,12 +113,11 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
     if not osp.exists(train.config.dataset.wav_path):
         exit(f"Root path not found at {train.config.dataset.wav_path}")
 
-    text_cleaner = TextCleaner(train.model_config.symbol)
     val_list = get_data_path_list(train.config.dataset.val_data)
     val_dataset = FilePathDataset(
         data_list=val_list,
         root_path=train.config.dataset.wav_path,
-        text_cleaner=text_cleaner,
+        text_cleaner=train.text_cleaner,
         model_config=train.model_config,
         pitch_path=train.config.dataset.pitch_path,
     )
@@ -142,7 +140,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         device=train.config.training.device,
         accelerator=train.accelerator,
         multispeaker=train.model_config.multispeaker,
-        text_cleaner=text_cleaner,
+        text_cleaner=train.text_cleaner,
         stage=stage,
         epoch=train.manifest.current_epoch,
         train=train,
@@ -275,6 +273,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             iterator = enumerate(train.batch_manager.loader)
         loss = None
         for _, batch in iterator:
+            postfix = {}
             next_log = train.batch_manager.train_iterate(
                 batch, train, progress_bar=progress_bar
             )
@@ -296,6 +295,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                             loss = loss * 0.9 + next_log.metrics["mel"] * 0.1
                         else:
                             loss = loss * 0.9 + next_log.total() * 0.1
+                    postfix = {"mel_loss": f"{loss:.3f}"}
                 if len(logs) >= train.config.training.log_interval:
                     progress_bar.clear() if progress_bar is not None else None
                     combine_logs(logs).broadcast(train.manifest, train.stage)
@@ -308,7 +308,6 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             do_save = num % save_step == 0
             next_val = val_step - num % val_step - 1
             next_save = save_step - num % save_step - 1
-            postfix = {"mel_loss": f"{loss:.3f}"}
             if next_val < next_save:
                 postfix["val"] = str(next_val)
             else:
