@@ -19,20 +19,22 @@ class HarmonicGenerator(torch.nn.Module):
     ):
         super(HarmonicGenerator, self).__init__()
         self.source = SourceModuleHnNSF(
-            sampling_rate=sample_rate,
+            sampling_rate=sample_rate // 4,
             harmonic_num=11,
             voiced_threshold=10,
         )
-        self.linear_upsample = torch.nn.Upsample(scale_factor=hop_length, mode="linear")
+        self.linear_upsample = torch.nn.Upsample(
+            scale_factor=hop_length // 4, mode="linear"
+        )
         self.n_fft = dim_out - 2
-        self.win_length = self.n_fft
-        self.hop_length = hop_length
+        self.win_length = win_length // 4
+        self.hop_length = hop_length // 4
         stft_window = torch.hann_window(self.win_length)
         self.register_buffer("stft_window", stft_window, persistent=False)
 
     def forward(self, pitch, energy):
         mask = pitch.repeat_interleave(repeats=self.hop_length, dim=1).unsqueeze(2)
-        mask = mask.clamp(0, 1).transpose(1, 2)
+        mask = torch.clamp(mask, min=0, max=1).transpose(1, 2)
         up_pitch = self.linear_upsample(pitch.unsqueeze(1))
         up_pitch = up_pitch * mask
         sines, _, _ = self.source(up_pitch.transpose(1, 2))

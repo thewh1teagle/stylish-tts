@@ -116,8 +116,8 @@ def build_optimizer(stage_name: str, *, train):
             num_warmup_steps=logical_step_warmup,
             num_training_steps=logical_step_limit,
         )
-    min_disc_lr = train.config.optimizer.lr / 10
-    max_disc_lr = train.config.optimizer.lr * 10
+    min_disc_lr = train.config.optimizer.lr / 100
+    max_disc_lr = train.config.optimizer.lr * 100
     multi_optim = MultiOptimizer(optim, schedulers, min_disc_lr, max_disc_lr)
     multi_optim.add_discriminator_schedulers(train.discriminator_loss)
     return multi_optim

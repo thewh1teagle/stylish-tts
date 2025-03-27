@@ -173,6 +173,7 @@ class ConvNeXtBlock(nn.Module):
         style_dim: int,
     ):
         super().__init__()
+        self.dim_out = dim_out
         self.dwconv = nn.Conv1d(
             dim_in, dim_in, kernel_size=7, padding=3, groups=dim_in
         )  # depthwise conv
@@ -190,10 +191,9 @@ class ConvNeXtBlock(nn.Module):
             if layer_scale_init_value > 0
             else None
         )
-        self.shortcut = nn.Linear(dim_in, dim_out)
 
     def forward(self, x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
-        residual = x.transpose(1, 2)
+        residual = x[:, : self.dim_out, :]
         x = self.dwconv(x)
         x = self.norm(x, s)
         x = x.transpose(1, 2)  # (B, C, T) -> (B, T, C)
@@ -204,7 +204,7 @@ class ConvNeXtBlock(nn.Module):
             x = self.gamma * x
         x = x.transpose(1, 2)  # (B, T, C) -> (B, C, T)
 
-        x = self.shortcut(residual).transpose(1, 2) + x
+        x = residual + x
         return x
 
 
