@@ -56,7 +56,11 @@ calculate-pitch.py is a single-process version while all-pitch.py calculates the
 Here is a typical command to start off a new training run using a single machine.
 
 ```
-uv run stylish-tts/train.py --model_config_path config/model.yml --config_path /path/to/your/config.yml --stage alignment --out_dir /path/to/your/output
+uv run stylish-tts/train.py \
+    --model_config_path config/model.yml \
+    --config_path /path/to/your/config.yml \
+    --stage alignment \
+    --out_dir /path/to/your/output
 ```
 
 model_config_path: You should usually leave the model_config_path pointing at the default model configuration.
@@ -74,7 +78,12 @@ Stages advance automatically and a checkpoint is created at the end of every sta
 ## Loading a checkpoint
 
 ```
-uv run stylish-tts/train.py --model_config_path config/model.yml --config_path /path/to/your/config.yml --stage <stage> --out_dir /path/to/your/output --checkpoint /path/to/your/checkpoint
+uv run stylish-tts/train.py \
+    --model_config_path config/model.yml \
+    --config_path /path/to/your/config.yml \
+    --stage <stage>
+    --out_dir /path/to/your/output \
+    --checkpoint /path/to/your/checkpoint
 ```
 
 You can load a checkpoint from any stage via the --checkpoint argument. You still need to set --stage appropriately to one of "alignment|pre_acoustic|acoustic|pre_textual|textual|joint". If you set it to the same stage as the checkpoint loaded from, it will continue in that stage at the same step number and epoch. If it is a different stage, it will train the entire stage.
