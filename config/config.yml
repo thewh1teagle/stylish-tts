@@ -17,10 +17,10 @@ training:
 
 # Number of epochs to train each stage.
 training_plan:
-  alignment: 10
-  pre_acoustic: 10
-  acoustic: 10
-  pre_textual: 10
+  alignment: 5
+  pre_acoustic: 3
+  acoustic: 5
+  pre_textual: 30
   textual: 2
   joint: 2
 
@@ -39,7 +39,7 @@ loss_weight:
   # mel reconstruction loss
   mel: 2
   # generator loss
-  generator: 3
+  generator: 1
   # speech-language model feature matching loss
   slm: 0.2
   # monotonic alignment loss
@@ -58,6 +58,9 @@ loss_weight:
   style: 1
   # magnitude/phase loss
   magphase: 1
+  amplitude: 1
+  phase: 2
+  stft_reconstruction: 0.5
 
 # Learning rates are pre-tuned. Do not change these unless
 # you know what you are doing
