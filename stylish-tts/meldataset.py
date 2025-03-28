@@ -105,7 +105,20 @@ class FilePathDataset(torch.utils.data.Dataset):
         iterator.close()
         time_bins = {}
         for i in range(len(sample_lengths)):
+            phonemes = self.data_list[i][1]
             bin_num = get_time_bin(sample_lengths[i], self.hop_length)
+            if get_frame_count(bin_num) < len(phonemes):
+                exit(
+                    f"Segment audio is too short for the number of phonemes. Remove it from the dataset: {self.data_list[i][0]}"
+                )
+            if len(phonemes) < 1:
+                exit(
+                    f"Segment does not have any phonmes. Remove it from the dataset: {self.data_list[i][0]}"
+                )
+            if len(phonemes) > 510:
+                exit(
+                    f"Segment has too many phonemes. Segments must be of size <= 510. Remove it from the dataset: {self.data_list[i][0]}"
+                )
             if bin_num != -1:
                 if bin_num not in time_bins:
                     time_bins[bin_num] = []
