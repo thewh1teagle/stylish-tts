@@ -93,6 +93,11 @@ class LossWeightConfig(BaseModel):
     )
     style: float = Field(..., description="Weight for style reconstruction loss.")
     magphase: float = Field(..., description="Weight for magnitude/phase loss.")
+    amplitude: float = Field(..., description="Weight for log amplitude loss.")
+    phase: float = Field(..., description="Weight for phase loss.")
+    stft_reconstruction: float = Field(
+        ..., description="Weight for STFT reconstruction loss"
+    )
 
 
 class OptimizerConfig(BaseModel):

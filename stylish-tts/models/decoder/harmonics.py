@@ -16,19 +16,21 @@ class HarmonicGenerator(torch.nn.Module):
         dim_out,
         win_length,
         hop_length,
+        divisor,
     ):
         super(HarmonicGenerator, self).__init__()
+        self.divisor = divisor
         self.source = SourceModuleHnNSF(
-            sampling_rate=sample_rate // 4,
+            sampling_rate=sample_rate // self.divisor,
             harmonic_num=11,
             voiced_threshold=10,
         )
         self.linear_upsample = torch.nn.Upsample(
-            scale_factor=hop_length // 4, mode="linear"
+            scale_factor=hop_length // self.divisor, mode="linear"
         )
         self.n_fft = dim_out - 2
-        self.win_length = win_length // 4
-        self.hop_length = hop_length // 4
+        self.win_length = win_length // self.divisor
+        self.hop_length = hop_length // self.divisor
         stft_window = torch.hann_window(self.win_length)
         self.register_buffer("stft_window", stft_window, persistent=False)
 
@@ -38,8 +40,13 @@ class HarmonicGenerator(torch.nn.Module):
         up_pitch = self.linear_upsample(pitch.unsqueeze(1))
         up_pitch = up_pitch * mask
         sines, _, _ = self.source(up_pitch.transpose(1, 2))
+        sines = sines.squeeze(2)
+        padmask = torch.ones(sines.shape[0], sines.shape[1]).to(sines.device)
+        padmask[:, : 10 * self.hop_length].fill_(0)
+        padmask[:, -10 * self.hop_length :].fill_(0)
+        sines = sines * padmask
         transform = torch.stft(
-            sines.squeeze(2),
+            sines,
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             win_length=self.win_length,
@@ -51,8 +58,7 @@ class HarmonicGenerator(torch.nn.Module):
         spec = spec + energy.unsqueeze(1)
         phase = torch.angle(transform)
         phase = phase[:, :, : phase.shape[2] - phase.shape[2] % 2]
-        result = torch.cat([spec, phase], dim=1)
-        return result
+        return spec, phase
 
 
 # For source module

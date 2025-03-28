@@ -245,6 +245,7 @@ class Generator(torch.nn.Module):
             dim_out=dim,
             win_length=win_length,
             hop_length=hop_length,
+            divisor=4,
         )
         self.convnext = nn.ModuleList()
 
@@ -275,7 +276,8 @@ class Generator(torch.nn.Module):
             nn.init.constant_(m.bias, 0)
 
     def forward(self, x, s, f0, N) -> torch.Tensor:
-        har = self.harmonic(f0, N)
+        har_spec, har_phase = self.harmonic(f0, N)
+        har = torch.cat([har_spec, har_phase], dim=1)
         x = self.embed(x)
         x = self.norm(x.transpose(1, 2))
         x = x.transpose(1, 2)
