@@ -455,14 +455,14 @@ class DiscriminatorLoss(torch.nn.Module):
         self.msd = msd
         self.disc_loss = DiscriminatorLossFunction()
         self.msd_weight = 0.1
-        self.last_loss = 2.2
+        self.last_loss = 1.8
 
     def get_disc_lr_multiplier(self):
-        ideal_loss = 2.1
-        f_max = 4.0
-        h_min = 0.25
-        x_max = 0.2
-        x_min = 0.2
+        ideal_loss = 1.8
+        f_max = 2.0
+        h_min = 0.1
+        x_max = 0.18
+        x_min = 0.18
         x = abs(self.last_loss - ideal_loss)
         result = 1.0
         if self.last_loss > ideal_loss:
@@ -486,7 +486,7 @@ class DiscriminatorLoss(torch.nn.Module):
         loss_mp /= len(loss_mp_real)
         loss_mrd /= len(loss_mrd_real)
         loss = loss_mp + self.msd_weight * loss_mrd
-        self.last_loss = loss.item()
+        self.last_loss = self.last_loss * 0.95 + loss.item() * 0.05
         return loss
 
 

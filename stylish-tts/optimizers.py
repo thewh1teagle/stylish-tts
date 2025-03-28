@@ -10,37 +10,35 @@ logical_step_warmup = 100
 
 
 class MultiOptimizer:
-    def __init__(
-        self, optimizers={}, schedulers={}, min_disc_lr=1e-5, max_disc_lr=1e-3
-    ):
+    def __init__(self, optimizers={}, schedulers={}):
         self.optimizers = optimizers
         self.schedulers = schedulers
-        self.min_disc_lr = min_disc_lr
-        self.max_disc_lr = max_disc_lr
         # self.scale_schedulers = {}
         self.disc_schedulers = {}
         self.keys = list(optimizers.keys())
 
     def prepare(self, accelerator):
         for key in self.optimizers.keys():
-            self.optimizers[key] = accelerator.prepare(self.optimizers[key])
-            self.schedulers[key] = accelerator.prepare(self.schedulers[key])
+            if key not in {"msd", "mpd"}:
+                self.optimizers[key] = accelerator.prepare(self.optimizers[key])
+                self.schedulers[key] = accelerator.prepare(self.schedulers[key])
 
     def reset_lr(self, stage_name, train):
         for key in train.model.keys():
-            lr, _, _ = calculate_lr(key, stage_name, train=train)
-            for param_group in self.optimizers[key].param_groups:
-                if isinstance(param_group["lr"], torch.Tensor):
-                    param_group["lr"].fill_(lr)
-                    param_group["initial_lr"].fill_(lr)
-                else:
-                    param_group["lr"] = lr
-                    param_group["initial_lr"] = lr
-            self.schedulers[key].scheduler.last_epoch = -1
-            self.schedulers[key].scheduler.base_lrs = [
-                group["initial_lr"] for group in self.optimizers[key].param_groups
-            ]
-            self.schedulers[key].step()
+            if key not in {"msd", "mpd"}:
+                lr, _, _ = calculate_lr(key, stage_name, train=train)
+                for param_group in self.optimizers[key].param_groups:
+                    if isinstance(param_group["lr"], torch.Tensor):
+                        param_group["lr"].fill_(lr)
+                        param_group["initial_lr"].fill_(lr)
+                    else:
+                        param_group["lr"] = lr
+                        param_group["initial_lr"] = lr
+                self.schedulers[key].scheduler.last_epoch = -1
+                self.schedulers[key].scheduler.base_lrs = [
+                    group["initial_lr"] for group in self.optimizers[key].param_groups
+                ]
+                self.schedulers[key].step()
         self.reset_discriminator_schedulers()
 
     def add_discriminator_schedulers(self, discriminator_loss):
@@ -50,30 +48,36 @@ class MultiOptimizer:
             )
 
     def step_discriminator_schedulers(self):
+        gen_lr = self.optimizers["decoder"].param_groups[0]["lr"]
+        if isinstance(gen_lr, torch.Tensor):
+            gen_lr = gen_lr.item()
+        max_lr = gen_lr * 10
+        min_lr = gen_lr / 10
         for key in ["msd", "mpd"]:
             self.disc_schedulers[key].step()
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
                     torch.clamp(
                         param_group["lr"],
-                        min=self.min_disc_lr,
-                        max=self.max_disc_lr,
+                        min=min_lr,
+                        max=max_lr,
                         out=param_group["lr"],
                     )
                 else:
-                    param_group["lr"] = min(
-                        max(self.min_disc_lr, param_group["lr"]), self.max_disc_lr
-                    )
+                    param_group["lr"] = min(max(min_lr, param_group["lr"]), max_lr)
 
     def reset_discriminator_schedulers(self):
+        lr = self.optimizers["decoder"].param_groups[0]["lr"]
+        if isinstance(lr, torch.Tensor):
+            lr = lr.item()
         for key in ["msd", "mpd"]:
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
-                    param_group["lr"] = zeros_like(
-                        param_group["lr"], device=param_group["lr"].device
+                    param_group["lr"] = torch.full_like(
+                        param_group["lr"], lr, device=param_group["lr"].device
                     )
                 else:
-                    param_group["lr"] = 0
+                    param_group["lr"] = lr
 
     def step(self, key=None, scaler=None):
         keys = [key] if key is not None else self.keys
@@ -95,8 +99,9 @@ class MultiOptimizer:
     def scheduler(self, step: int, step_limit: int):
         logical_step = step * logical_step_limit // step_limit
         for key in self.keys:
-            self.schedulers[key].scheduler.last_epoch = logical_step
-            self.schedulers[key].step()
+            if key not in {"msd", "mpd"}:
+                self.schedulers[key].scheduler.last_epoch = logical_step
+                self.schedulers[key].step()
 
 
 def build_optimizer(stage_name: str, *, train):
@@ -111,14 +116,13 @@ def build_optimizer(stage_name: str, *, train):
             betas=betas,
             eps=1e-9,
         )
-        schedulers[key] = transformers.get_cosine_schedule_with_warmup(
-            optim[key],
-            num_warmup_steps=logical_step_warmup,
-            num_training_steps=logical_step_limit,
-        )
-    min_disc_lr = train.config.optimizer.lr / 100
-    max_disc_lr = train.config.optimizer.lr * 100
-    multi_optim = MultiOptimizer(optim, schedulers, min_disc_lr, max_disc_lr)
+        if key not in {"msd", "mpd"}:
+            schedulers[key] = transformers.get_cosine_schedule_with_warmup(
+                optim[key],
+                num_warmup_steps=logical_step_warmup,
+                num_training_steps=logical_step_limit,
+            )
+    multi_optim = MultiOptimizer(optim, schedulers)
     multi_optim.add_discriminator_schedulers(train.discriminator_loss)
     return multi_optim
 
