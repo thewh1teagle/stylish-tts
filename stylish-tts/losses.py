@@ -462,7 +462,7 @@ class DiscriminatorLoss(torch.nn.Module):
         last_loss = self.last_mrd
         if discriminator == "mpd":
             last_loss = self.last_mpd
-        ideal_loss = 0.5
+        ideal_loss = 2.0
         f_max = 4.0
         h_min = 0.1
         x_max = 0.05

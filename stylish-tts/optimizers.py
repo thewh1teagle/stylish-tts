@@ -54,7 +54,7 @@ class MultiOptimizer:
         gen_lr = self.optimizers["decoder"].param_groups[0]["lr"]
         if isinstance(gen_lr, torch.Tensor):
             gen_lr = gen_lr.item()
-        for key in ["msd", "mpd"]:
+        for key in discriminators:
             multiplier = self.discriminator_loss.get_disc_lr_multiplier(key)
             lr = gen_lr * multiplier
             for param_group in self.optimizers[key].param_groups:
@@ -67,7 +67,7 @@ class MultiOptimizer:
         lr = self.optimizers["decoder"].param_groups[0]["lr"]
         if isinstance(lr, torch.Tensor):
             lr = lr.item()
-        for key in ["msd", "mpd"]:
+        for key in discriminators:
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
                     param_group["lr"].fill_(lr)
@@ -94,7 +94,7 @@ class MultiOptimizer:
     def scheduler(self, step: int, step_limit: int):
         logical_step = step * logical_step_limit // step_limit
         for key in self.keys:
-            if key not in {"msd", "mpd"}:
+            if key not in discriminators:
                 self.schedulers[key].scheduler.last_epoch = logical_step
                 self.schedulers[key].step()
 
@@ -111,7 +111,7 @@ def build_optimizer(stage_name: str, *, train):
             betas=betas,
             eps=1e-9,
         )
-        if key not in {"msd", "mpd"}:
+        if key not in discriminators:
             schedulers[key] = transformers.get_cosine_schedule_with_warmup(
                 optim[key],
                 num_warmup_steps=logical_step_warmup,
