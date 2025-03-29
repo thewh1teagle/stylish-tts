@@ -8,24 +8,27 @@ logger = logging.getLogger(__name__)
 logical_step_limit = 10000
 logical_step_warmup = 100
 
+discriminators = {"msd", "mpd"}
+
 
 class MultiOptimizer:
-    def __init__(self, optimizers={}, schedulers={}):
+    def __init__(self, *, optimizers, schedulers, discriminator_loss):
         self.optimizers = optimizers
         self.schedulers = schedulers
+        self.discriminator_loss = discriminator_loss
         # self.scale_schedulers = {}
-        self.disc_schedulers = {}
+        # self.disc_schedulers = {}
         self.keys = list(optimizers.keys())
 
     def prepare(self, accelerator):
         for key in self.optimizers.keys():
-            if key not in {"msd", "mpd"}:
-                self.optimizers[key] = accelerator.prepare(self.optimizers[key])
+            self.optimizers[key] = accelerator.prepare(self.optimizers[key])
+            if key not in discriminators:
                 self.schedulers[key] = accelerator.prepare(self.schedulers[key])
 
     def reset_lr(self, stage_name, train):
         for key in train.model.keys():
-            if key not in {"msd", "mpd"}:
+            if key not in discriminators:
                 lr, _, _ = calculate_lr(key, stage_name, train=train)
                 for param_group in self.optimizers[key].param_groups:
                     if isinstance(param_group["lr"], torch.Tensor):
@@ -41,30 +44,24 @@ class MultiOptimizer:
                 self.schedulers[key].step()
         self.reset_discriminator_schedulers()
 
-    def add_discriminator_schedulers(self, discriminator_loss):
-        for key in ["msd", "mpd"]:
-            self.disc_schedulers[key] = torch.optim.lr_scheduler.MultiplicativeLR(
-                self.optimizers[key], discriminator_loss.get_disc_lambda()
-            )
+    # def add_discriminator_schedulers(self, discriminator_loss):
+    #     for key in ["msd", "mpd"]:
+    #         self.disc_schedulers[key] = torch.optim.lr_scheduler.MultiplicativeLR(
+    #             self.optimizers[key], discriminator_loss.get_disc_lambda()
+    #         )
 
     def step_discriminator_schedulers(self):
         gen_lr = self.optimizers["decoder"].param_groups[0]["lr"]
         if isinstance(gen_lr, torch.Tensor):
             gen_lr = gen_lr.item()
-        max_lr = gen_lr * 10
-        min_lr = gen_lr / 10
         for key in ["msd", "mpd"]:
-            self.disc_schedulers[key].step()
+            multiplier = self.discriminator_loss.get_disc_lr_multiplier(key)
+            lr = gen_lr * multiplier
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
-                    torch.clamp(
-                        param_group["lr"],
-                        min=min_lr,
-                        max=max_lr,
-                        out=param_group["lr"],
-                    )
+                    param_group["lr"].fill_(lr)
                 else:
-                    param_group["lr"] = min(max(min_lr, param_group["lr"]), max_lr)
+                    param_group["lr"] = lr
 
     def reset_discriminator_schedulers(self):
         lr = self.optimizers["decoder"].param_groups[0]["lr"]
@@ -73,9 +70,7 @@ class MultiOptimizer:
         for key in ["msd", "mpd"]:
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
-                    param_group["lr"] = torch.full_like(
-                        param_group["lr"], lr, device=param_group["lr"].device
-                    )
+                    param_group["lr"].fill_(lr)
                 else:
                     param_group["lr"] = lr
 
@@ -122,8 +117,11 @@ def build_optimizer(stage_name: str, *, train):
                 num_warmup_steps=logical_step_warmup,
                 num_training_steps=logical_step_limit,
             )
-    multi_optim = MultiOptimizer(optim, schedulers)
-    multi_optim.add_discriminator_schedulers(train.discriminator_loss)
+    multi_optim = MultiOptimizer(
+        optimizers=optim,
+        schedulers=schedulers,
+        discriminator_loss=train.discriminator_loss,
+    )
     return multi_optim
 
 

@@ -452,20 +452,24 @@ class DiscriminatorLoss(torch.nn.Module):
     def __init__(self, mpd, msd):
         super(DiscriminatorLoss, self).__init__()
         self.mpd = mpd
-        self.msd = msd
+        self.mrd = msd
         self.disc_loss = DiscriminatorLossFunction()
-        self.msd_weight = 0.1
-        self.last_loss = 1.8
+        self.mrd_weight = 0.1
+        self.last_mpd = 0.5
+        self.last_mrd = 0.5
 
-    def get_disc_lr_multiplier(self):
-        ideal_loss = 1.8
-        f_max = 2.0
+    def get_disc_lr_multiplier(self, discriminator):
+        last_loss = self.last_mrd
+        if discriminator == "mpd":
+            last_loss = self.last_mpd
+        ideal_loss = 0.5
+        f_max = 4.0
         h_min = 0.1
-        x_max = 0.18
-        x_min = 0.18
-        x = abs(self.last_loss - ideal_loss)
+        x_max = 0.05
+        x_min = 0.05
+        x = abs(last_loss - ideal_loss)
         result = 1.0
-        if self.last_loss > ideal_loss:
+        if last_loss > ideal_loss:
             result = min(math.pow(f_max, x / x_max), f_max)
         else:
             result = max(math.pow(h_min, x / x_min), h_min)
@@ -476,7 +480,7 @@ class DiscriminatorLoss(torch.nn.Module):
 
     def forward(self, audio_gt, audio):
         real_score_mp, gen_score_mp, _, _ = self.mpd(y=audio_gt, y_hat=audio)
-        real_score_mrd, gen_score_mrd, _, _ = self.msd(y=audio_gt, y_hat=audio)
+        real_score_mrd, gen_score_mrd, _, _ = self.mrd(y=audio_gt, y_hat=audio)
         loss_mp, loss_mp_real, _ = self.disc_loss(
             disc_real_outputs=real_score_mp, disc_generated_outputs=gen_score_mp
         )
@@ -485,9 +489,9 @@ class DiscriminatorLoss(torch.nn.Module):
         )
         loss_mp /= len(loss_mp_real)
         loss_mrd /= len(loss_mrd_real)
-        loss = loss_mp + self.msd_weight * loss_mrd
-        self.last_loss = self.last_loss * 0.95 + loss.item() * 0.05
-        return loss
+        self.last_mpd = self.last_mpd * 0.95 + loss_mp.item() * 0.05
+        self.last_mrd = self.last_mrd * 0.95 + loss_mrd.item() * 0.05
+        return loss_mp + self.mrd_weight * loss_mrd
 
 
 class GeneratorLossFunction(torch.nn.Module):

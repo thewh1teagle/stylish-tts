@@ -116,10 +116,11 @@ class BatchContext:
     def calculate_pitch(self, batch, prediction=None):
         if prediction is None:
             prediction = batch.pitch
-        mask = batch.voiced.unsqueeze(1)
-        mask = mask @ self.duration_results[1]
-        mask = mask.squeeze(1).repeat_interleave(repeats=2, dim=1)
-        return prediction * mask
+        # mask = batch.voiced.unsqueeze(1)
+        # mask = mask @ self.duration_results[1]
+        # mask = mask.squeeze(1).repeat_interleave(repeats=2, dim=1)
+        # return prediction * mask
+        return prediction
 
     def acoustic_style_embedding(self, mels: torch.Tensor):
         return self.model.acoustic_style_encoder(mels.unsqueeze(1))
