@@ -15,11 +15,10 @@ from config_loader import ModelConfig
 from .text_aligner import TextAligner
 from .plbert import PLBERT
 
-from .discriminators import (
-    MultiPeriodDiscriminator,
-    # MultiScaleSubbandCQTDiscriminator,
-    MultiResolutionDiscriminator,
-)
+from .discriminators.multi_period import MultiPeriodDiscriminator
+from .discriminators.multi_resolution import MultiResolutionDiscriminator
+from .discriminators.multi_subband import MultiScaleSubbandCQTDiscriminator
+from .discriminators.multi_stft import MultiScaleSTFTDiscriminator
 
 from .duration_predictor import DurationPredictor
 from .pitch_energy_predictor import PitchEnergyPredictor
@@ -869,8 +868,9 @@ def build_model(model_config: ModelConfig):
         text_aligner=text_aligner,
         # pitch_extractor=pitch_extractor,
         mpd=MultiPeriodDiscriminator(),
-        # msd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
-        msd=MultiResolutionDiscriminator(),
+        msbd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
+        mrd=MultiResolutionDiscriminator(),
+        mstftd=MultiScaleSTFTDiscriminator(),
         # slm discriminator head
         # wd=WavLMDiscriminator(
         #    model_config.slm.hidden,

@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import os.path as osp
 import traceback
@@ -20,6 +21,9 @@ from stage_validate import validate_alignment, validate_acoustic, validate_textu
 from optimizers import build_optimizer
 from utils import get_image
 
+discriminators = ["mrd", "msbd", "mstftd"]
+# discriminators = ["mpd", "mrd", "msbd", "mstftd"]
+
 
 class StageConfig:
     def __init__(
@@ -29,7 +33,7 @@ class StageConfig:
         validate_fn: Callable,
         train_models: List[str],
         eval_models: List[str],
-        disc_models: List[str],
+        adversarial: bool,
         inputs: List[str],
     ):
         self.next_stage: Optional[str] = next_stage
@@ -37,7 +41,7 @@ class StageConfig:
         self.validate_fn: Callable = validate_fn
         self.train_models: List[str] = train_models
         self.eval_models: List[str] = eval_models
-        self.disc_models: List[str] = disc_models
+        self.adversarial = adversarial
         self.inputs: List[str] = inputs
 
 
@@ -48,7 +52,7 @@ stages = {
         validate_fn=validate_alignment,
         train_models=["text_aligner"],
         eval_models=[],
-        disc_models=[],
+        adversarial=False,
         inputs=[
             "text",
             "text_length",
@@ -62,7 +66,7 @@ stages = {
         validate_fn=validate_acoustic,
         train_models=["text_encoder", "acoustic_style_encoder", "decoder"],
         eval_models=["text_aligner"],
-        disc_models=[],
+        adversarial=False,
         inputs=[
             "text",
             "text_length",
@@ -85,7 +89,7 @@ stages = {
             "text_aligner",
         ],
         eval_models=[],
-        disc_models=["msd", "mpd"],
+        adversarial=True,
         inputs=[
             "text",
             "text_length",
@@ -114,7 +118,7 @@ stages = {
             "decoder",
             "text_aligner",
         ],
-        disc_models=[],
+        adversarial=False,
         inputs=[
             "text",
             "text_length",
@@ -143,7 +147,7 @@ stages = {
             "decoder",
             "text_aligner",
         ],
-        disc_models=[],
+        adversarial=False,
         inputs=[
             "text",
             "text_length",
@@ -172,7 +176,7 @@ stages = {
             "acoustic_style_encoder",
             "text_aligner",
         ],
-        disc_models=["msd", "mpd"],
+        adversarial=True,
         inputs=[
             "text",
             "text_length",
@@ -275,7 +279,7 @@ class StageContext:
                 #     total += 1
         return total
 
-    def train_batch(self, inputs, train):
+    def train_batch(self, inputs, train, probing=False):
         config = stages[self.name]
         batch = prepare_batch(inputs, train.config.training.device, config.inputs)
         model = prepare_model(
@@ -283,11 +287,23 @@ class StageContext:
             train.config.training.device,
             config.train_models,
             config.eval_models,
-            config.disc_models,
+            config.adversarial,
         )
-        result = self.train_fn(batch, model, train)
+        result, audio = self.train_fn(batch, model, train, probing)
         optimizer_step(self.optimizer, config.train_models)
-        return result
+        if config.adversarial:
+            audio_gt = batch.audio_gt.unsqueeze(1)
+            audio = audio.detach()
+            train.stage.optimizer.zero_grad()
+            d_index = 0
+            # if not probing:
+            # d_index = train.manifest.current_total_step % 4
+            d_loss = train.discriminator_loss(audio_gt, audio)
+            train.accelerator.backward(d_loss * math.sqrt(batch.text.shape[0]))
+            optimizer_step(self.optimizer, discriminators)
+            train.stage.optimizer.zero_grad()
+            result.add_loss("discriminator", d_loss)
+        return result.detach()
 
     def validate(self, train):
         sample_count = 6
@@ -398,10 +414,13 @@ def prepare_batch(
     return Munch(**prepared)
 
 
-def prepare_model(model, device, training_set, eval_set, disc_set) -> Munch:
+def prepare_model(model, device, training_set, eval_set, adversarial) -> Munch:
     """
     Prepares models for training or evaluation, attaches them to the cpu memory if unused, returns an object which contains only the models that will be used.
     """
+    disc_set = []
+    if adversarial:
+        disc_set = discriminators
     result = {}
     for key in model:
         if key in training_set or key in eval_set or key in disc_set:
