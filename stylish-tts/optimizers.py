@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 logical_step_limit = 10000
 logical_step_warmup = 100
 
-discriminators = {"msd", "mpd"}
+discriminators = {"mpd", "mrd", "msbd", "mstftd"}
 
 
 class MultiOptimizer:
@@ -16,8 +16,6 @@ class MultiOptimizer:
         self.optimizers = optimizers
         self.schedulers = schedulers
         self.discriminator_loss = discriminator_loss
-        # self.scale_schedulers = {}
-        # self.disc_schedulers = {}
         self.keys = list(optimizers.keys())
 
     def prepare(self, accelerator):
@@ -43,12 +41,6 @@ class MultiOptimizer:
                 ]
                 self.schedulers[key].step()
         self.reset_discriminator_schedulers()
-
-    # def add_discriminator_schedulers(self, discriminator_loss):
-    #     for key in ["msd", "mpd"]:
-    #         self.disc_schedulers[key] = torch.optim.lr_scheduler.MultiplicativeLR(
-    #             self.optimizers[key], discriminator_loss.get_disc_lambda()
-    #         )
 
     def step_discriminator_schedulers(self):
         gen_lr = self.optimizers["decoder"].param_groups[0]["lr"]

@@ -115,7 +115,7 @@ class BatchManager:
                             train=train,
                         )
                         for _, batch in enumerate(loader):
-                            _ = train.stage.train_batch(batch, train)
+                            _ = train.stage.train_batch(batch, train, probing=True)
                             break
                         train.stage.set_batch_size(key, batch_size)
                     done = True

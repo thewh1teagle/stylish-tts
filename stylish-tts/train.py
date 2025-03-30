@@ -152,16 +152,20 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         train.model[key] = train.accelerator.prepare(train.model[key])
         train.model[key].to(train.config.training.device)
 
-    train.generator_loss = GeneratorLoss(train.model.mpd, train.model.msd).to(
-        train.config.training.device
-    )
-    train.discriminator_loss = DiscriminatorLoss(train.model.mpd, train.model.msd).to(
-        train.config.training.device
-    )
+    train.generator_loss = GeneratorLoss(
+        mpd=train.model.mpd,
+        mrd=train.model.mrd,
+        msbd=train.model.msbd,
+        mstftd=train.model.mstftd,
+    ).to(train.config.training.device)
+    train.discriminator_loss = DiscriminatorLoss(
+        mpd=train.model.mpd,
+        mrd=train.model.mrd,
+        msbd=train.model.msbd,
+        mstftd=train.model.mstftd,
+    ).to(train.config.training.device)
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,
-        None,
-        # train.model.wd,
         train.model_config.sample_rate,
         train.model_config.slm.sr,
     ).to(train.config.training.device)
