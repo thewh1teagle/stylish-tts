@@ -57,6 +57,10 @@ class TrainingPlanConfig(BaseModel):
         default=10,
         description="Number of epochs for joint training of textual models stage (fifth stage).",
     )
+    sbert: int = Field(
+        default=10,
+        description="Number of epochs for training of sbert models stage (sixth stage).",
+    )
 
 
 class DatasetConfig(BaseModel):
