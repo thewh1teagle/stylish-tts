@@ -124,8 +124,13 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
     hashed_data.sort()
     selected_pairs = hashed_data[:train.config.validation.sample_count]
     selected_files = [file_name for _, file_name in selected_pairs]
-    if len(train.config.validation.force_samples) == 0:
-        train.config.validation.force_samples = selected_files
+
+    for item in train.config.validation.force_samples:
+        if item not in selected_files:
+            selected_files.append(item)
+    
+    train.config.validation.force_samples = selected_files
+    
     val_dataset = FilePathDataset(
         data_list=val_list,
         root_path=train.config.dataset.wav_path,
