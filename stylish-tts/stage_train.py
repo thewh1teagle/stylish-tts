@@ -250,7 +250,7 @@ def train_joint(batch, model, train, probing) -> Tuple[LossLog, Optional[torch.T
     return log.detach(), pred.audio.detach()
 
 
-def train_sbert(batch, model, train) -> Tuple[LossLog, Optional[torch.Tensor]]:
+def train_sbert(batch, model, train, probing) -> Tuple[LossLog, Optional[torch.Tensor]]:
     """Training function for the sbert stage."""
     state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
