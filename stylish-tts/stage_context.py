@@ -376,8 +376,7 @@ class StageContext:
                 # If we are not using force_samples, we will use the first sample in the batch
                 if len(train.config.validation.force_samples) == 0 and index < sample_count:
                     samples = [(0,index)]
-                
-                if train.accelerator.is_main_process:
+                if train.accelerator.is_main_process and len(samples) > 0:
                     steps = train.manifest.current_total_step
                     sample_rate = train.model_config.sample_rate
                     if attention is not None:
@@ -386,7 +385,7 @@ class StageContext:
                             f"eval/attention_{index}", get_image(attention), steps
                         )
                     for inputs_index, samples_index in samples:
-                        if audio_out[inputs_index] is not None:
+                        if audio_out is not None and audio_out[inputs_index] is not None:
                             audio_out_data = audio_out[inputs_index].cpu().numpy().squeeze()
                             
                             train.writer.add_audio(
@@ -395,7 +394,7 @@ class StageContext:
                                 steps,
                                 sample_rate=sample_rate,
                             )
-                        if audio_gt[inputs_index] is not None:
+                        if audio_gt is not None and audio_gt[inputs_index] is not None:
                             audio_gt_data = audio_gt[inputs_index].cpu().numpy().squeeze()
                             train.writer.add_audio(
                                 f"eval/sample_{samples_index}_gt",
