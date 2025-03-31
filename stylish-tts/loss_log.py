@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 import torch
-
+from typing import Optional
 import train_context
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,17 @@ class LossLog:
             total_weight += weight
         self.total_loss = total  # / total_weight
 
+    def backwards_loss(self):
+        total = 0
+        for key, value in self.metrics.items():
+            if key == "generator":
+                loss = value
+            else:
+                loss = value / value.detach()
+            weight = self.weight(key)
+            total += loss * weight
+        return total
+
     def detach(self):
         for key, value in self.metrics.items():
             if torch.is_tensor(value):
@@ -89,7 +100,7 @@ class LossLog:
         self.total_loss = None
 
 
-def combine_logs(loglist):
+def combine_logs(loglist) -> Optional[LossLog]:
     result = None
     if len(loglist) > 0:
         result = LossLog(loglist[0].logger, loglist[0].writer, loglist[0].weights)

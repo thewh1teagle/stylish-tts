@@ -16,6 +16,9 @@ class TextCleaner:
             symbols.letters_ipa
         )  # "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
         self.word_index_dictionary = self.build_text_cleaner()
+        self.unvoiced_dictionary = {
+            symbols.unvoiced[i] for i in range(len(symbols.unvoiced))
+        }
         # logger.debug(len(dicts))
 
     def __call__(self, text):
@@ -39,3 +42,9 @@ class TextCleaner:
         for i in range(len((symbols))):
             symbol_dict[symbols[i]] = i
         return symbol_dict
+
+    def is_voiced(self, text):
+        return [
+            1.0 if text[i] not in self.unvoiced_dictionary else 0.0
+            for i in range(len(text))
+        ]

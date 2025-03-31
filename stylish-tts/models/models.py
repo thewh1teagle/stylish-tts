@@ -15,10 +15,10 @@ from config_loader import ModelConfig
 from .text_aligner import TextAligner
 from .plbert import PLBERT
 
-from .discriminators import (
-    MultiPeriodDiscriminator,
-    MultiScaleSubbandCQTDiscriminator,
-)
+from .discriminators.multi_period import MultiPeriodDiscriminator
+from .discriminators.multi_resolution import MultiResolutionDiscriminator
+from .discriminators.multi_subband import MultiScaleSubbandCQTDiscriminator
+from .discriminators.multi_stft import MultiScaleSTFTDiscriminator
 
 from .duration_predictor import DurationPredictor
 from .pitch_energy_predictor import PitchEnergyPredictor
@@ -735,7 +735,7 @@ def build_model(model_config: ModelConfig):
         "istftnet",
         # "hifigan",
         "ringformer",
-        # "vocos",
+        "vocos",
         "freev",
     ], "Decoder type unknown"
 
@@ -771,18 +771,19 @@ def build_model(model_config: ModelConfig):
             conformer_depth=model_config.decoder.depth,
             sample_rate=model_config.sample_rate,
         )
-    # elif model_config.decoder.type == "vocos":
-    #     from .decoder.vocos import Decoder
+    elif model_config.decoder.type == "vocos":
+        from .decoder.vocos import Decoder
 
-    #     decoder = Decoder(
-    #         dim_in=model_config.decoder.hidden_dim,
-    #         style_dim=model_config.style_dim,
-    #         dim_out=model_config.n_mels,
-    #         intermediate_dim=model_config.decoder.intermediate_dim,
-    #         num_layers=model_config.decoder.num_layers,
-    #         gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
-    #         gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
-    #     )
+        decoder = Decoder(
+            dim_in=model_config.inter_dim,
+            style_dim=model_config.style_dim,
+            intermediate_dim=model_config.decoder.intermediate_dim,
+            num_layers=model_config.decoder.num_layers,
+            sample_rate=model_config.sample_rate,
+            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
+            gen_istft_win_length=model_config.decoder.gen_istft_win_length,
+            gen_istft_hop_length=model_config.decoder.gen_istft_hop_length,
+        )
     elif model_config.decoder.type == "freev":
         from .decoder.freev import Decoder
 
@@ -867,8 +868,9 @@ def build_model(model_config: ModelConfig):
         text_aligner=text_aligner,
         # pitch_extractor=pitch_extractor,
         mpd=MultiPeriodDiscriminator(),
-        msd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
-        # msd=MultiResolutionDiscriminator(),
+        msbd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
+        mrd=MultiResolutionDiscriminator(),
+        mstftd=MultiScaleSTFTDiscriminator(),
         # slm discriminator head
         # wd=WavLMDiscriminator(
         #    model_config.slm.hidden,

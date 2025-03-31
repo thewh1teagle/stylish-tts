@@ -22,25 +22,33 @@ plbert:
   dropout: 0.1
 
 # decoder:
-  # type: 'istftnet'
-  # resblock_kernel_sizes: [3,7,11]
-  # upsample_rates:  [10, 6]
-  # upsample_initial_channel: 512
-  # resblock_dilation_sizes: [[1,3,5], [1,3,5], [1,3,5]]
-  # upsample_kernel_sizes: [20, 12]
-  # gen_istft_n_fft: 20
-  # gen_istft_hop_size: 5
+# type: 'istftnet'
+# resblock_kernel_sizes: [3,7,11]
+# upsample_rates:  [10, 6]
+# upsample_initial_channel: 512
+# resblock_dilation_sizes: [[1,3,5], [1,3,5], [1,3,5]]
+# upsample_kernel_sizes: [20, 12]
+# gen_istft_n_fft: 20
+# gen_istft_hop_size: 5
+
+# decoder:
+#   type: 'ringformer'
+#   resblock_kernel_sizes: [3,7,11]
+#   upsample_rates:  [10, 6]
+#   upsample_initial_channel: 512
+#   resblock_dilation_sizes: [[1,3,5], [1,3,5], [1,3,5]]
+#   upsample_kernel_sizes: [20, 12]
+#   gen_istft_n_fft: 20
+#   gen_istft_hop_size: 5
+#   depth: 2
 
 decoder:
-  type: 'ringformer'
-  resblock_kernel_sizes: [3,7,11]
-  upsample_rates:  [10, 6]
-  upsample_initial_channel: 512
-  resblock_dilation_sizes: [[1,3,5], [1,3,5], [1,3,5]]
-  upsample_kernel_sizes: [20, 12]
-  gen_istft_n_fft: 20
-  gen_istft_hop_size: 5
-  depth: 2
+  type: 'vocos'
+  intermediate_dim: 1536
+  num_layers: 8
+  gen_istft_n_fft: 2048
+  gen_istft_win_length: 1200
+  gen_istft_hop_length: 300
 
 text_encoder:
   kernel_size: 5
@@ -69,10 +77,11 @@ slm:
   hidden: 768 # hidden size of SLM
   nlayers: 13 # number of layers of SLM
   initial_channel: 64 # initial channels of SLM discriminator head
-  
+
 symbol:
   pad: "$"
   punctuation: ";:,.!?¡¿—…\"()“” "
   letters: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-  letters_ipa: "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
-
+  letters_ipa: "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁᵊǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+  voiced: "ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɥɨɪʝɭɫɮʟɱɯɰŋɳɲɴøɵœɶɹɺɾʀʁɽʉʊʋⱱʌɣɤʎʏʑʐʒʔʕʢᵊᵻˈˌ"
+  unvoiced: "ɕçɧħʜɬɸθʘɻʂʃʈʧʍχʡǀǁǃːˑʼʴʰʱʲʷˠˤ˞pftsckxqh↓↑→↗↘'̩';:,.!?¡¿—…\"()“” $"

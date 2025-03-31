@@ -13,17 +13,16 @@ training:
   # Maximum number of segments per batch.
   # Increasing this slows training overall even if
   # epochs go by faster.
-  probe_batch_max: 2
+  probe_batch_max: 32
 
-# Number of epochs to train each stage. These numbers
-# assume 25 hours of training data. Decrease them
-# proportionately for larger datasets.
+# Number of epochs to train each stage.
 training_plan:
-  pre_acoustic: 12
-  acoustic: 24
-  pre_textual: 12
-  textual: 24
-  joint: 24
+  alignment: 5
+  pre_acoustic: 3
+  acoustic: 5
+  pre_textual: 30
+  textual: 2
+  joint: 2
   sbert: 12
 
 # See README.md for specifications on the dataset and
@@ -38,31 +37,34 @@ dataset:
 # know what you are doing.
 loss_weight:
   # mel reconstruction loss
-  mel: 5
+  mel: 2
   # generator loss
   generator: 1
   # speech-language model feature matching loss
-  slm: 1
+  slm: 0.2
   # monotonic alignment loss
-  mono: 1
+  mono: 0.1
   # sequence-to-sequence loss
-  s2s: 1
+  s2s: 0.5
   # pitch F0 reconstruction loss
-  pitch: 0.1
+  pitch: 3
   # energy reconstruction loss
   energy: 1
   # duration loss
   duration: 1
   # duration predictor probability output cross entropy loss
-  duration_ce: 20
+  duration_ce: 1
   # style reconstruction loss
   style: 1
   # magnitude/phase loss
   magphase: 1
+  amplitude: 1
+  phase: 2
+  stft_reconstruction: 0.5
 
 # Learning rates are pre-tuned. Do not change these unless
 # you know what you are doing
 optimizer:
-  lr: 0.00002 # general learning rate
+  lr: 0.0001 # general learning rate
   bert_lr: 0.00001 # learning rate for PLBERT
   ft_lr: 0.00001 # learning rate for acoustic modules

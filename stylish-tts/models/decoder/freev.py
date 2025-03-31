@@ -6,6 +6,7 @@ import numpy as np
 from munch import Munch
 from librosa.filters import mel as librosa_mel_fn
 import random
+from scipy.signal import get_window
 
 import math
 
@@ -13,6 +14,7 @@ import math
 # from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 from utils import DecoderPrediction
+from .harmonics import HarmonicGenerator
 
 # import torch.nn.functional as F
 
@@ -94,55 +96,172 @@ class GRN(nn.Module):
 class ConvNeXtBlock(nn.Module):
     def __init__(
         self,
-        dim: int,
+        *,
+        dim_in: int,
+        dim_out: int,
         intermediate_dim: int,
-        layer_scale_init_value=None,
-        adanorm_num_embeddings=None,
+        style_dim: int,
     ):
         super().__init__()
+        self.dim_out = dim_out
         self.dwconv = nn.Conv1d(
-            dim, dim, kernel_size=7, padding=3, groups=dim
+            dim_in, dim_in, kernel_size=7, padding=3, groups=dim_in
         )  # depthwise conv
-        self.adanorm = adanorm_num_embeddings is not None
 
-        self.norm = nn.LayerNorm(dim, eps=1e-6)
+        self.norm = AdaINResBlock1(dim_in, 7, [1, 3, 5], style_dim)
         self.pwconv1 = nn.Linear(
-            dim, intermediate_dim
+            dim_in, intermediate_dim
         )  # pointwise/1x1 convs, implemented with linear layers
         self.act = nn.GELU()
         self.grn = GRN(intermediate_dim)
-        self.pwconv2 = nn.Linear(intermediate_dim, dim)
+        self.pwconv2 = nn.Linear(intermediate_dim, dim_out)
 
-    def forward(self, x, cond_embedding_id=None):
-        residual = x
+    def forward(self, x: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
+        residual = x[:, : self.dim_out, :]
         x = self.dwconv(x)
+        x = self.norm(x, s)
+
         x = x.transpose(1, 2)  # (B, C, T) -> (B, T, C)
-        if self.adanorm:
-            assert cond_embedding_id is not None
-            x = self.norm(x, cond_embedding_id)
-        else:
-            x = self.norm(x)
         x = self.pwconv1(x)
         x = self.act(x)
         x = self.grn(x)
         x = self.pwconv2(x)
-
         x = x.transpose(1, 2)  # (B, T, C) -> (B, C, T)
 
         x = residual + x
         return x
 
 
+class AdaIN1d(nn.Module):
+    def __init__(self, style_dim, num_features):
+        super().__init__()
+        self.norm = nn.InstanceNorm1d(num_features, affine=False)
+        self.fc = nn.Linear(style_dim, num_features * 2)
+
+    def forward(self, x, s):
+        h = self.fc(s)
+        h = h.view(h.size(0), h.size(1), 1)
+        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        result = (1 + gamma) * self.norm(leaky_clamp(x, -1e10, 1e10)) + beta
+        return result
+
+
+class AdaINResBlock1(torch.nn.Module):
+    def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5), style_dim=64):
+        super(AdaINResBlock1, self).__init__()
+        self.convs1 = nn.ModuleList(
+            [
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[0],
+                        padding=get_padding(kernel_size, dilation[0]),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[1],
+                        padding=get_padding(kernel_size, dilation[1]),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[2],
+                        padding=get_padding(kernel_size, dilation[2]),
+                    )
+                ),
+            ]
+        )
+        self.convs1.apply(init_weights)
+
+        self.convs2 = nn.ModuleList(
+            [
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                ),
+                weight_norm(
+                    Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                ),
+            ]
+        )
+        self.convs2.apply(init_weights)
+
+        self.adain1 = nn.ModuleList(
+            [
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+            ]
+        )
+
+        self.adain2 = nn.ModuleList(
+            [
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+                AdaIN1d(style_dim, channels),
+            ]
+        )
+
+        self.alpha1 = nn.ParameterList(
+            [nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs1))]
+        )
+        self.alpha2 = nn.ParameterList(
+            [nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs2))]
+        )
+
+    def forward(self, x, s):
+        for c1, c2, n1, n2, a1, a2 in zip(
+            self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2
+        ):
+            xt = n1(x, s)
+            xt = xt + (1 / a1) * (torch.sin(a1 * xt) ** 2)  # Snake1D
+            xt = c1(xt)
+            xt = n2(xt, s)
+            xt = xt + (1 / a2) * (torch.sin(a2 * xt) ** 2)  # Snake1D
+            xt = c2(xt)
+            x = xt + x
+        return x
+
+
 config_h = Munch(
     {
         "ASP_channel": 1025,
-        "ASP_resblock_kernel_sizes": [3, 7, 11],
-        "ASP_resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
-        "ASP_input_conv_kernel_size": 7,
-        "ASP_output_conv_kernel_size": 7,
         "PSP_channel": 512,
-        "PSP_resblock_kernel_sizes": [3, 7, 11],
-        "PSP_resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
         "PSP_input_conv_kernel_size": 7,
         "PSP_output_R_conv_kernel_size": 7,
         "PSP_output_I_conv_kernel_size": 7,
@@ -153,6 +272,8 @@ config_h = Munch(
         "sampling_rate": 24000,
         "fmin": 50,
         "fmax": 550,
+        "style_dim": 128,
+        "intermediate_dim": 1536,
     }
 )
 
@@ -162,16 +283,19 @@ class Generator(torch.nn.Module):
         super(Generator, self).__init__()
         h = config_h
         self.h = config_h
-        self.ASP_num_kernels = len(h.ASP_resblock_kernel_sizes)
-        self.PSP_num_kernels = len(h.PSP_resblock_kernel_sizes)
+        self.dim = 512
+        self.num_layers = 8
+        window = torch.hann_window(h.win_size)
+        self.register_buffer("window", window, persistent=False)
 
-        # self.ASP_input_conv = Conv1d(
-        #     h.num_mels,
-        #     h.ASP_channel,
-        #     h.ASP_input_conv_kernel_size,
-        #     1,
-        #     padding=get_padding(h.ASP_input_conv_kernel_size, 1),
-        # )
+        self.harmonic = HarmonicGenerator(
+            sample_rate=h.sampling_rate,
+            dim_out=self.dim * 2,
+            win_length=h.win_size,
+            hop_length=h.hop_size,
+            divisor=2,
+        )
+
         self.PSP_input_conv = Conv1d(
             h.num_mels,
             h.PSP_channel,
@@ -180,60 +304,45 @@ class Generator(torch.nn.Module):
             padding=get_padding(h.PSP_input_conv_kernel_size, 1),
         )
 
-        # self.ASP_output_conv = Conv1d(
-        #     h.ASP_channel,
-        #     h.n_fft // 2 + 1,
-        #     h.ASP_output_conv_kernel_size,
-        #     1,
-        #     padding=get_padding(h.ASP_output_conv_kernel_size, 1),
-        # )
         self.PSP_output_R_conv = Conv1d(
-            512,
+            h.PSP_channel,
             h.n_fft // 2 + 1,
             h.PSP_output_R_conv_kernel_size,
             1,
             padding=get_padding(h.PSP_output_R_conv_kernel_size, 1),
         )
         self.PSP_output_I_conv = Conv1d(
-            512,
+            h.PSP_channel,
             h.n_fft // 2 + 1,
             h.PSP_output_I_conv_kernel_size,
             1,
             padding=get_padding(h.PSP_output_I_conv_kernel_size, 1),
         )
 
-        self.dim = 512
-        self.num_layers = 8
-        self.adanorm_num_embeddings = None
-        self.intermediate_dim = 1536
-        self.norm = nn.LayerNorm(self.dim, eps=1e-6)
-        self.norm2 = nn.LayerNorm(self.dim, eps=1e-6)
-        layer_scale_init_value = 1 / self.num_layers
-        self.convnext = nn.ModuleList(
+        self.phase_norm = nn.LayerNorm(self.dim, eps=1e-6)
+        self.phase_convnext = nn.ModuleList(
             [
                 ConvNeXtBlock(
-                    dim=self.dim,
-                    intermediate_dim=self.intermediate_dim,
-                    layer_scale_init_value=layer_scale_init_value,
-                    adanorm_num_embeddings=self.adanorm_num_embeddings,
+                    dim_in=h.PSP_channel + self.dim,
+                    dim_out=h.PSP_channel,
+                    intermediate_dim=h.intermediate_dim,
+                    style_dim=h.style_dim,
                 )
                 for _ in range(self.num_layers)
             ]
         )
-        self.convnext2 = nn.ModuleList(
+        self.amp_convnext = nn.ModuleList(
             [
                 ConvNeXtBlock(
-                    dim=self.h.ASP_channel,
-                    intermediate_dim=self.intermediate_dim,
-                    layer_scale_init_value=layer_scale_init_value,
-                    adanorm_num_embeddings=self.adanorm_num_embeddings,
+                    dim_in=h.ASP_channel + self.dim,
+                    dim_out=h.ASP_channel,
+                    intermediate_dim=h.intermediate_dim,
+                    style_dim=h.style_dim,
                 )
-                # for _ in range(self.num_layers)
                 for _ in range(1)
             ]
         )
-        self.final_layer_norm = nn.LayerNorm(self.dim, eps=1e-6)
-        self.final_layer_norm2 = nn.LayerNorm(self.dim, eps=1e-6)
+        self.phase_final_layer_norm = nn.LayerNorm(self.dim, eps=1e-6)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -241,39 +350,35 @@ class Generator(torch.nn.Module):
             nn.init.trunc_normal_(m.weight, std=0.02)
             nn.init.constant_(m.bias, 0)
 
-    def forward(self, mel, inv_mel=None):
-        if inv_mel is None:
-            inv_amp = (
-                inverse_mel(
-                    mel,
-                    self.h.n_fft,
-                    self.h.num_mels,
-                    self.h.sampling_rate,
-                    self.h.hop_size,
-                    self.h.win_size,
-                    self.h.fmin,
-                    self.h.fmax,
-                )
-                .abs()
-                .clamp_min(1e-5)
+    def forward(self, *, mel, style, pitch, energy):
+        har_spec, har_phase = self.harmonic(pitch, energy)
+        inv_amp = (
+            inverse_mel(
+                mel,
+                self.h.n_fft,
+                self.h.num_mels,
+                self.h.sampling_rate,
+                self.h.hop_size,
+                self.h.win_size,
+                self.h.fmin,
+                self.h.fmax,
             )
-        else:
-            inv_amp = inv_mel
+            .abs()
+            .clamp_min(1e-5)
+        )
         logamp = inv_amp.log()
+        for conv_block in self.amp_convnext:
+            logamp = torch.cat([logamp, har_spec], dim=1)
+            logamp = conv_block(logamp, style)
         logamp = F.pad(logamp, pad=(0, 1), mode="replicate")
-        # logamp = self.ASP_input_conv(logamp)
-        for conv_block in self.convnext2:
-            logamp = conv_block(logamp, cond_embedding_id=None)
-        # logamp = self.final_layer_norm2(logamp.transpose(1, 2))
-        # logamp = logamp.transpose(1, 2)
-        # logamp = self.ASP_output_conv(logamp)
 
         pha = self.PSP_input_conv(mel)
-        pha = self.norm(pha.transpose(1, 2))
+        pha = self.phase_norm(pha.transpose(1, 2))
         pha = pha.transpose(1, 2)
-        for conv_block in self.convnext:
-            pha = conv_block(pha, cond_embedding_id=None)
-        pha = self.final_layer_norm(pha.transpose(1, 2))
+        for conv_block in self.phase_convnext:
+            pha = torch.cat([pha, har_phase], dim=1)
+            pha = conv_block(pha, style)
+        pha = self.phase_final_layer_norm(pha.transpose(1, 2))
         pha = pha.transpose(1, 2)
         R = self.PSP_output_R_conv(pha)
         I = self.PSP_output_I_conv(pha)
@@ -286,18 +391,16 @@ class Generator(torch.nn.Module):
         imag = torch.exp(logamp) * torch.sin(pha)
 
         spec = torch.complex(rea, imag)
-        # spec = torch.cat((rea.unsqueeze(-1), imag.unsqueeze(-1)), -1)
 
         audio = torch.istft(
             spec,
             self.h.n_fft,
             hop_length=self.h.hop_size,
             win_length=self.h.win_size,
-            window=torch.hann_window(self.h.win_size).to(mel.device),
+            window=self.window,
             center=True,
         )
 
-        # return logamp, pha, rea, imag, audio.unsqueeze(1)
         return (
             audio.unsqueeze(1),
             logamp,
@@ -530,54 +633,30 @@ class Decoder(nn.Module):
 
         self.generator = Generator()
 
-    def forward(self, asr, F0, N, s, pretrain=False, probing=False):
-        if not pretrain:
-            # if self.training:
-            #    downlist = [0, 3, 7]
-            #    F0_down = downlist[random.randint(0, 2)]
-            #    downlist = [0, 3, 7, 15]
-            #    N_down = downlist[random.randint(0, 3)]
-            #    if probing:
-            #        F0_down = 0
-            #        N_down = 0
-            #    if F0_down:
-            #        F0 = (
-            #            nn.functional.conv1d(
-            #                F0.unsqueeze(1),
-            #                torch.ones(1, 1, F0_down).to("cuda"),
-            #                padding=F0_down // 2,
-            #            ).squeeze(1)
-            #            / F0_down
-            #        )
-            #    if N_down:
-            #        N = (
-            #            nn.functional.conv1d(
-            #                N.unsqueeze(1),
-            #                torch.ones(1, 1, N_down).to("cuda"),
-            #                padding=N_down // 2,
-            #            ).squeeze(1)
-            #            / N_down
-            #        )
+    def forward(self, asr, F0_curve, N_curve, s, pretrain=False, probing=False):
+        F0 = self.F0_conv(F0_curve.unsqueeze(1))
+        N = self.N_conv(N_curve.unsqueeze(1))
 
-            F0 = self.F0_conv(F0.unsqueeze(1))
-            N = self.N_conv(N.unsqueeze(1))
+        x = torch.cat([asr, F0, N], axis=1)
+        x = self.encode(x)
 
-            x = torch.cat([asr, F0, N], axis=1)
-            x = self.encode(x)
+        asr_res = self.asr_res(asr)
 
-            asr_res = self.asr_res(asr)
-
-            res = True
-            for block in self.decode:
-                if res:
-                    x = torch.cat([x, asr_res, F0, N], axis=1)
-                x = block(x, s)
-                if block.upsample_type != "none":
-                    res = False
-            x = self.to_out(x)
-        else:
-            x = asr
-        audio, logamp, phase, real, imaginary = self.generator(x)
+        res = True
+        for block in self.decode:
+            if res:
+                x = torch.cat([x, asr_res, F0, N], axis=1)
+            x = block(x, s)
+            if block.upsample_type != "none":
+                res = False
+        x = self.to_out(x)
+        audio, logamp, phase, real, imaginary = self.generator(
+            mel=x, style=s, pitch=F0_curve, energy=N_curve
+        )
         return DecoderPrediction(
-            audio=audio, log_amplitude=logamp, real=real, imaginary=imaginary
+            audio=audio,
+            log_amplitude=logamp,
+            phase=phase,
+            real=real,
+            imaginary=imaginary,
         )
