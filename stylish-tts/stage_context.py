@@ -16,8 +16,10 @@ from stage_train import (
     train_pre_textual,
     train_textual,
     train_joint,
+    train_sbert,
 )
-from stage_validate import validate_alignment, validate_acoustic, validate_textual
+
+from stage_validate import validate_alignment, validate_acoustic, validate_textual, validate_sbert
 from optimizers import build_optimizer
 from utils import get_image
 
@@ -186,6 +188,38 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+        ],
+    ),
+    "sbert": StageConfig(
+        next_stage=None, 
+        train_fn=train_sbert,
+        validate_fn=validate_sbert,
+        train_models=[
+            "textual_style_encoder",
+            "textual_prosody_encoder",
+        ],
+        eval_models=[
+            "textual_style_encoder",
+            "textual_prosody_encoder",
+            "acoustic_style_encoder",
+            "acoustic_prosody_encoder",
+            "duration_predictor",
+            "pitch_energy_predictor",
+            "bert",
+            "bert_encoder",
+            "text_encoder",
+            "decoder",
+            "text_aligner",
+        ],
+        adversarial=False,
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "mel_length",
+            "audio_gt",
+            "pitch",
+            "sentence_embedding",
         ],
     ),
 }

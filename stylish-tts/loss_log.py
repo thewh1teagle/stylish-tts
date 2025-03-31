@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 import torch
-
+from typing import Optional
 import train_context
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class LossLog:
         self.total_loss = None
 
 
-def combine_logs(loglist):
+def combine_logs(loglist) -> Optional[LossLog]:
     result = None
     if len(loglist) > 0:
         result = LossLog(loglist[0].logger, loglist[0].writer, loglist[0].weights)
