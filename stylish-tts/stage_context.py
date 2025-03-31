@@ -18,11 +18,8 @@ from stage_train import (
     train_joint,
     train_sbert,
 )
-<<<<<<< HEAD
-from stage_validate import validate_acoustic, validate_textual, validate_sbert
-=======
-from stage_validate import validate_alignment, validate_acoustic, validate_textual
->>>>>>> origin/main
+
+from stage_validate import validate_alignment, validate_acoustic, validate_textual, validate_sbert
 from optimizers import build_optimizer
 from utils import get_image
 
@@ -214,7 +211,7 @@ stages = {
             "decoder",
             "text_aligner",
         ],
-        disc_models=[],
+        adversarial=False,
         inputs=[
             "text",
             "text_length",
