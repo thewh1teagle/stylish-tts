@@ -267,6 +267,14 @@ class VocosDecoderConfig(BaseModel):
         ..., description="Hop length for iSTFT generator."
     )
 
+class ValidationConfig(BaseModel):
+    """
+    Setup samples to use during validation
+    """
+    sample_count: int = Field(
+        ..., description="Number of samples to generate during validation.")
+    force_samples: list = Field(
+        default=[], description="List of segments to use during validation.")
 
 class FreevDecoderConfig(BaseModel):
     """
@@ -376,6 +384,9 @@ class Config(BaseModel):
     )
     training_plan: TrainingPlanConfig = Field(
         ..., description="Training plan configuration parameters."
+    )
+    validation: ValidationConfig = Field(
+        ..., description="Validation configuration parameters."
     )
     dataset: DatasetConfig = Field(..., description="Dataset configuration parameters.")
     loss_weight: LossWeightConfig = Field(

@@ -306,7 +306,7 @@ class StageContext:
         return result.detach()
 
     def validate(self, train):
-        sample_count = 6
+        sample_count = train.config.validation.sample_count
         for key in train.model:
             train.model[key].eval()
         logs = []
@@ -326,6 +326,7 @@ class StageContext:
             progress_bar = iterator
         else:
             iterator = enumerate(train.val_dataloader)
+        sample_map = {item: j for j, item in enumerate(train.config.validation.force_samples)}
         for index, inputs in iterator:
             try:
                 batch = prepare_batch(
@@ -335,7 +336,14 @@ class StageContext:
                     batch, train
                 )
                 logs.append(next_log)
-                if index < sample_count and train.accelerator.is_main_process:
+                # find any indeces in input that match requested suppliment samples
+                samples = [(i, sample_map[item]) for i, item in enumerate(inputs[8]) if item in sample_map]
+                
+                # If we are not using force_samples, we will use the first sample in the batch
+                if len(train.config.validation.force_samples) == 0 and index < sample_count:
+                    samples = [(0,index)]
+                
+                if train.accelerator.is_main_process:
                     steps = train.manifest.current_total_step
                     sample_rate = train.model_config.sample_rate
                     if attention is not None:
@@ -343,22 +351,24 @@ class StageContext:
                         train.writer.add_figure(
                             f"eval/attention_{index}", get_image(attention), steps
                         )
-                    if audio_out is not None:
-                        audio_out = audio_out.cpu().numpy().squeeze()
-                        train.writer.add_audio(
-                            f"eval/sample_{index}",
-                            audio_out,
-                            steps,
-                            sample_rate=sample_rate,
-                        )
-                    if audio_gt is not None:
-                        audio_gt = audio_gt.cpu().numpy().squeeze()
-                        train.writer.add_audio(
-                            f"eval/sample_{index}_gt",
-                            audio_gt,
-                            0,
-                            sample_rate=sample_rate,
-                        )
+                    for inputs_index, samples_index in samples:
+                        if audio_out[inputs_index] is not None:
+                            audio_out_data = audio_out[inputs_index].cpu().numpy().squeeze()
+                            
+                            train.writer.add_audio(
+                                f"eval/sample_{samples_index}",
+                                audio_out_data,
+                                steps,
+                                sample_rate=sample_rate,
+                            )
+                        if audio_gt[inputs_index] is not None:
+                            audio_gt_data = audio_gt[inputs_index].cpu().numpy().squeeze()
+                            train.writer.add_audio(
+                                f"eval/sample_{samples_index}_gt",
+                                audio_gt_data,
+                                0,
+                                sample_rate=sample_rate,
+                            )
                 if train.accelerator.is_main_process:
                     interim = combine_logs(logs)
                     if progress_bar is not None and interim is not None:

@@ -43,7 +43,7 @@ def validate_acoustic(batch, train):
     pred = state.acoustic_prediction_single(batch)
     log = build_loss_log(train)
     train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
-    return log, state.get_attention(), pred.audio[0], batch.audio_gt[0]
+    return log, state.get_attention(), pred.audio, batch.audio_gt
 
 
 @torch.no_grad()
@@ -67,4 +67,4 @@ def validate_textual(batch, train):
     )
     log.add_loss("duration_ce", loss_ce)
     log.add_loss("duration", loss_dur)
-    return log, state.get_attention(), pred.audio[0], batch.audio_gt[0]
+    return log, state.get_attention(), pred.audio, batch.audio_gt
