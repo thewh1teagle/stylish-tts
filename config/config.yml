@@ -33,6 +33,16 @@ dataset:
   wav_path: "path/to/your/wav-files"
   pitch_path: "path/to/your/pitch.safetensors"
 
+validation:
+  # Number of samples to generate per validation step
+  sample_count: 10
+  # Specific segments to use for validation
+  # force_samples:
+  # - "filename.from.val_data.txt"
+  # - "other.filename.from.val_data.txt"
+  # - "other.other.filename.from.val_data.txt"
+
+
 # Weights are pre-tuned. Do not change these unless you
 # know what you are doing.
 loss_weight:
