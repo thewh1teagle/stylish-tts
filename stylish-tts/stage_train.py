@@ -151,7 +151,7 @@ def train_pre_textual(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
 
-    return log.detach(), pred.audio.detach()
+    return log.detach(), None
 
 
 def train_textual(
