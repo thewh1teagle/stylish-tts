@@ -1,12 +1,14 @@
 from typing import Optional
 import torch
 from torch.nn import functional as F
+from torch.nn.utils.parametrizations import weight_norm
 from xlstm import (
     xLSTMBlockStack,
     xLSTMBlockStackConfig,
     mLSTMBlockConfig,
     mLSTMLayerConfig,
 )
+from .common import LinearNorm, get_padding
 
 
 class TextEncoder(torch.nn.Module):
@@ -14,6 +16,7 @@ class TextEncoder(torch.nn.Module):
         self, channels, kernel_size, depth, n_symbols, actv=torch.nn.LeakyReLU(0.2)
     ):
         super().__init__()
+        padding = get_padding(kernel_size)
         self.embedding = torch.nn.Embedding(n_symbols, channels)
 
         self.cnn = torch.nn.ModuleList()
@@ -106,19 +109,6 @@ class LayerNorm(torch.nn.Module):
         x = x.transpose(1, -1)
         x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
         return x.transpose(1, -1)
-
-
-class LinearNorm(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, bias=True, w_init_gain="linear"):
-        super(LinearNorm, self).__init__()
-        self.linear_layer = torch.nn.Linear(in_dim, out_dim, bias=bias)
-
-        torch.nn.init.xavier_uniform_(
-            self.linear_layer.weight, gain=torch.nn.init.calculate_gain(w_init_gain)
-        )
-
-    def forward(self, x):
-        return self.linear_layer(x)
 
 
 class BasicConvNeXtBlock(torch.nn.Module):
