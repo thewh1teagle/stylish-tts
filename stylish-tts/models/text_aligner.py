@@ -25,7 +25,7 @@ class TextAligner(nn.Module):
     ):
         super().__init__()
         self.n_token = n_token
-        self.to_mfcc = MFCC()
+        self.to_mfcc = MFCC(n_mfcc=input_dim / 2, n_mels=input_dim)
         self.init_cnn = ConvNorm(
             input_dim // 2, hidden_dim, kernel_size=7, padding=3, stride=1
         )

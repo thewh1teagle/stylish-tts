@@ -198,12 +198,14 @@ def build_model(model_config: ModelConfig):
 def load_defaults(train, model):
     with train.accelerator.main_process_first():
         # Load pretrained text_aligner
-        params = safetensors.torch.load_file(
-            hf_hub_download(
-                repo_id="stylish-tts/text_aligner", filename="text_aligner.safetensors"
+        if train.model_config.n_mels == 80:
+            params = safetensors.torch.load_file(
+                hf_hub_download(
+                    repo_id="stylish-tts/text_aligner",
+                    filename="text_aligner.safetensors",
+                )
             )
-        )
-        model.text_aligner.load_state_dict(params)
+            model.text_aligner.load_state_dict(params)
 
         # Load pretrained pitch_extractor
         # params = safetensors.torch.load_file(
