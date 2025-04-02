@@ -46,7 +46,7 @@ class TextEncoder(torch.nn.Module):
             ),
             context_length=channels,
             num_blocks=8,
-            embedding_dim=channels,
+            embedding_dim=channels // 2,
         )
 
         self.lstm = xLSTMBlockStack(cfg)
