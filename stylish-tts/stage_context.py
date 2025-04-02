@@ -7,6 +7,7 @@ from typing import Callable, List, Any, Dict, Optional
 import torch
 from munch import Munch
 import tqdm
+import matplotlib.pyplot as plt
 
 from loss_log import combine_logs
 from stage_train import (
@@ -21,7 +22,7 @@ from stage_train import (
 
 from stage_validate import validate_alignment, validate_acoustic, validate_textual, validate_sbert
 from optimizers import build_optimizer
-from utils import get_image
+from utils import get_image, plot_spectrogram_to_figure, plot_mel_difference_to_figure
 
 discriminators = ["mrd", "msbd", "mstftd"]
 # discriminators = ["mpd", "mrd", "msbd", "mstftd"]
@@ -360,6 +361,7 @@ class StageContext:
             progress_bar = iterator
         else:
             iterator = enumerate(train.val_dataloader)
+        
         sample_map = {item: j for j, item in enumerate(train.config.validation.force_samples)}
         for index, inputs in iterator:
             try:
@@ -370,10 +372,8 @@ class StageContext:
                     batch, train
                 )
                 logs.append(next_log)
-                # find any indeces in input that match requested suppliment samples
                 samples = [(i, sample_map[item]) for i, item in enumerate(inputs[8]) if item in sample_map]
                 
-                # If we are not using force_samples, we will use the first sample in the batch
                 if len(train.config.validation.force_samples) == 0 and index < sample_count:
                     samples = [(0,index)]
                 if train.accelerator.is_main_process and len(samples) > 0:
@@ -385,23 +385,63 @@ class StageContext:
                             f"eval/attention_{index}", get_image(attention), steps
                         )
                     for inputs_index, samples_index in samples:
+                        mel_gt_np = None
+                        mel_pred_log_np = None
+                        fig_mel_diff = None
                         if audio_out is not None and audio_out[inputs_index] is not None:
                             audio_out_data = audio_out[inputs_index].cpu().numpy().squeeze()
-                            
+                            # write audio
                             train.writer.add_audio(
                                 f"eval/sample_{samples_index}",
                                 audio_out_data,
                                 steps,
                                 sample_rate=sample_rate,
                             )
+                            # write mel
+                            audio_pred_cpu = audio_out[inputs_index].squeeze(0).cpu().float()
+                            to_mel_cpu = train.to_mel.to('cpu')
+                            mel_pred_tensor = to_mel_cpu(audio_pred_cpu)
+                            mel_pred_log = torch.log(torch.clamp(mel_pred_tensor, min=1e-5))
+                            mel_pred_log_np = mel_pred_log.cpu().numpy()
+                            fig_mel_pred = plot_spectrogram_to_figure(mel_pred_log_np, title=f"Predicted Mel (Step {steps})")
+                            train.writer.add_figure(f"eval/sample_{samples_index}/mel", fig_mel_pred, global_step=steps)
+                            plt.close(fig_mel_pred)
                         if audio_gt is not None and audio_gt[inputs_index] is not None:
                             audio_gt_data = audio_gt[inputs_index].cpu().numpy().squeeze()
+                            # write audio
                             train.writer.add_audio(
                                 f"eval/sample_{samples_index}_gt",
                                 audio_gt_data,
                                 0,
                                 sample_rate=sample_rate,
                             )
+                            try:
+                                mel_gt_np = batch.mel[inputs_index].cpu().numpy()
+                                fig_mel_gt = plot_spectrogram_to_figure(mel_gt_np, title="GT Mel")
+                                train.writer.add_figure(f"eval/sample_{samples_index}/mel_gt", fig_mel_gt, global_step=0)
+                                plt.close(fig_mel_gt)
+                            except Exception as e:
+                                train.logger.warning(f"Could not plot GT mel for sample index {samples_index}: {e}")
+                        # --- NEW: Plot Mel Difference ---
+                        if mel_gt_np is not None and mel_pred_log_np is not None:
+                            try:
+                                # Define or retrieve mean and std (these are hardcoded in meldataset.py)
+                                dataset_mean = -4.0
+                                dataset_std = 4.0
+
+                                fig_mel_diff = plot_mel_difference_to_figure(
+                                    mel_gt_np,          # Already normalized log mel
+                                    mel_pred_log_np,    # Raw log mel
+                                    dataset_mean,       # Pass normalization mean
+                                    dataset_std,        # Pass normalization std
+                                    title=f"Absolute Normalized Mel Log Diff (Step {steps})"
+                                )
+                                train.writer.add_figure(f"eval/sample_{samples_index}/mel_difference_normalized", fig_mel_diff, global_step=steps)
+                                plt.close(fig_mel_diff) # Explicitly close figure
+                            except Exception as e:
+                                train.logger.warning(f"Could not plot mel difference for sample index {samples_index}: {e}")
+                                if fig_mel_diff is not None and plt.fignum_exists(fig_mel_diff.number): 
+                                    plt.close(fig_mel_diff)
                 if train.accelerator.is_main_process:
                     interim = combine_logs(logs)
                     if progress_bar is not None and interim is not None:

@@ -54,13 +54,99 @@ def log_norm(x, mean=-4, std=4, dim=2):
     x = torch.log(torch.exp(x * std + mean).norm(dim=dim))
     return x
 
+def plot_spectrogram_to_figure(
+    spectrogram,
+    title='Spectrogram',
+    figsize=(12, 5), # Increased width for better time resolution view
+    dpi=150,         # Increased DPI for higher resolution image
+    interpolation='bilinear', # Smoother interpolation
+    cmap='viridis'    # Default colormap, can change to 'magma', 'inferno', etc.
+):
+    """Converts a spectrogram tensor/numpy array to a matplotlib figure with improved quality."""
+    plt.switch_backend("agg")  # Use non-interactive backend
+
+    # Ensure input is a numpy array on CPU
+    if isinstance(spectrogram, torch.Tensor):
+        spectrogram_np = spectrogram.detach().cpu().numpy()
+    elif isinstance(spectrogram, np.ndarray):
+        spectrogram_np = spectrogram
+    else:
+        raise TypeError("Input spectrogram must be a torch.Tensor or numpy.ndarray")
+
+    # Handle potential extra dimensions (e.g., channel dim)
+    if spectrogram_np.ndim > 2:
+        if spectrogram_np.shape[0] == 1: # Remove channel dim if it's 1
+            spectrogram_np = spectrogram_np.squeeze(0)
+        else:
+            # If multiple channels, you might want to plot only the first
+            # or handle it differently (e.g., separate plots)
+            spectrogram_np = spectrogram_np[0, :, :] # Plot only the first channel
+            # Or raise an error/warning:
+            # raise ValueError(f"Spectrogram has unexpected shape: {spectrogram_np.shape}")
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi) # Apply figsize and dpi
+
+    # Ensure valid interpolation string
+    valid_interpolations = [None, 'none', 'nearest', 'bilinear', 'bicubic', 'spline16','spline36', 'hanning', 'hamming', 'hermite', 'kaiser', 'quadric','catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos','blackman']
+    if interpolation not in valid_interpolations:
+        print(f"Warning: Invalid interpolation '{interpolation}'. Using 'bilinear'.")
+        interpolation = 'bilinear'
+
+    im = ax.imshow(spectrogram_np, aspect="auto", origin="lower", interpolation=interpolation, cmap=cmap) # Apply interpolation and cmap
+
+    plt.colorbar(im, ax=ax)
+    plt.xlabel("Frames")
+    plt.ylabel("Mel Channels") # More specific label
+    plt.title(title)
+    plt.tight_layout()
+    # plt.close(fig) # Don't close here if returning the figure object
+    return fig # Return the figure object directly
+
+def plot_mel_difference_to_figure(
+    mel_gt_normalized_np,  # Ground truth (already normalized log mel)
+    mel_pred_log_np,      # Predicted (raw log mel)
+    mean: float,          # Dataset mean used for normalization
+    std: float,           # Dataset std used for normalization
+    title='Absolute Normalized Mel Log Difference', # Updated title
+    figsize=(12, 5),
+    dpi=150,
+    cmap='magma',
+    vmin=0.0,
+    vmax=None # Auto-scale max diff, or set e.g., vmax=2.0
+):
+    """Plots the absolute difference between two mel spectrograms after normalizing the prediction."""
+    plt.switch_backend("agg")
+
+    # Ensure shapes match by trimming to the minimum length
+    min_len = min(mel_gt_normalized_np.shape[1], mel_pred_log_np.shape[1])
+    mel_gt_trimmed = mel_gt_normalized_np[:, :min_len]
+    mel_pred_log_trimmed = mel_pred_log_np[:, :min_len]
+
+    # --- Normalize the predicted log mel ---
+    mel_pred_normalized_np = (mel_pred_log_trimmed - mean) / std
+    # --------------------------------------
+
+    # Calculate absolute difference in the *normalized* log domain
+    diff = np.abs(mel_gt_trimmed - mel_pred_normalized_np)
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+
+    im = ax.imshow(diff, aspect="auto", origin="lower",
+                interpolation='none', cmap=cmap, vmin=vmin, vmax=vmax)
+
+    plt.colorbar(im, ax=ax, label='Absolute Normalized Log Difference') # Updated label
+    plt.xlabel("Frames")
+    plt.ylabel("Mel Channels")
+    plt.title(title)
+    plt.tight_layout()
+    return fig
 
 def get_image(arrs):
     plt.switch_backend("agg")
     fig = plt.figure()
     ax = plt.gca()
-    ax.imshow(arrs)
-
+    im = ax.imshow(arrs)
+    plt.colorbar(im, ax=ax)
     return fig
 
 
