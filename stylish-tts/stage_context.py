@@ -22,7 +22,7 @@ from stage_train import (
 
 from stage_validate import validate_alignment, validate_acoustic, validate_textual, validate_sbert
 from optimizers import build_optimizer
-from utils import get_image, plot_spectrogram_to_figure, plot_mel_difference_to_figure
+from utils import get_image, plot_spectrogram_to_figure, plot_mel_signed_difference_to_figure
 
 discriminators = ["mrd", "msbd", "mstftd"]
 # discriminators = ["mpd", "mrd", "msbd", "mstftd"]
@@ -425,18 +425,19 @@ class StageContext:
                         # --- NEW: Plot Mel Difference ---
                         if mel_gt_np is not None and mel_pred_log_np is not None:
                             try:
-                                # Define or retrieve mean and std (these are hardcoded in meldataset.py)
+                                # Define or retrieve mean and std
                                 dataset_mean = -4.0
                                 dataset_std = 4.0
 
-                                fig_mel_diff = plot_mel_difference_to_figure(
+                                fig_mel_signed_diff = plot_mel_signed_difference_to_figure(
                                     mel_gt_np,          # Already normalized log mel
                                     mel_pred_log_np,    # Raw log mel
                                     dataset_mean,       # Pass normalization mean
                                     dataset_std,        # Pass normalization std
-                                    title=f"Absolute Normalized Mel Log Diff (Step {steps})"
+                                    title=f"Signed Mel Log Diff (GT - Pred) (Step {steps})",
+                                    # Optionally add clipping: max_abs_diff_clip=3.0
                                 )
-                                train.writer.add_figure(f"eval/sample_{samples_index}/mel_difference_normalized", fig_mel_diff, global_step=steps)
+                                train.writer.add_figure(f"eval/sample_{samples_index}/mel_difference_normalized", fig_mel_signed_diff, global_step=steps)
                                 plt.close(fig_mel_diff) # Explicitly close figure
                             except Exception as e:
                                 train.logger.warning(f"Could not plot mel difference for sample index {samples_index}: {e}")

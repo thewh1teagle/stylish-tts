@@ -102,19 +102,18 @@ def plot_spectrogram_to_figure(
     # plt.close(fig) # Don't close here if returning the figure object
     return fig # Return the figure object directly
 
-def plot_mel_difference_to_figure(
+def plot_mel_signed_difference_to_figure(
     mel_gt_normalized_np,  # Ground truth (already normalized log mel)
     mel_pred_log_np,      # Predicted (raw log mel)
     mean: float,          # Dataset mean used for normalization
     std: float,           # Dataset std used for normalization
-    title='Absolute Normalized Mel Log Difference', # Updated title
+    title='Signed Mel Log Difference (GT - Pred)', # Updated title
     figsize=(12, 5),
     dpi=150,
-    cmap='magma',
-    vmin=0.0,
-    vmax=None # Auto-scale max diff, or set e.g., vmax=2.0
+    cmap='vanimo',
+    max_abs_diff_clip=None # Optional: Clip the color range e.g., 3.0
 ):
-    """Plots the absolute difference between two mel spectrograms after normalizing the prediction."""
+    """Plots the signed difference between two mel spectrograms using a diverging colormap."""
     plt.switch_backend("agg")
 
     # Ensure shapes match by trimming to the minimum length
@@ -122,23 +121,30 @@ def plot_mel_difference_to_figure(
     mel_gt_trimmed = mel_gt_normalized_np[:, :min_len]
     mel_pred_log_trimmed = mel_pred_log_np[:, :min_len]
 
-    # --- Normalize the predicted log mel ---
+    # Normalize the predicted log mel
     mel_pred_normalized_np = (mel_pred_log_trimmed - mean) / std
-    # --------------------------------------
 
-    # Calculate absolute difference in the *normalized* log domain
-    diff = np.abs(mel_gt_trimmed - mel_pred_normalized_np)
+    # Calculate SIGNED difference in the *normalized* log domain
+    diff = mel_gt_trimmed - mel_pred_normalized_np
 
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-    im = ax.imshow(diff, aspect="auto", origin="lower",
-                interpolation='none', cmap=cmap, vmin=vmin, vmax=vmax)
+    # Determine symmetric color limits centered at 0
+    max_abs_val = np.max(np.abs(diff)) + 1e-9 # Add epsilon for stability
+    if max_abs_diff_clip is not None:
+        max_abs_val = min(max_abs_val, max_abs_diff_clip) # Apply clipping if specified
 
-    plt.colorbar(im, ax=ax, label='Absolute Normalized Log Difference') # Updated label
+    vmin = -max_abs_val
+    vmax = max_abs_val
+
+    im = ax.imshow(diff, aspect="auto", origin="lower", interpolation='none', cmap=cmap, vmin=vmin, vmax=vmax) # Use 'none' for raw diff
+
+    plt.colorbar(im, ax=ax, label='Signed Normalized Log Difference (GT - Pred)') # Updated label
     plt.xlabel("Frames")
     plt.ylabel("Mel Channels")
     plt.title(title)
     plt.tight_layout()
+    # plt.close(fig) # Don't close if returning fig
     return fig
 
 def get_image(arrs):
