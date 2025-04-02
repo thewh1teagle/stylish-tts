@@ -19,21 +19,21 @@ class TextEncoder(torch.nn.Module):
         self.cnn = torch.nn.ModuleList()
         for _ in range(depth):
             self.cnn.append(
-                BasicConvNeXtBlock(channels, channels * 2)
-                # torch.nn.Sequential(
-                #     weight_norm(
-                #         torch.nn.Conv1d(
-                #             channels, channels, kernel_size=kernel_size, padding=padding
-                #         )
-                #     ),
-                #     LayerNorm(channels),
-                #     actv,
-                #     torch.nn.Dropout(0.2),
-                # )
+                # BasicConvNeXtBlock(channels, channels * 2)
+                torch.nn.Sequential(
+                    weight_norm(
+                        torch.nn.Conv1d(
+                            channels, channels, kernel_size=kernel_size, padding=padding
+                        )
+                    ),
+                    LayerNorm(channels),
+                    actv,
+                    torch.nn.Dropout(0.2),
+                )
             )
 
-        # self.prepare_projection = LinearNorm(channels, channels // 2)
-        # self.post_projection = LinearNorm(channels // 2, channels)
+        self.prepare_projection = LinearNorm(channels, channels // 2)
+        self.post_projection = LinearNorm(channels // 2, channels)
 
         cfg = xLSTMBlockStackConfig(
             mlstm_block=mLSTMBlockConfig(
@@ -62,9 +62,9 @@ class TextEncoder(torch.nn.Module):
 
         input_lengths = input_lengths.cpu().numpy()
 
-        # x = self.prepare_projection(x)
+        x = self.prepare_projection(x)
         x = self.lstm(x)
-        # x = self.post_projection(x)
+        x = self.post_projection(x)
 
         x = x.transpose(-1, -2)
 
