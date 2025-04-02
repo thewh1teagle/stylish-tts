@@ -33,7 +33,7 @@ Segments must have 510 phonemes or less. Audio segments must be at least 0.25 se
 
 Training and validation lists are a series of lines in the following format:
 
-<filename>|<phonemes>|<speaker-id>|<plaintext>
+`<filename>|<phonemes>|<speaker-id>|<plaintext>`
 
 The filename for the segment audio and should be a .wav file (24 khz, mono) in the wav_path from your config.yml.
 
