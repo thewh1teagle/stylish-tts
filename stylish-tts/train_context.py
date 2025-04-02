@@ -88,8 +88,6 @@ class TrainContext:
             sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
 
-        # Run parameters
-        self.n_down: int = 1  # TODO: Use train.model.text_aligner.n_down
         self.text_cleaner = TextCleaner(self.model_config.symbol)
 
     def reset_out_dir(self, stage_name):

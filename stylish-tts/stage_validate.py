@@ -11,9 +11,7 @@ def validate_alignment(batch, train):
     log = build_loss_log(train)
 
     blank = train.text_cleaner("ǁ")[0]
-    mask = length_to_mask(batch.mel_length // (2**train.n_down)).to(
-        train.config.training.device
-    )
+    mask = length_to_mask(batch.mel_length).to(train.config.training.device)
     ppgs, s2s_pred, s2s_attn = train.model.text_aligner(
         batch.mel, src_key_padding_mask=mask, text_input=batch.text
     )
@@ -21,7 +19,7 @@ def validate_alignment(batch, train):
     loss_ctc = torch.nn.functional.ctc_loss(
         soft,
         batch.text,
-        batch.mel_length // (2**train.n_down),
+        batch.mel_length,
         batch.text_length,
         blank=blank,
     )
@@ -77,16 +75,22 @@ def validate_sbert(batch, train):
     pred = state.sbert_prediction_single(batch)
     # 1. Get textual and acoustic embeddings
     textual_style_embedding = state.textual_style_embedding(batch.sentence_embedding)
-    textual_prosody_embedding = state.textual_prosody_embedding(batch.sentence_embedding)
+    textual_prosody_embedding = state.textual_prosody_embedding(
+        batch.sentence_embedding
+    )
     acoustic_style_embedding = state.acoustic_style_embedding(batch.mel)
     acoustic_prosody_embedding = state.acoustic_prosody_embedding(batch.mel)
 
     log = build_loss_log(train)
 
     # 2. Calculate Loss
-    style_loss = torch.nn.functional.l1_loss(textual_style_embedding, acoustic_style_embedding)
-    prosody_loss = torch.nn.functional.l1_loss(textual_prosody_embedding, acoustic_prosody_embedding)
-    
+    style_loss = torch.nn.functional.l1_loss(
+        textual_style_embedding, acoustic_style_embedding
+    )
+    prosody_loss = torch.nn.functional.l1_loss(
+        textual_prosody_embedding, acoustic_prosody_embedding
+    )
+
     log.add_loss("mel", train.stft_loss(pred.audio.squeeze(1), batch.audio_gt))
     log.add_loss("sbert_style_loss", style_loss)
     log.add_loss("sbert_prosody_loss", prosody_loss)

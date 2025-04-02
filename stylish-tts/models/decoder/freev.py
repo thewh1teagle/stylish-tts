@@ -395,35 +395,33 @@ class Decoder(nn.Module):
             ]
         )
 
+        self.F0_block = ConvNeXtBlock(
+            dim_in=1,
+            dim_out=residual_dim,
+            intermediate_dim=bottleneck_dim,
+            style_dim=style_dim,
+            dilation=[1],
+            activation=True,
+        )
+
         self.F0_conv = nn.Sequential(
-            ResBlk1d(1, residual_dim, normalize=True, downsample="none"),
             weight_norm(nn.Conv1d(residual_dim, 1, kernel_size=1)),
             nn.InstanceNorm1d(1, affine=True),
+        )
+
+        self.N_block = ConvNeXtBlock(
+            dim_in=1,
+            dim_out=residual_dim,
+            intermediate_dim=bottleneck_dim,
+            style_dim=style_dim,
+            dilation=[1],
+            activation=True,
         )
 
         self.N_conv = nn.Sequential(
-            ResBlk1d(1, residual_dim, normalize=True, downsample="none"),
             weight_norm(nn.Conv1d(residual_dim, 1, kernel_size=1)),
             nn.InstanceNorm1d(1, affine=True),
         )
-
-        #         self.F0_conv = ConvNeXtBlock(
-        #             dim_in=1,
-        #             dim_out=residual_dim,
-        #             intermediate_dim=bottleneck_dim,
-        #             style_dim=style_dim,
-        #             dilation=[1],
-        #             activation=True
-        #         )
-        #
-        #         self.N_conv = ConvNeXtBlock(
-        #             dim_in=1,
-        #             dim_out=residual_dim,
-        #             intermediate_dim=bottleneck_dim,
-        #             style_dim=style_dim,
-        #             dilation=[1],
-        #             activation=True
-        #         )
 
         self.asr_res = nn.Sequential(
             weight_norm(nn.Conv1d(dim_in, residual_dim, kernel_size=1)),
@@ -435,9 +433,10 @@ class Decoder(nn.Module):
         self.generator = Generator()
 
     def forward(self, asr, F0_curve, N_curve, s, pretrain=False, probing=False):
-        asr = F.interpolate(asr, scale_factor=2, mode="nearest")
-        F0 = self.F0_conv(F0_curve.unsqueeze(1))
-        N = self.N_conv(N_curve.unsqueeze(1))
+        F0 = self.F0_block(F0_curve.unsqueeze(1), s)
+        F0 = self.F0_conv(F0)
+        N = self.N_block(N_curve.unsqueeze(1), s)
+        N = self.N_conv(N)
 
         x = torch.cat([asr, F0, N], axis=1)
         for block in self.encode:
