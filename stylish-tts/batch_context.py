@@ -54,7 +54,7 @@ class BatchContext:
           - duration: Duration attention vector
         """
         # Create masks.
-        mask = length_to_mask(mel_lengths).to(self.config.training.device)
+        mask = length_to_mask(mel_lengths // 2).to(self.config.training.device)
 
         # --- Text Aligner Forward Pass ---
         _, s2s_pred, s2s_attn = self.model.text_aligner(mels, mask, texts)
@@ -87,7 +87,7 @@ class BatchContext:
 
         # --- Monotonic Attention Path ---
         with torch.no_grad():
-            mask_ST = mask_from_lens(s2s_attn, text_lengths, mel_lengths)
+            mask_ST = mask_from_lens(s2s_attn, text_lengths, mel_lengths // 2)
             s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
 
         # --- Text Encoder Forward Pass ---

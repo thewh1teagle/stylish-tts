@@ -27,7 +27,7 @@ class TextAligner(nn.Module):
         self.n_token = n_token
         self.to_mfcc = MFCC()
         self.init_cnn = ConvNorm(
-            input_dim // 2, hidden_dim, kernel_size=7, padding=3, stride=1
+            input_dim // 2, hidden_dim, kernel_size=7, padding=3, stride=2
         )
         self.cnns = nn.Sequential(
             *[

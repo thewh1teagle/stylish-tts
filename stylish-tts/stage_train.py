@@ -13,7 +13,7 @@ def train_alignment(
     log = build_loss_log(train)
 
     blank = train.text_cleaner("ǁ")[0]
-    mask = length_to_mask(batch.mel_length).to(train.config.training.device)
+    mask = length_to_mask(batch.mel_length // 2).to(train.config.training.device)
     ppgs, s2s_pred, _ = model.text_aligner(
         batch.mel, src_key_padding_mask=mask, text_input=batch.text
     )
@@ -23,7 +23,7 @@ def train_alignment(
     loss_ctc = torch.nn.functional.ctc_loss(
         soft,
         batch.text,
-        batch.mel_length,
+        batch.mel_length // 2,
         batch.text_length,
         blank=blank,
     )
