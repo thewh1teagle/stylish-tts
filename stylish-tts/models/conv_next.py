@@ -172,3 +172,38 @@ class GRN(torch.nn.Module):
         Gx = torch.norm(x, p=2, dim=1, keepdim=True)
         Nx = Gx / (Gx.mean(dim=-1, keepdim=True) + 1e-6)
         return self.gamma * (x * Nx) + self.beta + x
+
+
+class BasicConvNeXtBlock(torch.nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        intermediate_dim: int,
+    ):
+        super().__init__()
+        self.dwconv = torch.nn.Conv1d(
+            dim, dim, kernel_size=7, padding=3, groups=dim
+        )  # depthwise conv
+
+        self.norm = torch.nn.LayerNorm(dim, eps=1e-6)
+        self.pwconv1 = torch.nn.Linear(
+            dim, intermediate_dim
+        )  # pointwise/1x1 convs, implemented with linear layers
+        self.act = torch.nn.GELU()
+        self.grn = GRN(intermediate_dim)
+        self.pwconv2 = torch.nn.Linear(intermediate_dim, dim)
+
+    def forward(self, x):
+        residual = x
+        x = self.dwconv(x)
+        x = x.transpose(1, 2)  # (B, C, T) -> (B, T, C)
+        x = self.norm(x)
+        x = self.pwconv1(x)
+        x = self.act(x)
+        x = self.grn(x)
+        x = self.pwconv2(x)
+
+        x = x.transpose(1, 2)  # (B, T, C) -> (B, C, T)
+
+        x = residual + x
+        return x

@@ -15,7 +15,7 @@ import math
 from torch.nn.utils.parametrizations import weight_norm
 from utils import DecoderPrediction
 from .harmonics import HarmonicGenerator
-from ..conv_next import ConvNeXtBlock
+from ..conv_next import ConvNeXtBlock, BasicConvNeXtBlock
 from ..common import get_padding
 
 # import torch.nn.functional as F
@@ -328,7 +328,7 @@ class Decoder(nn.Module):
         self.encode = nn.ModuleList(
             [
                 ConvNeXtBlock(
-                    dim_in=dim_in + 2,
+                    dim_in=dim_in + 2 * residual_dim,
                     dim_out=bottleneck_dim,
                     intermediate_dim=bottleneck_dim,
                     style_dim=style_dim,
@@ -349,7 +349,7 @@ class Decoder(nn.Module):
         self.decode1 = nn.ModuleList(
             [
                 ConvNeXtBlock(
-                    dim_in=bottleneck_dim + residual_dim + 2,
+                    dim_in=bottleneck_dim + 3 * residual_dim,
                     dim_out=bottleneck_dim,
                     intermediate_dim=bottleneck_dim,
                     style_dim=style_dim,
@@ -357,7 +357,7 @@ class Decoder(nn.Module):
                     activation=True,
                 ),
                 ConvNeXtBlock(
-                    dim_in=bottleneck_dim + residual_dim + 2,
+                    dim_in=bottleneck_dim + 3 * residual_dim,
                     dim_out=bottleneck_dim,
                     intermediate_dim=bottleneck_dim,
                     style_dim=style_dim,
@@ -365,7 +365,7 @@ class Decoder(nn.Module):
                     activation=True,
                 ),
                 ConvNeXtBlock(
-                    dim_in=bottleneck_dim + residual_dim + 2,
+                    dim_in=bottleneck_dim + 3 * residual_dim,
                     dim_out=dim_in,
                     intermediate_dim=bottleneck_dim,
                     style_dim=style_dim,
@@ -395,34 +395,16 @@ class Decoder(nn.Module):
             ]
         )
 
-        # self.F0_block = ConvNeXtBlock(
-        #     dim_in=1,
-        #     dim_out=residual_dim,
-        #     intermediate_dim=bottleneck_dim,
-        #     style_dim=style_dim,
-        #     dilation=[1],
-        #     activation=True,
-        # )
-
         self.F0_conv = nn.Sequential(
-            ResBlk1d(1, residual_dim, normalize=True, downsample="none"),
-            weight_norm(nn.Conv1d(residual_dim, 1, kernel_size=1)),
-            nn.InstanceNorm1d(1, affine=True),
+            weight_norm(nn.Conv1d(1, residual_dim, kernel_size=1)),
+            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
+            nn.InstanceNorm1d(residual_dim, affine=True),
         )
 
-        # self.N_block = ConvNeXtBlock(
-        #     dim_in=1,
-        #     dim_out=residual_dim,
-        #     intermediate_dim=bottleneck_dim,
-        #     style_dim=style_dim,
-        #     dilation=[1],
-        #     activation=True,
-        # )
-
         self.N_conv = nn.Sequential(
-            ResBlk1d(1, residual_dim, normalize=True, downsample="none"),
-            weight_norm(nn.Conv1d(residual_dim, 1, kernel_size=1)),
-            nn.InstanceNorm1d(1, affine=True),
+            weight_norm(nn.Conv1d(1, residual_dim, kernel_size=1)),
+            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
+            nn.InstanceNorm1d(residual_dim, affine=True),
         )
 
         self.asr_res = nn.Sequential(
@@ -436,9 +418,7 @@ class Decoder(nn.Module):
 
     def forward(self, asr, F0_curve, N_curve, s, pretrain=False, probing=False):
         asr = F.interpolate(asr, scale_factor=2, mode="nearest")
-        # F0 = self.F0_block(F0_curve.unsqueeze(1), s)
         F0 = self.F0_conv(F0_curve.unsqueeze(1))
-        # N = self.N_block(N_curve.unsqueeze(1), s)
         N = self.N_conv(N_curve.unsqueeze(1))
 
         x = torch.cat([asr, F0, N], axis=1)
