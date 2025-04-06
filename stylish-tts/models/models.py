@@ -34,10 +34,13 @@ logger = logging.getLogger(__name__)
 
 def build_model(model_config: ModelConfig):
     text_aligner = TextAligner(
-        input_dim=model_config.n_mels,
-        n_token=model_config.text_encoder.n_token,
-        **(model_config.text_aligner.model_dump()),
+        n_mels=model_config.n_mels, n_token=model_config.text_encoder.n_token
     )
+    # text_aligner = TextAligner(
+    #     input_dim=model_config.n_mels,
+    #     n_token=model_config.text_encoder.n_token,
+    #     **(model_config.text_aligner.model_dump()),
+    # )
     # pitch_extractor = PitchExtractor(**(model_config.pitch_extractor.dict()))
     bert = PLBERT(
         vocab_size=model_config.text_encoder.n_token,
@@ -198,14 +201,14 @@ def build_model(model_config: ModelConfig):
 def load_defaults(train, model):
     with train.accelerator.main_process_first():
         # Load pretrained text_aligner
-        if train.model_config.n_mels == 80:
-            params = safetensors.torch.load_file(
-                hf_hub_download(
-                    repo_id="stylish-tts/text_aligner",
-                    filename="text_aligner.safetensors",
-                )
-            )
-            model.text_aligner.load_state_dict(params)
+        # if train.model_config.n_mels == 80:
+        #     params = safetensors.torch.load_file(
+        #         hf_hub_download(
+        #             repo_id="stylish-tts/text_aligner",
+        #             filename="text_aligner.safetensors",
+        #         )
+        #     )
+        #     model.text_aligner.load_state_dict(params)
 
         # Load pretrained pitch_extractor
         # params = safetensors.torch.load_file(

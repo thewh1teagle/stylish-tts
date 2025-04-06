@@ -7,14 +7,80 @@ Text Aligner
 """
 
 import math
+from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import TransformerEncoder
 import torch.nn.functional as F
 from .text_aligner_layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
+from einops import rearrange
 
 
 class TextAligner(nn.Module):
+    def __init__(self, *, n_mels, n_token):
+        super().__init__()
+        self.lstm1 = nn.LSTM(
+            n_mels,
+            128,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.0,
+        )
+        self.lstm2 = nn.LSTM(
+            256,
+            128,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.0,
+        )
+        self.end_encode = nn.Linear(256, n_token + 1, bias=False)
+
+        self.lrelu = nn.LeakyReLU()
+
+        self.decode = nn.Sequential(
+            nn.Linear(n_token, 256, bias=False),
+            nn.LeakyReLU(),
+            nn.Linear(256, 256, bias=False),
+            nn.LeakyReLU(),
+            nn.Linear(256, n_mels, bias=False),
+        )
+
+    def remove_blanks(self, x):
+        """
+        Remove trailing blank column from tensor
+
+        Args:
+            x (b t k): k is tokens + blank
+        """
+        return x[:, :, :-1]
+
+    def forward(self, mel: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            mel (b f t): Mel spectrogram
+        Returns:
+            prediction (b t k): Softmax point probability of tokens for each mel time frame
+            reconstruction (b f t): Reconstructed mel spectrogram
+        """
+        x = rearrange(mel, "b f t -> b t f")
+        x, _ = self.lstm1(x)
+        x = self.lrelu(x)
+        x, _ = self.lstm2(x)
+        x = self.lrelu(x)
+        x = self.end_encode(x)
+        # x is now (b t k) where k is the # of tokens + blank
+        prediction = x
+
+        x = self.remove_blanks(x)
+        x = self.decode(x)
+        # x is now (b t f) again, a reconstructed mel spectrogram
+        reconstruction = rearrange(x, "b t f -> b f t")
+        return prediction, reconstruction
+
+
+class TextAlignerOld(nn.Module):
     def __init__(
         self,
         input_dim=80,

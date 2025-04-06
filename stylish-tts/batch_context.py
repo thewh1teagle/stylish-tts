@@ -1,7 +1,8 @@
 import random
 
 import torch
-
+from torch.nn import functional as F
+from einops import rearrange, reduce
 from monotonic_align import mask_from_lens
 import train_context
 from config_loader import Config
@@ -54,51 +55,57 @@ class BatchContext:
           - duration: Duration attention vector
         """
         # Create masks.
-        mask = length_to_mask(mel_lengths // 2).to(self.config.training.device)
+        # mask = length_to_mask(mel_lengths // 2).to(self.config.training.device)
 
         # --- Text Aligner Forward Pass ---
-        _, s2s_pred, s2s_attn = self.model.text_aligner(mels, mask, texts)
+        # _, s2s_pred, s2s_attn = self.model.text_aligner(mels, mask, texts)
         # Remove the last token to make the shape match texts
-        s2s_attn = s2s_attn.transpose(-1, -2)
-        s2s_attn = s2s_attn[..., 1:]
-        s2s_attn = s2s_attn.transpose(-1, -2)
+        # s2s_attn = s2s_attn.transpose(-1, -2)
+        # s2s_attn = s2s_attn[..., 1:]
+        # s2s_attn = s2s_attn.transpose(-1, -2)
 
         # Optionally apply extra attention mask.
-        if apply_attention_mask:
-            with torch.no_grad():
-                attn_mask = (
-                    (~mask)
-                    .unsqueeze(-1)
-                    .expand(mask.shape[0], mask.shape[1], self.text_mask.shape[-1])
-                    .float()
-                    .transpose(-1, -2)
-                )
-                attn_mask = (
-                    attn_mask
-                    * (~self.text_mask)
-                    .unsqueeze(-1)
-                    .expand(
-                        self.text_mask.shape[0], self.text_mask.shape[1], mask.shape[-1]
-                    )
-                    .float()
-                )
-                attn_mask = attn_mask < 1
-            s2s_attn.masked_fill_(attn_mask, 0.0)
+        # if apply_attention_mask:
+        #     with torch.no_grad():
+        #         attn_mask = (
+        #             (~mask)
+        #             .unsqueeze(-1)
+        #             .expand(mask.shape[0], mask.shape[1], self.text_mask.shape[-1])
+        #             .float()
+        #             .transpose(-1, -2)
+        #         )
+        #         attn_mask = (
+        #             attn_mask
+        #             * (~self.text_mask)
+        #             .unsqueeze(-1)
+        #             .expand(
+        #                 self.text_mask.shape[0], self.text_mask.shape[1], mask.shape[-1]
+        #             )
+        #             .float()
+        #         )
+        #         attn_mask = attn_mask < 1
+        #     s2s_attn.masked_fill_(attn_mask, 0.0)
 
         # --- Monotonic Attention Path ---
         with torch.no_grad():
-            mask_ST = mask_from_lens(s2s_attn, text_lengths, mel_lengths // 2)
-            s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
+            # prediction = (b t k)
+            prediction, _ = self.model.text_aligner(mels)
+            # soft = (b t p)
+            soft = soft_alignment(prediction, texts, self.text_mask)
+            soft = rearrange(soft, "b t k -> b k t")
+            mask_ST = mask_from_lens(soft, text_lengths, mel_lengths)
+            duration = maximum_path(soft, mask_ST)
 
-        # --- Text Encoder Forward Pass ---
-        if use_random_choice and bool(random.getrandbits(1)):
-            duration = s2s_attn
-        else:
-            duration = s2s_attn_mono
+        # # --- Text Encoder Forward Pass ---
+        # if use_random_choice and bool(random.getrandbits(1)):
+        #     duration = s2s_attn
+        # else:
+        #     duration = s2s_attn_mono
 
-        self.attention = s2s_attn[0]
-        self.duration_results = (s2s_attn, s2s_attn_mono)
-        self.s2s_pred = s2s_pred
+        self.attention = duration[0]
+        self.duration_results = (duration, duration)
+        # self.duration_results = (s2s_attn, s2s_attn_mono)
+        # self.s2s_pred = s2s_pred
         return duration
 
     def get_attention(self):
@@ -330,3 +337,48 @@ class BatchContext:
         self.pitch_prediction, self.energy_prediction = (
             self.model.pitch_energy_predictor(prosody, prosody_embedding)
         )
+
+
+def soft_alignment(pred, phonemes, mask):
+    """
+    Args:
+        pred (b t k): Predictions of k (+ blank) tokens at time frame t
+        phonemes (b p): Target sequence of phonemes
+        mask (b p): Mask for target sequence
+    Returns:
+        (b t p): Phoneme predictions for each time frame t
+    """
+    mask = rearrange(mask, "b p -> b 1 p")
+    # Convert to <blank>, <phoneme>, <blank> ...
+    blank_id = pred.shape[2] - 1
+    blanks = torch.full_like(phonemes, blank_id)
+    ph_blank = rearrange([phonemes, blanks], "n b p -> b (p n)")
+    # ph_blank = F.pad(ph_blank, (0, 1), value=blank_id)
+    ph_blank = rearrange(ph_blank, "b p -> b 1 p")
+    pred = pred.softmax(dim=2)
+    probability = torch.take_along_dim(input=pred, indices=ph_blank, dim=2)
+
+    base_case = torch.zeros_like(ph_blank, dtype=pred.dtype).to(pred.device)
+    base_case[:, :, 0] = 1
+    result = [base_case]
+    prev = base_case
+
+    # Now everything should be (b t p)
+    for i in range(1, probability.shape[1]):
+        p0 = prev
+        p1 = F.pad(prev[:, :, :-1], (1, 0), value=0)
+        p2 = F.pad(prev[:, :, :-2], (2, 0), value=0)
+        p2_mask = torch.not_equal(ph_blank, blank_id)
+        prob = probability[:, i, :]
+        prob = rearrange(prob, "b p -> b 1 p")
+        prev = (p0 + p1 + p2 * p2_mask) * prob
+        prev = F.normalize(input=prev, p=1, dim=2)
+        result.append(prev)
+    result = torch.cat(result, dim=1)
+    unblank_indices = torch.arange(
+        0, result.shape[2], 2, dtype=int, device=result.device
+    )
+    result = torch.index_select(input=result, dim=2, index=unblank_indices)
+    result = result * ~mask
+    result = F.normalize(input=result, p=1, dim=2).log()
+    return result

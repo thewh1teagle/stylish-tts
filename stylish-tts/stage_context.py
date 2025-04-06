@@ -19,7 +19,12 @@ from stage_train import (
     train_sbert,
 )
 
-from stage_validate import validate_alignment, validate_acoustic, validate_textual, validate_sbert
+from stage_validate import (
+    validate_alignment,
+    validate_acoustic,
+    validate_textual,
+    validate_sbert,
+)
 from optimizers import build_optimizer
 from utils import get_image
 
@@ -88,9 +93,9 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
-            "text_aligner",
+            # "text_aligner",
         ],
-        eval_models=[],
+        eval_models=["text_aligner"],
         adversarial=True,
         inputs=[
             "text",
@@ -191,7 +196,7 @@ stages = {
         ],
     ),
     "sbert": StageConfig(
-        next_stage=None, 
+        next_stage=None,
         train_fn=train_sbert,
         validate_fn=validate_sbert,
         train_models=[
@@ -360,7 +365,9 @@ class StageContext:
             progress_bar = iterator
         else:
             iterator = enumerate(train.val_dataloader)
-        sample_map = {item: j for j, item in enumerate(train.config.validation.force_samples)}
+        sample_map = {
+            item: j for j, item in enumerate(train.config.validation.force_samples)
+        }
         for index, inputs in iterator:
             try:
                 batch = prepare_batch(
@@ -371,11 +378,18 @@ class StageContext:
                 )
                 logs.append(next_log)
                 # find any indeces in input that match requested suppliment samples
-                samples = [(i, sample_map[item]) for i, item in enumerate(inputs[8]) if item in sample_map]
-                
+                samples = [
+                    (i, sample_map[item])
+                    for i, item in enumerate(inputs[8])
+                    if item in sample_map
+                ]
+
                 # If we are not using force_samples, we will use the first sample in the batch
-                if len(train.config.validation.force_samples) == 0 and index < sample_count:
-                    samples = [(0,index)]
+                if (
+                    len(train.config.validation.force_samples) == 0
+                    and index < sample_count
+                ):
+                    samples = [(0, index)]
                 if train.accelerator.is_main_process and len(samples) > 0:
                     steps = train.manifest.current_total_step
                     sample_rate = train.model_config.sample_rate
@@ -385,9 +399,14 @@ class StageContext:
                             f"eval/attention_{index}", get_image(attention), steps
                         )
                     for inputs_index, samples_index in samples:
-                        if audio_out is not None and audio_out[inputs_index] is not None:
-                            audio_out_data = audio_out[inputs_index].cpu().numpy().squeeze()
-                            
+                        if (
+                            audio_out is not None
+                            and audio_out[inputs_index] is not None
+                        ):
+                            audio_out_data = (
+                                audio_out[inputs_index].cpu().numpy().squeeze()
+                            )
+
                             train.writer.add_audio(
                                 f"eval/sample_{samples_index}",
                                 audio_out_data,
@@ -395,7 +414,9 @@ class StageContext:
                                 sample_rate=sample_rate,
                             )
                         if audio_gt is not None and audio_gt[inputs_index] is not None:
-                            audio_gt_data = audio_gt[inputs_index].cpu().numpy().squeeze()
+                            audio_gt_data = (
+                                audio_gt[inputs_index].cpu().numpy().squeeze()
+                            )
                             train.writer.add_audio(
                                 f"eval/sample_{samples_index}_gt",
                                 audio_gt_data,

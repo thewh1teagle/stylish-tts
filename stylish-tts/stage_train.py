@@ -1,6 +1,7 @@
 import math
 from typing import Optional, Tuple
 import torch
+from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
 from losses import magphase_loss, compute_duration_ce_loss, freev_loss
@@ -12,30 +13,49 @@ def train_alignment(
 ) -> Tuple[LossLog, Optional[torch.Tensor]]:
     log = build_loss_log(train)
 
-    blank = train.text_cleaner("ǁ")[0]
-    mask = length_to_mask(batch.mel_length // 2).to(train.config.training.device)
-    ppgs, s2s_pred, _ = model.text_aligner(
-        batch.mel, src_key_padding_mask=mask, text_input=batch.text
-    )
+    # blank = train.text_cleaner("ǁ")[0]
+    # mask = length_to_mask(batch.mel_length // 2).to(train.config.training.device)
+    # ppgs, s2s_pred, _ = model.text_aligner(
+    #     batch.mel, src_key_padding_mask=mask, text_input=batch.text
+    # )
 
+    # ctc = (b t k), reconstruction = (b f t)
+    ctc, reconstruction = model.text_aligner(batch.mel)
     train.stage.optimizer.zero_grad()
-    soft = ppgs.log_softmax(dim=2).transpose(0, 1)
-    loss_ctc = torch.nn.functional.ctc_loss(
-        soft,
-        batch.text,
-        batch.mel_length // 2,
-        batch.text_length,
-        blank=blank,
-    )
-    log.add_loss("ctc", loss_ctc)
 
-    loss_s2s = 0
-    for pred_align, text, length in zip(s2s_pred, batch.text, batch.text_length):
-        loss_s2s += torch.nn.functional.cross_entropy(
-            pred_align[:length], text[:length], ignore_index=-1
-        )
-    loss_s2s /= batch.text.size(0)
-    log.add_loss("s2s", loss_s2s)
+    ctc = rearrange(ctc, "b t k -> t b k")
+    softlog = ctc.log_softmax(dim=2)
+    loss_ctc = torch.nn.functional.ctc_loss(
+        softlog,
+        batch.text,
+        batch.mel_length,
+        batch.text_length,
+        blank=train.model_config.text_encoder.n_token,
+    )
+    log.add_loss(
+        "align_loss",
+        loss_ctc + 0.1 * torch.nn.functional.l1_loss(reconstruction, batch.mel),
+    )
+    # log.add_loss("align_ctc", loss_ctc)
+    # log.add_loss("align_rec", 0.1 * torch.nn.functional.l1_loss(reconstruction, batch.mel))
+
+    #     soft = ppgs.log_softmax(dim=2).transpose(0, 1)
+    #     loss_ctc = torch.nn.functional.ctc_loss(
+    #         soft,
+    #         batch.text,
+    #         batch.mel_length // 2,
+    #         batch.text_length,
+    #         blank=blank,
+    #     )
+    #     log.add_loss("ctc", loss_ctc)
+    #
+    #     loss_s2s = 0
+    #     for pred_align, text, length in zip(s2s_pred, batch.text, batch.text_length):
+    #         loss_s2s += torch.nn.functional.cross_entropy(
+    #             pred_align[:length], text[:length], ignore_index=-1
+    #         )
+    #     loss_s2s /= batch.text.size(0)
+    #     log.add_loss("s2s", loss_s2s)
 
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
     return log.detach(), None
@@ -98,18 +118,18 @@ def train_acoustic(
             )
 
         loss_s2s = 0
-        for pred_align, text, length in zip(
-            state.s2s_pred, batch.text, batch.text_length
-        ):
-            loss_s2s += torch.nn.functional.cross_entropy(
-                pred_align[:length], text[:length]
-            )
-        loss_s2s /= batch.text.size(0)
-        log.add_loss("s2s", loss_s2s)
-
-        log.add_loss(
-            "mono", torch.nn.functional.l1_loss(*(state.duration_results)) * 10
-        )
+        #         for pred_align, text, length in zip(
+        #             state.s2s_pred, batch.text, batch.text_length
+        #         ):
+        #             loss_s2s += torch.nn.functional.cross_entropy(
+        #                 pred_align[:length], text[:length]
+        #             )
+        #         loss_s2s /= batch.text.size(0)
+        #         log.add_loss("s2s", loss_s2s)
+        #
+        #         log.add_loss(
+        #             "mono", torch.nn.functional.l1_loss(*(state.duration_results)) * 10
+        #         )
 
         freev_loss(log, pred, batch.audio_gt, train)
         train.accelerator.backward(
