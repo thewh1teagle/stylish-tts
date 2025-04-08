@@ -33,9 +33,10 @@ logger = logging.getLogger(__name__)
 
 
 def build_model(model_config: ModelConfig):
-    text_aligner = TextAligner(
-        n_mels=model_config.n_mels, n_token=model_config.text_encoder.n_token
-    )
+    # text_aligner = TextAligner(
+    #     n_mels=model_config.n_mels, n_token=model_config.text_encoder.n_token
+    # )
+    text_aligner = TextAligner()
     # text_aligner = TextAligner(
     #     input_dim=model_config.n_mels,
     #     n_token=model_config.text_encoder.n_token,

@@ -9,19 +9,26 @@ from utils import length_to_mask
 @torch.no_grad()
 def validate_alignment(batch, train):
     log = build_loss_log(train)
-    ctc, reconstruction = train.model.text_aligner(batch.mel)
+    # ctc, reconstruction = train.model.text_aligner(batch.mel)
+    attn_soft, attn_logprob = train.model.text_aligner(
+        spec=batch.mel, text=batch.text, text_len=batch.text_length
+    )
     train.stage.optimizer.zero_grad()
 
-    softlog = ctc.log_softmax(dim=2).transpose(0, 1)
-    loss_ctc = torch.nn.functional.ctc_loss(
-        softlog,
-        batch.text,
-        batch.mel_length,
-        batch.text_length,
-        blank=train.model_config.text_encoder.n_token,
+    # softlog = ctc.log_softmax(dim=2)
+    # softlog = ctc.transpose(0, 1)
+    # loss_ctc = torch.nn.functional.ctc_loss(
+    #     softlog,
+    #     batch.text,
+    #     batch.mel_length,
+    #     batch.text_length,
+    #     blank=train.model_config.text_encoder.n_token,
+    # )
+    loss_ctc = train.align_loss(
+        attn_logprob, in_lens=batch.text_length, out_lens=batch.mel_length
     )
     log.add_loss("align_ctc", loss_ctc)
-    log.add_loss("align_rec", torch.nn.functional.l1_loss(reconstruction, batch.mel))
+    # log.add_loss("align_rec", torch.nn.functional.l1_loss(reconstruction, batch.mel))
     return log, None, None, None
 
 
