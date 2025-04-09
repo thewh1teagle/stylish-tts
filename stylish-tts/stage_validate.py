@@ -1,4 +1,5 @@
 import torch
+from einops import rearrange
 
 from batch_context import BatchContext
 from loss_log import build_loss_log
@@ -10,9 +11,8 @@ from utils import length_to_mask
 def validate_alignment(batch, train):
     log = build_loss_log(train)
     # ctc, reconstruction = train.model.text_aligner(batch.mel)
-    attn_soft, attn_logprob = train.model.text_aligner(
-        spec=batch.mel, text=batch.text, text_len=batch.text_length
-    )
+    mel = rearrange(batch.mel, "b f t -> b t f")
+    ctc = train.model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
 
     # softlog = ctc.log_softmax(dim=2)
@@ -25,7 +25,7 @@ def validate_alignment(batch, train):
     #     blank=train.model_config.text_encoder.n_token,
     # )
     loss_ctc = train.align_loss(
-        attn_logprob, in_lens=batch.text_length, out_lens=batch.mel_length
+        ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="eval"
     )
     log.add_loss("align_ctc", loss_ctc)
     # log.add_loss("align_rec", torch.nn.functional.l1_loss(reconstruction, batch.mel))

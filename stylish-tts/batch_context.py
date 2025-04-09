@@ -2,6 +2,7 @@ import random
 
 import torch
 from torch.nn import functional as F
+import torchaudio
 from einops import rearrange, reduce
 from monotonic_align import mask_from_lens
 import train_context
@@ -88,16 +89,33 @@ class BatchContext:
 
         # --- Monotonic Attention Path ---
         with torch.no_grad():
-            # prediction = (b t k)
-            # prediction, _ = self.model.text_aligner(mels)
-            attn_soft, _ = self.model.text_aligner(
-                spec=mels, text=texts, text_len=text_lengths
-            )
+            mels = rearrange(mels, "b f t -> b t f")
+            prediction = self.model.text_aligner(mels, mel_lengths)
+            prediction = rearrange(prediction, "t b k -> b t k")
+            # alignment_list = []
+            # scores_list = []
+            # for i in range(prediction.shape[0]):
+            #     p = prediction[i:i+1].contiguous()
+            #     t = texts[i:i+1, 0:text_lengths[i].item()]
+            #     ml = mel_lengths[i:i+1] // 2
+            #     tl = text_lengths[i:i+1]
+            #     alignment, scores = torchaudio.functional.forced_align(
+            #         log_probs=p,
+            #         targets=t,
+            #         input_lengths=ml,
+            #         target_lengths=tl,
+            #         blank=self.train.model_config.text_encoder.n_token,
+            #     )
+            #     alignment_list.append(alignment)
+            #     scores_list.append(scores.exp())
+            # alignment = torch.cat(alignment_list, dim=0)
+            # breakpoint()
             # soft = (b t p)
-            # soft = soft_alignment(prediction, texts, self.text_mask)
-            attn_soft = rearrange(attn_soft, "b 1 t k -> b k t")
-            mask_ST = mask_from_lens(attn_soft, text_lengths, mel_lengths)
-            duration = maximum_path(attn_soft, mask_ST)
+            soft = soft_alignment(prediction, texts, self.text_mask)
+            soft = rearrange(soft, "b t k -> b k t")
+            mask_ST = mask_from_lens(soft, text_lengths, mel_lengths)
+            duration = maximum_path(soft, mask_ST)
+            duration = F.interpolate(duration, scale_factor=2, mode="nearest")
 
         # # --- Text Encoder Forward Pass ---
         # if use_random_choice and bool(random.getrandbits(1)):

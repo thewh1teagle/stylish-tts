@@ -558,6 +558,15 @@ wheels = [
 ]
 
 [[package]]
+name = "graphviz"
+version = "0.20.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/83/5a40d19b8347f017e417710907f824915fba411a9befd092e52746b63e9f/graphviz-0.20.3.zip", hash = "sha256:09d6bc81e6a9fa392e7ba52135a9d49f1ed62526f96499325930e87ca1b5925d", size = 256455 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/be/d59db2d1d52697c6adc9eacaf50e8965b6345cc143f671e1ed068818d5cf/graphviz-0.20.3-py3-none-any.whl", hash = "sha256:81f848f2904515d8cd359cc611faba817598d2feaac4027b266aa3eda7b3dde5", size = 47126 },
+]
+
+[[package]]
 name = "grpcio"
 version = "1.71.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1059,6 +1068,29 @@ sdist = { url = "https://files.pythonhosted.org/packages/59/73/fa26bbb747a9ea4fc
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/93/858e87edc634d628e5d752ba944c2833133a28fa87bb093e6832ced36a3e/jupyterlab_widgets-3.0.13-py3-none-any.whl", hash = "sha256:e3cda2c233ce144192f1e29914ad522b2f4c40e77214b0cc97377ca3d323db54", size = 214392 },
 ]
+
+[[package]]
+name = "k2"
+version = "1.24.4.dev20250208+cuda12.4.torch2.5.1"
+source = { url = "https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/k2-1.24.4.dev20250208+cuda12.4.torch2.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl" }
+dependencies = [
+    { name = "graphviz" },
+    { name = "torch" },
+]
+wheels = [
+    { url = "https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/k2-1.24.4.dev20250208+cuda12.4.torch2.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b98f680db6acfd18502a75b679613b2895c42e01863f2ad8ae6bc1ee09e0d8f7" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clang-format", marker = "extra == 'dev'", specifier = "==9.0.0" },
+    { name = "flake8", marker = "extra == 'dev'", specifier = "==3.8.3" },
+    { name = "graphviz" },
+    { name = "torch", specifier = "==2.5.1" },
+    { name = "typing-extensions", marker = "python_full_version < '3.8'" },
+    { name = "yapf", marker = "extra == 'dev'", specifier = "==0.27.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "kiwisolver"
@@ -2586,6 +2618,7 @@ dependencies = [
     { name = "einops-exts" },
     { name = "espeakng-loader" },
     { name = "jaxtyping" },
+    { name = "k2" },
     { name = "librosa" },
     { name = "matplotlib" },
     { name = "monotonic-align" },
@@ -2623,6 +2656,7 @@ requires-dist = [
     { name = "einops-exts", specifier = ">=0.0.4" },
     { name = "espeakng-loader", specifier = ">=0.2.4" },
     { name = "jaxtyping", specifier = ">=0.2.38" },
+    { name = "k2", url = "https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/k2-1.24.4.dev20250208+cuda12.4.torch2.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl" },
     { name = "librosa", specifier = ">=0.10.2.post1" },
     { name = "matplotlib", specifier = ">=3.10.0" },
     { name = "monotonic-align", git = "https://github.com/resemble-ai/monotonic_align.git" },

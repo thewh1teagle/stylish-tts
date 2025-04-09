@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from config_loader import ModelConfig
 
 
-from .text_aligner import TextAligner
+from .text_aligner import tdnn_blstm_ctc_model_base
 from .plbert import PLBERT
 
 from .discriminators.multi_period import MultiPeriodDiscriminator
@@ -36,7 +36,9 @@ def build_model(model_config: ModelConfig):
     # text_aligner = TextAligner(
     #     n_mels=model_config.n_mels, n_token=model_config.text_encoder.n_token
     # )
-    text_aligner = TextAligner()
+    text_aligner = tdnn_blstm_ctc_model_base(
+        model_config.n_mels, model_config.text_encoder.n_token
+    )
     # text_aligner = TextAligner(
     #     input_dim=model_config.n_mels,
     #     n_token=model_config.text_encoder.n_token,

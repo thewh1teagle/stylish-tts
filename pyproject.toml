@@ -30,6 +30,7 @@ dependencies = [
     "beartype>=0.20.0",
     "jaxtyping>=0.2.38",
     "wadler-lindig>=0.1.3",
+    "k2>=1.24.4.dev20250208",
 ]
 
 [dependency-groups]
@@ -40,9 +41,12 @@ dev = [
 
 [tool.uv.sources]
 monotonic-align = { git = "https://github.com/resemble-ai/monotonic_align.git" }
+k2 = { url = "https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/k2-1.24.4.dev20250208+cuda12.4.torch2.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"}
 
-[[tool.uv.index]]
-url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/"
+
+# [[tool.uv.index]]
+# url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/"
+# url = "https://k2-fsa.github.io/k2/cuda.html"
 
 [tool.pyright]
 venvPath = "."

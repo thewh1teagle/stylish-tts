@@ -11,7 +11,7 @@ from losses import (
     DiscriminatorLoss,
     WavLMLoss,
     MultiResolutionSTFTLoss,
-    ForwardSumLoss,
+    CTCLossWithLabelPriors,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
 from text_utils import TextCleaner
@@ -93,7 +93,9 @@ class TrainContext:
         self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss(
             sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
-        self.align_loss: ForwardSumLoss = ForwardSumLoss()
+        self.align_loss: ForwardSumLoss = CTCLossWithLabelPriors(
+            prior_scaling_factor=0.3, blank=model_config.text_encoder.n_token
+        )
 
         self.text_cleaner = TextCleaner(self.model_config.symbol)
 

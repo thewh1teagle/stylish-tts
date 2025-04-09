@@ -7,7 +7,7 @@ Text Aligner
 """
 
 import math
-from typing import Tuple
+from typing import List, Tuple
 import torch
 from torch import nn
 from torch.nn import TransformerEncoder
@@ -16,305 +16,263 @@ from .text_aligner_layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBloc
 from einops import rearrange
 
 
-# from loss import *
-import functools
-import os
-import random
-import traceback
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+def tdnn_blstm_ctc_model(
+    input_dim: int, num_symbols: int, hidden_dim=640, drop_out=0.1, tdnn_blstm_spec=[]
+):
+    r"""Builds TDNN-BLSTM-based CTC model."""
+    encoder = TdnnBlstm(
+        input_dim=input_dim,
+        hidden_dim=hidden_dim,
+        drop_out=drop_out,
+        tdnn_blstm_spec=tdnn_blstm_spec,
+    )
+    encoder_output_layer = nn.Linear(hidden_dim, num_symbols + 1)
 
-import librosa
-import numpy as np
-import torch
-from einops import rearrange
-from scipy import ndimage
-from torch.special import gammaln
-import torch.nn as nn
-
-# from utils import *
+    return CTCModel(encoder, encoder_output_layer)
 
 
-class AlignmentEncoder(torch.nn.Module):
+def tdnn_blstm_ctc_model_base(n_mels, num_symbols):
+    return tdnn_blstm_ctc_model(
+        input_dim=n_mels,
+        num_symbols=num_symbols,
+        hidden_dim=640,
+        drop_out=0.1,
+        tdnn_blstm_spec=[
+            ("tdnn", 5, 2, 1),
+            ("tdnn", 3, 1, 1),
+            ("tdnn", 3, 1, 1),
+            ("ffn", 5),
+        ],
+    )
+
+
+class CTCModel(torch.nn.Module):
+    r"""
+    This implements a CTC model with an encoder and a projection layer
     """
-    Module for alignment text and mel spectrogram.
 
-    Args:
-        n_mel_channels: Dimension of mel spectrogram.
-        n_text_channels: Dimension of text embeddings.
-        n_att_channels: Dimension of model
-        temperature: Temperature to scale distance by.
-            Suggested to be 0.0005 when using dist_type "l2" and 15.0 when using "cosine".
-        condition_types: List of types for nemo.collections.tts.modules.submodules.ConditionalInput.
-        dist_type: Distance type to use for similarity measurement. Supports "l2" and "cosine" distance.
-    """
+    def __init__(self, encoder, encoder_output_layer) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.encoder_output_layer = encoder_output_layer
 
+    def ctc_output(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+          x:
+            The output tensor from the transformer encoder.
+            Its shape is (B, T', D')
+
+        Returns:
+          Return a tensor that can be used for CTC decoding.
+          Its shape is (B, T, V), where V is the number of classes
+        """
+        x = self.encoder_output_layer(x)
+        x = x.permute(1, 0, 2)  # (N, T, C) -> (T, N, C)
+        x = nn.functional.log_softmax(x, dim=-1)  # (T, N, C)
+        return x
+
+    def forward(
+        self,
+        sources: torch.Tensor,
+        source_lengths: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[List[torch.Tensor]]]:
+        r"""Forward pass for training.
+
+        B: batch size;
+        T: maximum source sequence length in batch;
+        U: maximum target sequence length in batch;
+        D: feature dimension of each source sequence element.
+
+        Args:
+            sources (torch.Tensor): source frame sequences right-padded with right context, with
+                shape `(B, T, D)`.
+            source_lengths (torch.Tensor): with shape `(B,)` and i-th element representing
+                number of valid frames for i-th batch element in ``sources``.
+            targets (torch.Tensor): target sequences, with shape `(B, U)` and each element
+                mapping to a target symbol.
+            target_lengths (torch.Tensor): with shape `(B,)` and i-th element representing
+                number of valid frames for i-th batch element in ``targets``.
+            predictor_state (List[List[torch.Tensor]] or None, optional): list of lists of tensors
+                representing prediction network internal state generated in preceding invocation
+                of ``forward``. (Default: ``None``)
+
+        Returns:
+            (torch.Tensor, torch.Tensor, torch.Tensor, List[List[torch.Tensor]]):
+                torch.Tensor
+                    joint network output, with shape
+                    `(B, max output source length, max output target length, output_dim (number of target symbols))`.
+                torch.Tensor
+                    output source lengths, with shape `(B,)` and i-th element representing
+                    number of valid elements along dim 1 for i-th batch element in joint network output.
+                torch.Tensor
+                    output target lengths, with shape `(B,)` and i-th element representing
+                    number of valid elements along dim 2 for i-th batch element in joint network output.
+                List[List[torch.Tensor]]
+                    output states; list of lists of tensors
+                    representing prediction network internal state generated in current invocation
+                    of ``forward``.
+        """
+        device = self.encoder_output_layer.weight.device
+        if sources.device != device:
+            sources = sources.to(device)
+            source_lengths = source_lengths.to(device)
+
+        source_encodings, source_lengths = self.encoder(
+            input=sources,
+            lengths=source_lengths,
+        )
+
+        ctc_log_prob = self.ctc_output(source_encodings)
+
+        return ctc_log_prob
+
+
+class TdnnBlstm(nn.Module):
     def __init__(
         self,
-        n_mel_channels=80,
-        n_text_channels=512,
-        n_att_channels=128,
-        temperature=0.0005,
-        condition_types=[],
-        dist_type="l2",
-    ):
+        input_dim: int,
+        hidden_dim=640,
+        drop_out=0.1,
+        tdnn_blstm_spec=[],
+    ) -> None:
+        """
+        Args:
+
+          tdnn_blstm_spec:
+            It is a list of network specifications. It can be either:
+            - ('tdnn', kernel_size, stride, dilation)
+            - ('blstm')
+        """
         super().__init__()
-        self.temperature = temperature
-        # self.cond_input = ConditionalInput(n_text_channels, n_text_channels, condition_types)
-        self.softmax = torch.nn.Softmax(dim=3)
-        self.log_softmax = torch.nn.LogSoftmax(dim=3)
 
-        self.key_proj = nn.Sequential(
-            ConvNorm(
-                n_text_channels,
-                n_text_channels * 2,
-                kernel_size=3,
-                bias=True,
-                w_init_gain="relu",
-            ),
-            torch.nn.ReLU(),
-            ConvNorm(n_text_channels * 2, n_att_channels, kernel_size=1, bias=True),
-        )
+        self.tdnn_blstm_spec = tdnn_blstm_spec
 
-        self.query_proj = nn.Sequential(
-            ConvNorm(
-                n_mel_channels,
-                n_mel_channels * 2,
-                kernel_size=3,
-                bias=True,
-                w_init_gain="relu",
-            ),
-            torch.nn.ReLU(),
-            ConvNorm(n_mel_channels * 2, n_mel_channels, kernel_size=1, bias=True),
-            torch.nn.ReLU(),
-            ConvNorm(n_mel_channels, n_att_channels, kernel_size=1, bias=True),
-        )
-        if dist_type == "l2":
-            self.dist_fn = self.get_euclidean_dist
-        elif dist_type == "cosine":
-            self.dist_fn = self.get_cosine_dist
-        else:
-            raise ValueError(f"Unknown distance type '{dist_type}'")
-
-    @staticmethod
-    def _apply_mask(inputs, mask, mask_value):
-        if mask is None:
-            return
-
-        mask = rearrange(mask, "B T2 1 -> B 1 1 T2")
-        inputs.data.masked_fill_(mask, mask_value)
-
-    def get_dist(self, keys, queries, mask=None):
-        """Calculation of distance matrix.
-
-        Args:
-            queries (torch.tensor): B x C1 x T1 tensor (probably going to be mel data).
-            keys (torch.tensor): B x C2 x T2 tensor (text data).
-            mask (torch.tensor): B x T2 x 1 tensor, binary mask for variable length entries and also can be used
-                for ignoring unnecessary elements from keys in the resulting distance matrix (True = mask element, False = leave unchanged).
-        Output:
-            dist (torch.tensor): B x T1 x T2 tensor.
-        """
-        # B x C x T1
-        queries_enc = self.query_proj(queries)
-        # B x C x T2
-        keys_enc = self.key_proj(keys)
-        # B x 1 x T1 x T2
-        dist = self.dist_fn(queries_enc=queries_enc, keys_enc=keys_enc)
-
-        self._apply_mask(dist, mask, float("inf"))
-
-        return dist.squeeze(1)
-
-    @staticmethod
-    def get_euclidean_dist(queries_enc, keys_enc):
-        queries_enc = rearrange(queries_enc, "B C T1 -> B C T1 1")
-        keys_enc = rearrange(keys_enc, "B C T2 -> B C 1 T2")
-        # B x C x T1 x T2
-        distance = (queries_enc - keys_enc) ** 2
-        # B x 1 x T1 x T2
-        l2_dist = distance.sum(axis=1, keepdim=True)
-        return l2_dist
-
-    @staticmethod
-    def get_cosine_dist(queries_enc, keys_enc):
-        queries_enc = rearrange(queries_enc, "B C T1 -> B C T1 1")
-        keys_enc = rearrange(keys_enc, "B C T2 -> B C 1 T2")
-        cosine_dist = -torch.nn.functional.cosine_similarity(
-            queries_enc, keys_enc, dim=1
-        )
-        cosine_dist = rearrange(cosine_dist, "B T1 T2 -> B 1 T1 T2")
-        return cosine_dist
-
-    @staticmethod
-    def get_durations(attn_soft, text_len, spect_len):
-        """Calculation of durations.
-
-        Args:
-            attn_soft (torch.tensor): B x 1 x T1 x T2 tensor.
-            text_len (torch.tensor): B tensor, lengths of text.
-            spect_len (torch.tensor): B tensor, lengths of mel spectrogram.
-        """
-        attn_hard = binarize_attention_parallel(attn_soft, text_len, spect_len)
-        durations = attn_hard.sum(2)[:, 0, :]
-        assert torch.all(torch.eq(durations.sum(dim=1), spect_len))
-        return durations
-
-    @staticmethod
-    def get_mean_dist_by_durations(dist, durations, mask=None):
-        """Select elements from the distance matrix for the given durations and mask and return mean distance.
-
-        Args:
-            dist (torch.tensor): B x T1 x T2 tensor.
-            durations (torch.tensor): B x T2 tensor. Dim T2 should sum to T1.
-            mask (torch.tensor): B x T2 x 1 binary mask for variable length entries and also can be used
-                for ignoring unnecessary elements in dist by T2 dim (True = mask element, False = leave unchanged).
-        Output:
-            mean_dist (torch.tensor): B x 1 tensor.
-        """
-        batch_size, t1_size, t2_size = dist.size()
-        assert torch.all(torch.eq(durations.sum(dim=1), t1_size))
-
-        AlignmentEncoder._apply_mask(dist, mask, 0)
-
-        # TODO(oktai15): make it more efficient
-        mean_dist_by_durations = []
-        for dist_idx in range(batch_size):
-            mean_dist_by_durations.append(
-                torch.mean(
-                    dist[
-                        dist_idx,
-                        torch.arange(t1_size),
-                        torch.repeat_interleave(
-                            torch.arange(t2_size), repeats=durations[dist_idx]
-                        ),
-                    ]
+        layers = nn.ModuleList([])
+        layers_info = []
+        for i_layer, spec in enumerate(tdnn_blstm_spec):
+            if spec[0] == "tdnn":
+                ll = []
+                dilation = spec[3] if len(spec) >= 4 else 1
+                padding = int((spec[1] - 1) / 2) * dilation
+                ll.append(
+                    nn.Conv1d(
+                        in_channels=input_dim if len(layers) == 0 else hidden_dim,
+                        out_channels=hidden_dim,
+                        kernel_size=spec[1],  # 3
+                        dilation=dilation,
+                        stride=spec[2],  # 1
+                        padding=padding,  # 1
+                    )
                 )
-            )
+                ll.append(nn.ReLU(inplace=True))
+                ll.append(nn.BatchNorm1d(num_features=hidden_dim, affine=False))
+                if drop_out > 0:
+                    ll.append(nn.Dropout(drop_out))
 
-        return torch.tensor(
-            mean_dist_by_durations, dtype=dist.dtype, device=dist.device
-        )
+                # The last dimension indicates the stride size
+                # If stride > 1, then we need to recompute the lengths of input after this layer
+                layers.append(nn.Sequential(*ll))
+                layers_info.append(("tdnn", spec))
 
-    @staticmethod
-    def get_mean_distance_for_word(l2_dists, durs, start_token, num_tokens):
-        """Calculates the mean distance between text and audio embeddings given a range of text tokens.
+            elif spec[0] == "blstm":
+                layers.append(
+                    Blstm_with_skip(
+                        input_dim=input_dim if len(layers) == 0 else hidden_dim,
+                        hidden_dim=hidden_dim,
+                        out_dim=hidden_dim,
+                        skip=(
+                            False
+                            if len(layers) == 0 and input_dim != hidden_dim
+                            else True
+                        ),
+                        drop_out=drop_out,
+                    )
+                )
+                layers_info.append(("blstm", None))
 
-        Args:
-            l2_dists (torch.tensor): L2 distance matrix from Aligner inference. T1 x T2 tensor.
-            durs (torch.tensor): List of durations corresponding to each text token. T2 tensor. Should sum to T1.
-            start_token (int): Index of the starting token for the word of interest.
-            num_tokens (int): Length (in tokens) of the word of interest.
-        Output:
-            mean_dist_for_word (float): Mean embedding distance between the word indicated and its predicted audio frames.
+            elif spec[0] == "ffn":
+                layers.append(
+                    Ffn(
+                        input_dim=input_dim if len(layers) == 0 else hidden_dim,
+                        hidden_dim=hidden_dim,
+                        out_dim=hidden_dim,
+                        skip=True,
+                        drop_out=drop_out,
+                        nlayers=spec[1],
+                    )
+                )
+                layers_info.append(("ffn", spec))
+
+        self.layers = layers
+        self.layers_info = layers_info
+
+    def forward(self, input: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
         """
-        # Need to calculate which audio frame we start on by summing all durations up to the start token's duration
-        start_frame = torch.sum(durs[:start_token]).data
-
-        total_frames = 0
-        dist_sum = 0
-
-        # Loop through each text token
-        for token_ind in range(start_token, start_token + num_tokens):
-            # Loop through each frame for the given text token
-            for frame_ind in range(start_frame, start_frame + durs[token_ind]):
-                # Recall that the L2 distance matrix is shape [spec_len, text_len]
-                dist_sum += l2_dists[frame_ind, token_ind]
-
-            # Update total frames so far & the starting frame for the next token
-            total_frames += durs[token_ind]
-            start_frame += durs[token_ind]
-
-        return dist_sum / total_frames
-
-    def forward(self, queries, keys, mask=None, attn_prior=None, conditioning=None):
-        """Forward pass of the aligner encoder.
-
         Args:
-            queries (torch.tensor): B x C1 x T1 tensor (probably going to be mel data).
-            keys (torch.tensor): B x C2 x T2 tensor (text data).
-            mask (torch.tensor): B x T2 x 1 tensor, binary mask for variable length entries (True = mask element, False = leave unchanged).
-            attn_prior (torch.tensor): prior for attention matrix.
-            conditioning (torch.tensor): B x 1 x C2 conditioning embedding
-        Output:
-            attn (torch.tensor): B x 1 x T1 x T2 attention mask. Final dim T2 should sum to 1.
-            attn_logprob (torch.tensor): B x 1 x T1 x T2 log-prob attention mask.
+          x:
+            Its shape is [N, T, C]
+
+        Returns:
+          The output tensor has shape [N, T, C]
         """
-        # keys = self.cond_input(keys.transpose(1, 2), conditioning).transpose(1, 2)
-        # B x C x T1
-        queries_enc = self.query_proj(queries)
-        # B x C x T2
-        keys_enc = self.key_proj(keys)
-        # B x 1 x T1 x T2
-        distance = self.dist_fn(queries_enc=queries_enc, keys_enc=keys_enc)
-        attn = -self.temperature * distance
+        x = input
+        for layer, (layer_type, spec) in zip(self.layers, self.layers_info):
+            if layer_type == "tdnn":
+                mask = (
+                    torch.arange(lengths.max(), device=x.device)[None, :]
+                    < lengths[:, None]
+                ).float()
+                x = x * mask.unsqueeze(2)  # masking/padding
+                x = x.permute(0, 2, 1)  # (N, T, C) ->(N, C, T)
+                x = layer(x)
+                x = x.permute(0, 2, 1)  # (N, C, T) ->(N, T, C)
 
-        if attn_prior is not None:
-            attn = self.log_softmax(attn) + torch.log(attn_prior[:, None] + 1e-8)
-
-        attn_logprob = attn.clone()
-
-        self._apply_mask(attn, mask, -float("inf"))
-
-        attn = self.softmax(attn)  # softmax along T2
-        return attn, attn_logprob
-
-
-def get_mask_from_lengths(
-    lengths: Optional[torch.Tensor] = None,
-    x: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    """Constructs binary mask from a 1D torch tensor of input lengths
-
-    Args:
-        lengths: Optional[torch.tensor] (torch.tensor): 1D tensor with lengths
-        x: Optional[torch.tensor] = tensor to be used on, last dimension is for mask
-    Returns:
-        mask (torch.tensor): num_sequences x max_length binary tensor
-    """
-    if lengths is None:
-        assert x is not None
-        return torch.ones(x.shape[-1], dtype=torch.bool, device=x.device)
-    else:
-        if x is None:
-            max_len = torch.max(lengths)
-        else:
-            max_len = x.shape[-1]
-    ids = torch.arange(0, max_len, device=lengths.device, dtype=lengths.dtype)
-    mask = ids < lengths.unsqueeze(1)
-    return mask
+                stride = spec[2]
+                if True:  # stride > 1:
+                    kernel_size = spec[1]
+                    dilation = spec[3] if len(spec) >= 4 else 1
+                    padding = int((spec[1] - 1) / 2) * dilation
+                    lengths = lengths + 2 * padding - dilation * (kernel_size - 1) - 1
+                    lengths = lengths / stride + 1
+                    lengths = torch.floor(lengths)
+            elif layer_type == "blstm":
+                x = layer(x, lengths)
+            else:
+                x = layer(x)
+        return x, lengths
 
 
-class TextAligner(torch.nn.Module):
-    """Speech-to-text alignment model (https://arxiv.org/pdf/2108.10447.pdf) that is used to learn alignments between mel spectrogram and text."""
-
-    def __init__(self):
-
-        # num_tokens = len(self.tokenizer.tokens)
-        # self.tokenizer_pad = self.tokenizer.pad
-        # self.tokenizer_unk = self.tokenizer.oov
-
+class Ffn(nn.Module):
+    def __init__(
+        self, input_dim, hidden_dim, out_dim, nlayers=1, drop_out=0.1, skip=False
+    ) -> None:
         super().__init__()
 
-        self.embed = nn.Embedding(178, 512)
-        self.alignment_encoder = AlignmentEncoder()
-
-        # self.bin_loss = BinLoss()
-        # self.add_bin_loss = False
-        # self.bin_loss_scale = 0.0
-        # self.bin_loss_start_ratio = cfg.bin_loss_start_ratio
-        # self.bin_loss_warmup_epochs = cfg.bin_loss_warmup_epochs
-
-    def forward(self, *, spec, text, text_len, attn_prior=None):
-        # with torch.amp.autocast(self.device.type, enabled=False):
-        attn_soft, attn_logprob = self.alignment_encoder(
-            queries=spec,
-            keys=self.embed(text).transpose(1, 2),
-            mask=get_mask_from_lengths(text_len).unsqueeze(-1) == 0,
-            attn_prior=attn_prior,
+        layers = []
+        for ilayer in range(nlayers):
+            _in = hidden_dim if ilayer > 0 else input_dim
+            _out = hidden_dim if ilayer < nlayers - 1 else out_dim
+            layers.extend(
+                [
+                    nn.Linear(_in, _out),
+                    nn.ReLU(),
+                    nn.Dropout(p=drop_out),
+                ]
+            )
+        self.ffn = torch.nn.Sequential(
+            *layers,
         )
-        attn_logprob = rearrange(attn_logprob, "b 1 t p -> b t p")
-        return attn_soft, attn_logprob
+
+        self.skip = skip
+
+    def forward(self, x) -> torch.Tensor:
+        x_out = self.ffn(x)
+
+        if self.skip:
+            x_out = x_out + x
+
+        return x_out
 
 
 # class TextAligner(nn.Module):

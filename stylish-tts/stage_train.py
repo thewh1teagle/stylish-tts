@@ -21,10 +21,12 @@ def train_alignment(
 
     # ctc = (b t k), reconstruction = (b f t)
     # ctc, reconstruction = model.text_aligner(batch.mel)
-    attn_soft, attn_logprob = model.text_aligner(
-        spec=batch.mel, text=batch.text, text_len=batch.text_length
-    )
+    mel = rearrange(batch.mel, "b f t -> b t f")
+    ctc = model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
+    loss_ctc = train.align_loss(
+        ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="train"
+    )
 
     # ctc = rearrange(ctc, "b t k -> t b k")
     # softlog = ctc.log_softmax(dim=2)
@@ -35,9 +37,9 @@ def train_alignment(
     #     batch.text_length,
     #     blank=train.model_config.text_encoder.n_token,
     # )
-    loss_ctc = train.align_loss(
-        attn_logprob, in_lens=batch.text_length, out_lens=batch.mel_length
-    )
+    # loss_ctc = train.align_loss(
+    #     attn_logprob, in_lens=batch.text_length, out_lens=batch.mel_length
+    # )
     log.add_loss(
         "align_loss",
         # loss_ctc + 0.1 * torch.nn.functional.l1_loss(reconstruction, batch.mel),

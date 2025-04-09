@@ -1,11 +1,12 @@
 import math
-from typing import List, Tuple
+from typing import List, Optional, Union, Tuple
 import torch
-from torch import nn
+from torch import Tensor, nn
 import torch.nn.functional as F
 import torchaudio
 from transformers import AutoModel
 import numpy as np
+import k2
 
 
 class SpectralConvergenceLoss(torch.nn.Module):
@@ -636,47 +637,145 @@ def compute_duration_ce_loss(
     return loss_ce / n, loss_dur / n
 
 
-class ForwardSumLoss(torch.nn.Module):
-
-    def __init__(self, blank_logprob=-1, loss_scale=1.0):
+class CTCLossWithLabelPriors(nn.Module):
+    def __init__(self, prior_scaling_factor=0.0, blank=0, reduction="mean"):
         super().__init__()
-        self.log_softmax = torch.nn.LogSoftmax(dim=-1)
-        self.ctc_loss = torch.nn.CTCLoss(zero_infinity=True, blank=0)
-        self.blank_logprob = blank_logprob
-        self.loss_scale = loss_scale
 
-    def forward(self, attn_logprob, in_lens, out_lens):
-        key_lens = in_lens
-        query_lens = out_lens
-        max_key_len = attn_logprob.size(-1)
+        self.blank = blank
+        self.reduction = reduction
 
-        # Reorder input to [query_len, batch_size, key_len]
-        attn_logprob = attn_logprob.squeeze(1)
-        attn_logprob = attn_logprob.permute(1, 0, 2)
+        self.log_priors = None
+        self.log_priors_sum = None
+        self.num_samples = 0
+        self.prior_scaling_factor = prior_scaling_factor  # This corresponds to the `alpha` hyper parameter in the paper
 
-        # Add blank label
-        attn_logprob = F.pad(
-            input=attn_logprob, pad=(1, 0, 0, 0, 0, 0), value=self.blank_logprob
+    def encode_supervisions(
+        self, targets, target_lengths, input_lengths
+    ) -> Tuple[torch.Tensor, Union[List[str], List[List[int]]]]:
+        # https://github.com/k2-fsa/icefall/blob/master/icefall/utils.py#L181
+
+        batch_size = targets.size(0)
+        supervision_segments = torch.stack(
+            (
+                torch.arange(batch_size),
+                torch.zeros(batch_size),
+                input_lengths.cpu(),
+            ),
+            1,
+        ).to(torch.int32)
+
+        indices = torch.argsort(supervision_segments[:, 2], descending=True)
+        supervision_segments = supervision_segments[indices]
+
+        # Be careful: the targets here are already padded! We need to remove paddings from it
+        res = targets[indices].tolist()
+        res_lengths = target_lengths[indices].tolist()
+        res = [l[:l_len] for l, l_len in zip(res, res_lengths)]
+
+        return supervision_segments, res, indices
+
+    def forward(
+        self,
+        log_probs: Tensor,
+        targets: Tensor,
+        input_lengths: Tensor,
+        target_lengths: Tensor,
+        step_type="train",
+    ) -> Tensor:
+        supervision_segments, token_ids, indices = self.encode_supervisions(
+            targets, target_lengths, input_lengths
         )
 
-        # Convert to log probabilities
-        # Note: Mask out probs beyond key_len
-        key_inds = torch.arange(
-            max_key_len + 1, device=attn_logprob.device, dtype=torch.long
+        decoding_graph = k2.ctc_graph(
+            token_ids, modified=False, device=log_probs.device
         )
-        attn_logprob.masked_fill_(
-            key_inds.view(1, 1, -1) > key_lens.view(1, -1, 1), -1e15
-        )  # key_inds >= key_lens+1
-        attn_logprob = self.log_softmax(attn_logprob)
 
-        # Target sequences
-        target_seqs = key_inds[1:].unsqueeze(0)
-        target_seqs = target_seqs.repeat(key_lens.numel(), 1)
+        # TODO: graph compiler for multiple pronunciations
 
-        # Evaluate CTC loss
-        cost = self.ctc_loss(
-            attn_logprob, target_seqs, input_lengths=query_lens, target_lengths=key_lens
+        # Accumulate label priors for this epoch
+        log_probs = log_probs.permute(1, 0, 2)  # (T, N, C) -> (N, T, C)
+        if step_type == "train":
+            log_probs_flattened = []
+            for lp, le in zip(log_probs, input_lengths):
+                log_probs_flattened.append(lp[: int(le.item())])
+            log_probs_flattened = torch.cat(log_probs_flattened, 0)
+
+            # Note, the log_probs here is already log_softmax'ed.
+            T = log_probs_flattened.size(0)
+            self.num_samples += T
+            log_batch_priors_sum = torch.logsumexp(
+                log_probs_flattened, dim=0, keepdim=True
+            )
+            log_batch_priors_sum = log_batch_priors_sum.detach()
+            if self.log_priors_sum is None:
+                self.log_priors_sum = log_batch_priors_sum
+            else:
+                _temp = torch.stack([self.log_priors_sum, log_batch_priors_sum], dim=-1)
+                self.log_priors_sum = torch.logsumexp(_temp, dim=-1)
+
+        # Apply the label priors
+        if self.log_priors is not None and self.prior_scaling_factor > 0:
+            log_probs = log_probs - self.log_priors * self.prior_scaling_factor
+
+        # Compute CTC loss
+        dense_fsa_vec = k2.DenseFsaVec(
+            log_probs,  # (N, T, C)
+            supervision_segments,
         )
-        cost *= self.loss_scale
 
-        return cost
+        loss = k2.ctc_loss(
+            decoding_graph=decoding_graph,
+            dense_fsa_vec=dense_fsa_vec,
+            output_beam=10,
+            reduction=self.reduction,
+            use_double_scores=True,
+            target_lengths=target_lengths,
+        )
+
+        return loss
+
+    def on_train_epoch_end(self, train):
+        if self.log_priors_sum is not None:
+            log_priors_sums = train.accelerator.gather(self.log_priors_sum.unsqueeze(0))
+            log_priors_sums = torch.logsumexp(log_priors_sums, dim=0, keepdim=True)
+            num_samples = train.accelerator.gather(
+                torch.Tensor([self.num_samples]).to(log_priors_sums.device)
+            )
+            num_samples = num_samples.sum().log().to(log_priors_sums.device)
+            new_log_prior = log_priors_sums - num_samples
+
+            if False:
+                print(
+                    "new_priors: ",
+                    ["{0:0.2f}".format(i) for i in new_log_prior[0][0].exp().tolist()],
+                )
+                print(
+                    "new_log_prior: ",
+                    ["{0:0.2f}".format(i) for i in new_log_prior[0][0].tolist()],
+                )
+                if self.log_priors is not None:
+                    _a1 = new_log_prior.exp()
+                    _b1 = self.log_priors.exp()
+                    print(
+                        "diff%: ",
+                        [
+                            "{0:0.2f}".format(i)
+                            for i in ((_a1 - _b1) / _b1 * 100)[0][0].tolist()
+                        ],
+                    )
+
+            prior_threshold = -12.0
+            new_log_prior = torch.where(
+                new_log_prior < prior_threshold, prior_threshold, new_log_prior
+            )
+
+            self.log_priors = new_log_prior
+            self.log_priors_sum = None
+            self.num_samples = 0
+
+            # if pl_module.global_rank == 0:
+            #     exp_dir = pathlib.Path(trainer.default_root_dir)
+            #     checkpoint_dir = exp_dir / "checkpoints"
+            #     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            #     label_priors_path = checkpoint_dir / f"log_priors_epoch_{pl_module.current_epoch}.pt"
+            #     torch.save(new_log_prior, label_priors_path)
