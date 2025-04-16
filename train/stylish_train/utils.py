@@ -54,13 +54,14 @@ def log_norm(x, mean=-4, std=4, dim=2):
     x = torch.log(torch.exp(x * std + mean).norm(dim=dim))
     return x
 
+
 def plot_spectrogram_to_figure(
     spectrogram,
-    title='Spectrogram',
-    figsize=(12, 5), # Increased width for better time resolution view
-    dpi=150,         # Increased DPI for higher resolution image
-    interpolation='bilinear', # Smoother interpolation
-    cmap='viridis'    # Default colormap, can change to 'magma', 'inferno', etc.
+    title="Spectrogram",
+    figsize=(12, 5),  # Increased width for better time resolution view
+    dpi=150,  # Increased DPI for higher resolution image
+    interpolation="bilinear",  # Smoother interpolation
+    cmap="viridis",  # Default colormap, can change to 'magma', 'inferno', etc.
 ):
     """Converts a spectrogram tensor/numpy array to a matplotlib figure with improved quality."""
     plt.switch_backend("agg")  # Use non-interactive backend
@@ -75,43 +76,70 @@ def plot_spectrogram_to_figure(
 
     # Handle potential extra dimensions (e.g., channel dim)
     if spectrogram_np.ndim > 2:
-        if spectrogram_np.shape[0] == 1: # Remove channel dim if it's 1
+        if spectrogram_np.shape[0] == 1:  # Remove channel dim if it's 1
             spectrogram_np = spectrogram_np.squeeze(0)
         else:
             # If multiple channels, you might want to plot only the first
             # or handle it differently (e.g., separate plots)
-            spectrogram_np = spectrogram_np[0, :, :] # Plot only the first channel
+            spectrogram_np = spectrogram_np[0, :, :]  # Plot only the first channel
             # Or raise an error/warning:
             # raise ValueError(f"Spectrogram has unexpected shape: {spectrogram_np.shape}")
 
-    fig, ax = plt.subplots(figsize=figsize, dpi=dpi) # Apply figsize and dpi
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)  # Apply figsize and dpi
 
     # Ensure valid interpolation string
-    valid_interpolations = [None, 'none', 'nearest', 'bilinear', 'bicubic', 'spline16','spline36', 'hanning', 'hamming', 'hermite', 'kaiser', 'quadric','catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos','blackman']
+    valid_interpolations = [
+        None,
+        "none",
+        "nearest",
+        "bilinear",
+        "bicubic",
+        "spline16",
+        "spline36",
+        "hanning",
+        "hamming",
+        "hermite",
+        "kaiser",
+        "quadric",
+        "catrom",
+        "gaussian",
+        "bessel",
+        "mitchell",
+        "sinc",
+        "lanczos",
+        "blackman",
+    ]
     if interpolation not in valid_interpolations:
         print(f"Warning: Invalid interpolation '{interpolation}'. Using 'bilinear'.")
-        interpolation = 'bilinear'
+        interpolation = "bilinear"
 
-    im = ax.imshow(spectrogram_np, aspect="auto", origin="lower", interpolation=interpolation, cmap=cmap) # Apply interpolation and cmap
+    im = ax.imshow(
+        spectrogram_np,
+        aspect="auto",
+        origin="lower",
+        interpolation=interpolation,
+        cmap=cmap,
+    )  # Apply interpolation and cmap
 
     plt.colorbar(im, ax=ax)
     plt.xlabel("Frames")
-    plt.ylabel("Mel Channels") # More specific label
+    plt.ylabel("Mel Channels")  # More specific label
     plt.title(title)
     plt.tight_layout()
     # plt.close(fig) # Don't close here if returning the figure object
-    return fig # Return the figure object directly
+    return fig  # Return the figure object directly
+
 
 def plot_mel_signed_difference_to_figure(
     mel_gt_normalized_np,  # Ground truth (already normalized log mel)
-    mel_pred_log_np,      # Predicted (raw log mel)
-    mean: float,          # Dataset mean used for normalization
-    std: float,           # Dataset std used for normalization
-    title='Signed Mel Log Difference (GT - Pred)', # Updated title
+    mel_pred_log_np,  # Predicted (raw log mel)
+    mean: float,  # Dataset mean used for normalization
+    std: float,  # Dataset std used for normalization
+    title="Signed Mel Log Difference (GT - Pred)",  # Updated title
     figsize=(12, 5),
     dpi=150,
-    cmap='vanimo',
-    max_abs_diff_clip=None # Optional: Clip the color range e.g., 3.0
+    cmap="vanimo",
+    max_abs_diff_clip=None,  # Optional: Clip the color range e.g., 3.0
 ):
     """Plots the signed difference between two mel spectrograms using a diverging colormap."""
     plt.switch_backend("agg")
@@ -130,22 +158,33 @@ def plot_mel_signed_difference_to_figure(
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
     # Determine symmetric color limits centered at 0
-    max_abs_val = np.max(np.abs(diff)) + 1e-9 # Add epsilon for stability
+    max_abs_val = np.max(np.abs(diff)) + 1e-9  # Add epsilon for stability
     if max_abs_diff_clip is not None:
-        max_abs_val = min(max_abs_val, max_abs_diff_clip) # Apply clipping if specified
+        max_abs_val = min(max_abs_val, max_abs_diff_clip)  # Apply clipping if specified
 
     vmin = -max_abs_val
     vmax = max_abs_val
 
-    im = ax.imshow(diff, aspect="auto", origin="lower", interpolation='none', cmap=cmap, vmin=vmin, vmax=vmax) # Use 'none' for raw diff
+    im = ax.imshow(
+        diff,
+        aspect="auto",
+        origin="lower",
+        interpolation="none",
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+    )  # Use 'none' for raw diff
 
-    plt.colorbar(im, ax=ax, label='Signed Normalized Log Difference (GT - Pred)') # Updated label
+    plt.colorbar(
+        im, ax=ax, label="Signed Normalized Log Difference (GT - Pred)"
+    )  # Updated label
     plt.xlabel("Frames")
     plt.ylabel("Mel Channels")
     plt.title(title)
     plt.tight_layout()
     # plt.close(fig) # Don't close if returning fig
     return fig
+
 
 def get_image(arrs):
     plt.switch_backend("agg")

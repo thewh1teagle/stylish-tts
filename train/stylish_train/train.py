@@ -117,20 +117,20 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
     # force somewhat determanistic selection of validation samples
     hashed_data = []
     for line in val_list:
-            fields = line.strip().split("|")
-            item_bytes = fields[0].encode('utf-8')
-            hash_hex = hashlib.blake2b(item_bytes).hexdigest()
-            hashed_data.append((hash_hex, fields[0]))
+        fields = line.strip().split("|")
+        item_bytes = fields[0].encode("utf-8")
+        hash_hex = hashlib.blake2b(item_bytes).hexdigest()
+        hashed_data.append((hash_hex, fields[0]))
     hashed_data.sort()
-    selected_pairs = hashed_data[:train.config.validation.sample_count]
+    selected_pairs = hashed_data[: train.config.validation.sample_count]
     selected_files = [file_name for _, file_name in selected_pairs]
 
     for item in train.config.validation.force_samples:
         if item not in selected_files:
             selected_files.append(item)
-    
+
     train.config.validation.force_samples = selected_files
-    
+
     val_dataset = FilePathDataset(
         data_list=val_list,
         root_path=train.config.dataset.wav_path,
