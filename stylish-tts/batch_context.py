@@ -230,13 +230,13 @@ class BatchContext:
             batch.text,
             batch.text_length,
             apply_attention_mask=True,
-            use_random_choice=use_random_mono,
+            use_random_choice=False,
         )
         energy = self.acoustic_energy(batch.mel)
         style_embedding = self.acoustic_style_embedding(batch.mel)
         pitch = self.calculate_pitch(batch).detach()
         return self.model.decoder(
-            text_encoding @ duration, pitch, energy, style, probing=probing
+            text_encoding @ duration, pitch, energy, style_embedding, probing=probing
         )
 
     def audio_reconstruction(self, batch):

@@ -1,6 +1,7 @@
 import math
 from typing import Optional, Tuple
 import torch
+from torch.nn import functional as F
 from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
@@ -101,10 +102,11 @@ def train_pre_acoustic(
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
         # train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
-        log.add_loss("mel-reconstruction", F.mse_loss(pred, batch.mel))
+        log.add_loss("mel-reconstruction", F.smooth_l1_loss(pred, batch.mel))
     # freev_loss(log, pred, batch.audio_gt, train)
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
-    return log.detach(), pred.audio.detach()
+    # return log.detach(), pred.audio.detach()
+    return log.detach(), pred.detach()
 
 
 def train_acoustic(
