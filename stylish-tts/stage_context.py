@@ -11,6 +11,7 @@ import tqdm
 from loss_log import combine_logs
 from stage_train import (
     train_alignment,
+    train_vocoder,
     train_pre_acoustic,
     train_acoustic,
     train_pre_textual,
@@ -21,6 +22,7 @@ from stage_train import (
 
 from stage_validate import (
     validate_alignment,
+    validate_vocoder,
     validate_acoustic,
     validate_textual,
     validate_sbert,
@@ -28,8 +30,8 @@ from stage_validate import (
 from optimizers import build_optimizer
 from utils import get_image
 
-discriminators = ["mrd", "msbd", "mstftd"]
-# discriminators = ["mpd", "mrd", "msbd", "mstftd"]
+# discriminators = ["mrd", "msbd", "mstftd"]
+discriminators = ["mpd", "mrd", "msbd", "mstftd"]
 
 
 class StageConfig:
@@ -54,7 +56,7 @@ class StageConfig:
 
 stages = {
     "alignment": StageConfig(
-        next_stage="pre_acoustic",
+        next_stage="vocoder",
         train_fn=train_alignment,
         validate_fn=validate_alignment,
         train_models=["text_aligner"],
@@ -67,12 +69,27 @@ stages = {
             "mel_length",
         ],
     ),
+    "vocoder": StageConfig(
+        next_stage="pre_acoustic",
+        train_fn=train_vocoder,
+        validate_fn=validate_vocoder,
+        train_models=["acoustic_style_encoder", "generator"],
+        eval_models=[],
+        adversarial=True,
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "audio_gt",
+            "pitch",
+        ],
+    ),
     "pre_acoustic": StageConfig(
         next_stage="acoustic",
         train_fn=train_pre_acoustic,
         validate_fn=validate_acoustic,
-        train_models=["text_encoder", "acoustic_style_encoder", "decoder"],
-        eval_models=["text_aligner"],
+        train_models=["text_encoder", "decoder"],
+        eval_models=["text_aligner", "acoustic_style_encoder"],
         adversarial=False,
         inputs=[
             "text",
@@ -93,6 +110,7 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
+            "generator",
             # "text_aligner",
         ],
         eval_models=["text_aligner"],
@@ -123,6 +141,7 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
+            "generator",
             "text_aligner",
         ],
         adversarial=False,
@@ -152,6 +171,7 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
+            "generator",
             "text_aligner",
         ],
         adversarial=False,
@@ -180,6 +200,7 @@ stages = {
         eval_models=[
             "text_encoder",
             "decoder",
+            "generator",
             "acoustic_style_encoder",
             "text_aligner",
         ],
@@ -214,6 +235,7 @@ stages = {
             "bert_encoder",
             "text_encoder",
             "decoder",
+            "generator",
             "text_aligner",
         ],
         adversarial=False,

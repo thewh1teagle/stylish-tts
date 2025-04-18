@@ -22,6 +22,8 @@ from .duration_predictor import DurationPredictor
 from .pitch_energy_predictor import PitchEnergyPredictor
 from .text_encoder import TextEncoder
 from .style_encoder import StyleEncoder
+from .decoder.mel_decoder import MelDecoder
+from .decoder.freev import FreevGenerator
 
 from munch import Munch
 import safetensors
@@ -51,75 +53,15 @@ def build_model(model_config: ModelConfig):
     )
 
     assert model_config.decoder.type in [
-        "istftnet",
+        # "istftnet",
         # "hifigan",
-        "ringformer",
-        "vocos",
+        # "ringformer",
+        # "vocos",
         "freev",
     ], "Decoder type unknown"
 
-    if model_config.decoder.type == "istftnet":
-        from .decoder.istftnet import Decoder
-
-        decoder = Decoder(
-            dim_in=model_config.inter_dim,
-            style_dim=model_config.style_dim,
-            resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
-            upsample_rates=model_config.decoder.upsample_rates,
-            upsample_initial_channel=model_config.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
-            sample_rate=model_config.sample_rate,
-        )
-    elif model_config.decoder.type == "ringformer":
-        from .decoder.ringformer import Decoder
-
-        decoder = Decoder(
-            dim_in=model_config.inter_dim,
-            style_dim=model_config.style_dim,
-            dim_out=model_config.n_mels,
-            resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
-            upsample_rates=model_config.decoder.upsample_rates,
-            upsample_initial_channel=model_config.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
-            conformer_depth=model_config.decoder.depth,
-            sample_rate=model_config.sample_rate,
-        )
-    elif model_config.decoder.type == "vocos":
-        from .decoder.vocos import Decoder
-
-        decoder = Decoder(
-            dim_in=model_config.inter_dim,
-            style_dim=model_config.style_dim,
-            intermediate_dim=model_config.decoder.intermediate_dim,
-            num_layers=model_config.decoder.num_layers,
-            sample_rate=model_config.sample_rate,
-            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
-            gen_istft_win_length=model_config.decoder.gen_istft_win_length,
-            gen_istft_hop_length=model_config.decoder.gen_istft_hop_length,
-        )
-    elif model_config.decoder.type == "freev":
-        from .decoder.freev import Decoder
-
-        decoder = Decoder()
-    # else:
-    #     from .decoder.hifigan import Decoder
-
-    #     decoder = Decoder(
-    #         dim_in=model_config.decoder.hidden_dim,
-    #         style_dim=model_config.style_dim,
-    #         dim_out=model_config.n_mels,
-    #         resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
-    #         upsample_rates=model_config.decoder.upsample_rates,
-    #         upsample_initial_channel=model_config.decoder.upsample_initial_channel,
-    #         resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
-    #         upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
-    #     )
+    decoder = MelDecoder()
+    generator = FreevGenerator()
 
     text_encoder = TextEncoder(
         channels=model_config.inter_dim,
@@ -170,6 +112,7 @@ def build_model(model_config: ModelConfig):
         duration_predictor=duration_predictor,
         pitch_energy_predictor=pitch_energy_predictor,
         decoder=decoder,
+        generator=generator,
         text_encoder=text_encoder,
         # TODO Make this a config option
         # TODO Make the sbert model a config option

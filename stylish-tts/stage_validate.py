@@ -58,6 +58,15 @@ def validate_alignment(batch, train):
 
 
 @torch.no_grad()
+def validate_vocoder(batch, train):
+    state = BatchContext(train=train, model=train.model, text_length=batch.text_length)
+    pred, gt = state.audio_reconstruction(batch)
+    log = build_loss_log(train)
+    train.stft_loss(pred.audio.squeeze(1), gt, log)
+    return log, None, pred.audio, gt
+
+
+@torch.no_grad()
 def validate_acoustic(batch, train):
     state = BatchContext(train=train, model=train.model, text_length=batch.text_length)
     pred = state.acoustic_prediction_single(batch)

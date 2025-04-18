@@ -3,6 +3,7 @@ import os.path as osp
 import numpy as np
 import soundfile as sf
 import librosa
+from librosa.filters import mel as librosa_mel_fn
 import tqdm
 
 import torch
@@ -18,6 +19,56 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
+
+mel_window = {}
+
+
+def param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device):
+    return f"{sampling_rate}-{n_fft}-{num_mels}-{fmin}-{fmax}-{win_size}-{device}"
+
+
+def mel_spectrogram(
+    y,
+    n_fft,
+    num_mels,
+    sampling_rate,
+    hop_size,
+    win_size,
+    fmin,
+    fmax,
+    center=True,
+    in_dataset=False,
+):
+    global mel_window
+    # device = torch.device("cpu") if in_dataset else y.device
+    device = "cpu"
+    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
+    if ps in mel_window:
+        mel_basis, hann_window = mel_window[ps]
+        # print(mel_basis, hann_window)
+        # mel_basis, hann_window = mel_basis.to(y.device), hann_window.to(y.device)
+    else:
+        mel = librosa_mel_fn(
+            sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
+        )
+        mel_basis = torch.from_numpy(mel).float().to(device)
+        hann_window = torch.hann_window(win_size).to(device)
+        mel_window[ps] = (mel_basis.clone(), hann_window.clone())
+
+    spec = torch.stft(
+        y.to(device),
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window.to(device),
+        center=True,
+        return_complex=True,
+    )
+
+    spec = mel_basis.to(device) @ spec.abs()
+    # spec = spectral_normalize_torch(spec)
+
+    return spec  # [batch_size,n_fft/2+1,frames]
 
 
 class FilePathDataset(torch.utils.data.Dataset):
@@ -46,14 +97,15 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.text_cleaner = text_cleaner
 
         self.df = pd.DataFrame(self.data_list)
+        self.model_config = model_config
 
-        self.to_mel = torchaudio.transforms.MelSpectrogram(
-            n_mels=model_config.n_mels,
-            n_fft=model_config.n_fft,
-            win_length=model_config.win_length,
-            hop_length=model_config.hop_length,
-            sample_rate=model_config.sample_rate,
-        )
+        # self.to_mel = torchaudio.transforms.MelSpectrogram(
+        #     n_mels=model_config.n_mels,
+        #     n_fft=model_config.n_fft,
+        #     win_length=model_config.win_length,
+        #     hop_length=model_config.hop_length,
+        #     sample_rate=model_config.sample_rate,
+        # )
 
         # self.min_length = min_length
         # with open(
@@ -73,6 +125,18 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.multispeaker = model_config.multispeaker
         self.sample_rate = model_config.sample_rate
         self.hop_length = model_config.hop_length
+
+    def to_mel(self, wave_tensor):
+        return mel_spectrogram(
+            y=wave_tensor,
+            n_fft=self.model_config.n_fft,
+            num_mels=self.model_config.n_mels,
+            sampling_rate=self.model_config.sample_rate,
+            hop_size=self.model_config.hop_length,
+            win_size=self.model_config.win_length,
+            fmin=50,
+            fmax=12000,
+        )
 
     def preprocess(self, wave):
         mean, std = -4, 4

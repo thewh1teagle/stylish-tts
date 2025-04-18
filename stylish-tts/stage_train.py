@@ -70,21 +70,39 @@ def train_alignment(
     return log.detach(), None
 
 
+def train_vocoder(
+    batch, model, train, probing
+) -> Tuple[LossLog, Optional[torch.Tensor]]:
+    state = BatchContext(train=train, model=model, text_length=None)
+    with train.accelerator.autocast():
+        pred, gt = state.audio_reconstruction(batch)
+        train.stage.optimizer.zero_grad()
+        log = build_loss_log(train)
+        train.stft_loss(pred.audio.squeeze(1), gt, log)
+        freev_loss(log, pred, gt, train)
+        log.add_loss(
+            "generator",
+            train.generator_loss(
+                gt.detach().unsqueeze(1).float(),
+                pred.audio,
+            ).mean(),
+        )
+    train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.mel.shape[0]))
+    return log.detach(), pred.audio.detach()
+
+
 def train_pre_acoustic(
     batch, model, train, probing
 ) -> Tuple[LossLog, Optional[torch.Tensor]]:
     state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
-        pred = state.acoustic_prediction_single(batch, use_random_mono=True)
+        # pred = state.acoustic_prediction_single(batch, use_random_mono=True)
+        pred = state.mel_reconstruction(batch)
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
-        train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
-        if pred.magnitude is not None and pred.phase is not None:
-            log.add_loss(
-                "magphase",
-                magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
-            )
-    freev_loss(log, pred, batch.audio_gt, train)
+        # train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
+        log.add_loss("mel-reconstruction", F.mse_loss(pred, batch.mel))
+    # freev_loss(log, pred, batch.audio_gt, train)
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
     return log.detach(), pred.audio.detach()
 

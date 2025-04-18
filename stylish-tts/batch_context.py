@@ -1,4 +1,5 @@
 import random
+from typing import Optional
 
 import torch
 from torch.nn import functional as F
@@ -16,16 +17,16 @@ class BatchContext:
         *,
         train: train_context.TrainContext,
         model,
-        text_length: torch.Tensor,
+        text_length: Optional[torch.Tensor],
     ):
         self.train: train_context.TrainContext = train
         self.config: Config = train.config
         # This is a subset containing only those models used this batch
         self.model = model
 
-        self.text_mask: torch.Tensor = length_to_mask(text_length).to(
-            self.config.training.device
-        )
+        self.text_mask = None
+        if text_length is not None:
+            self.text_mask = length_to_mask(text_length).to(self.config.training.device)
         self.duration_results = None
         self.pitch_prediction = None
         self.energy_prediction = None
@@ -213,9 +214,49 @@ class BatchContext:
         style,
         probing=False,
     ):
+        mel = self.model.decoder(
+            text_encoding @ duration, pitch, energy, style, probing=probing
+        )
+        prediction = self.model.generator(
+            mel=mel, style=style, pitch=pitch, energy=energy
+        )
+        return prediction
+
+    def mel_reconstruction(self, batch, probing=False):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        duration = self.acoustic_duration(
+            batch.mel,
+            batch.mel_length,
+            batch.text,
+            batch.text_length,
+            apply_attention_mask=True,
+            use_random_choice=use_random_mono,
+        )
+        energy = self.acoustic_energy(batch.mel)
+        style_embedding = self.acoustic_style_embedding(batch.mel)
+        pitch = self.calculate_pitch(batch).detach()
         return self.model.decoder(
             text_encoding @ duration, pitch, energy, style, probing=probing
         )
+
+    def audio_reconstruction(self, batch):
+        mel = batch.mel
+        energy = self.acoustic_energy(batch.mel).detach()
+        style_embedding = self.acoustic_style_embedding(batch.mel)
+        pitch = self.calculate_pitch(batch).detach()
+        gt = batch.audio_gt
+        # if mel.shape[2] > 200:
+        #     hop = self.train.model_config.hop_length
+        #     mel_start = random.randint(0, mel.shape[2] - 200)
+        #     mel_end = mel_start + 200
+        #     mel = mel[:, :, mel_start:mel_end].detach()
+        #     energy = energy[:, mel_start:mel_end].detach()
+        #     pitch = pitch[:, mel_start:mel_end].detach()
+        #     gt = gt[:, mel_start*hop:mel_end*hop].detach()
+        prediction = self.model.generator(
+            mel=mel, style=style_embedding, pitch=pitch, energy=energy
+        )
+        return prediction, gt
 
     def acoustic_prediction(self, batch, split=1):
         text_encoding = self.text_encoding(batch.text, batch.text_length)

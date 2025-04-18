@@ -37,6 +37,10 @@ class TrainingPlanConfig(BaseModel):
         default=10,
         description="Number of epochs for pretraining the text alignment model.",
     )
+    vocoder: int = Field(
+        default=10,
+        description="Number of epochs for pretraining the vocoder generator.",
+    )
     pre_acoustic: int = Field(
         default=10,
         description="Number of epochs for the pretraining of acoustic models (first stage).",
@@ -271,14 +275,19 @@ class VocosDecoderConfig(BaseModel):
         ..., description="Hop length for iSTFT generator."
     )
 
+
 class ValidationConfig(BaseModel):
     """
     Setup samples to use during validation
     """
+
     sample_count: int = Field(
-        ..., description="Number of samples to generate during validation.")
+        ..., description="Number of samples to generate during validation."
+    )
     force_samples: list = Field(
-        default=[], description="List of segments to use during validation.")
+        default=[], description="List of segments to use during validation."
+    )
+
 
 class FreevDecoderConfig(BaseModel):
     """
