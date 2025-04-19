@@ -22,7 +22,7 @@ def train_alignment(
 
     # ctc = (b t k), reconstruction = (b f t)
     # ctc, reconstruction = model.text_aligner(batch.mel)
-    mel = rearrange(batch.mel, "b f t -> b t f")
+    mel = rearrange(batch.align_mel, "b f t -> b t f")
     ctc = model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
     loss_ctc = train.align_loss(
@@ -102,7 +102,7 @@ def train_pre_acoustic(
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
         # train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
-        log.add_loss("mel-reconstruction", F.smooth_l1_loss(pred, batch.mel))
+        log.add_loss("mel-reconstruction", F.smooth_l1_loss(pred, batch.mel) * 100)
     # freev_loss(log, pred, batch.audio_gt, train)
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
     # return log.detach(), pred.audio.detach()

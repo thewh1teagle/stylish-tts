@@ -225,7 +225,7 @@ class BatchContext:
     def mel_reconstruction(self, batch, probing=False):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
-            batch.mel,
+            batch.align_mel,
             batch.mel_length,
             batch.text,
             batch.text_length,
@@ -261,7 +261,7 @@ class BatchContext:
     def acoustic_prediction(self, batch, split=1):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
-            batch.mel,
+            batch.align_mel,
             batch.mel_length,
             batch.text,
             batch.text_length,
@@ -285,7 +285,7 @@ class BatchContext:
     def acoustic_prediction_single(self, batch, use_random_mono=True):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
-            batch.mel,
+            batch.align_mel,
             batch.mel_length,
             batch.text,
             batch.text_length,
@@ -307,7 +307,7 @@ class BatchContext:
     def textual_prediction_single(self, batch):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
-            batch.mel,
+            batch.align_mel,
             batch.mel_length,
             batch.text,
             batch.text_length,
@@ -343,7 +343,7 @@ class BatchContext:
     def sbert_prediction_single(self, batch):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
-            batch.mel,
+            batch.align_mel,
             batch.mel_length,
             batch.text,
             batch.text_length,
@@ -377,7 +377,7 @@ class BatchContext:
 
     def textual_bootstrap_prediction(self, batch):
         _ = self.acoustic_duration(
-            batch.mel,
+            batch.align_mel,
             batch.mel_length,
             batch.text,
             batch.text_length,

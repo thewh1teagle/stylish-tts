@@ -30,8 +30,8 @@ from stage_validate import (
 from optimizers import build_optimizer
 from utils import get_image
 
-# discriminators = ["mrd", "msbd", "mstftd"]
-discriminators = ["mpd", "mrd", "msbd", "mstftd"]
+# discriminators = ["msbd", "mstftd"]
+# discriminators = ["mpd", "mrd", "msbd", "mstftd"]
 
 
 class StageConfig:
@@ -65,7 +65,7 @@ stages = {
         inputs=[
             "text",
             "text_length",
-            "mel",
+            "align_mel",
             "mel_length",
         ],
     ),
@@ -100,6 +100,7 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
         ],
     ),
     "acoustic": StageConfig(
@@ -124,6 +125,7 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
         ],
     ),
     "pre_textual": StageConfig(
@@ -154,6 +156,7 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
         ],
     ),
     "textual": StageConfig(
@@ -184,6 +187,7 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
         ],
     ),
     "joint": StageConfig(
@@ -214,6 +218,7 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
         ],
     ),
     "sbert": StageConfig(
@@ -247,6 +252,7 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "align_mel",
         ],
     ),
 }
@@ -349,6 +355,7 @@ class StageContext:
             config.train_models,
             config.eval_models,
             config.adversarial,
+            train,
         )
         result, audio = self.train_fn(batch, model, train, probing)
         optimizer_step(self.optimizer, config.train_models)
@@ -361,7 +368,7 @@ class StageContext:
             # d_index = train.manifest.current_total_step % 4
             d_loss = train.discriminator_loss(audio_gt, audio)
             train.accelerator.backward(d_loss * math.sqrt(batch.text.shape[0]))
-            optimizer_step(self.optimizer, discriminators)
+            optimizer_step(self.optimizer, train.model_config.discriminators)
             train.stage.optimizer.zero_grad()
             result.add_loss("discriminator", d_loss)
         return result.detach()
@@ -481,6 +488,7 @@ batch_names = [
     "pitch",
     "sentence_embedding",
     "voiced",
+    "align_mel",
 ]
 
 
@@ -500,13 +508,13 @@ def prepare_batch(
     return Munch(**prepared)
 
 
-def prepare_model(model, device, training_set, eval_set, adversarial) -> Munch:
+def prepare_model(model, device, training_set, eval_set, adversarial, train) -> Munch:
     """
     Prepares models for training or evaluation, attaches them to the cpu memory if unused, returns an object which contains only the models that will be used.
     """
     disc_set = []
     if adversarial:
-        disc_set = discriminators
+        disc_set = train.model_config.discriminators
     result = {}
     for key in model:
         if key in training_set or key in eval_set or key in disc_set:

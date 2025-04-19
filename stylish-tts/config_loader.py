@@ -431,6 +431,9 @@ class ModelConfig(BaseModel):
     inter_dim: int = Field(
         ..., description="Dimension of the embedding used between models."
     )
+    discriminators: List[str] = Field(
+        ..., description="List of discriminators to use (can be mpd, mrd, msbd, mstftd)"
+    )
 
     text_aligner: TextAlignerConfig = Field(
         ..., description="Configuration for the text aligner component."

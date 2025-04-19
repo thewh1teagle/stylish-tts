@@ -74,6 +74,11 @@ class BatchManager:
 
         train.stage.reset_batch_sizes()
         batch_size = self.probe_batch_max
+        if (
+            train.manifest.stage == "alignment"
+            or train.manifest.stage == "pre_acoustic"
+        ):
+            batch_size *= 10
         time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
         iterator = tqdm.tqdm(

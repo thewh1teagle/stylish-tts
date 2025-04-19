@@ -425,7 +425,7 @@ def freev_loss(log, pred, gt_audio, train):
 
 
 class GeneratorLoss(torch.nn.Module):
-    def __init__(self, *, mpd, mrd, msbd, mstftd):
+    def __init__(self, *, mpd, mrd, msbd, mstftd, discriminators):
         super(GeneratorLoss, self).__init__()
         self.generators = torch.nn.ModuleList(
             [
@@ -435,17 +435,21 @@ class GeneratorLoss(torch.nn.Module):
                 GeneratorLossHelper(mstftd, 1.0),
             ]
         )
+        self.used = [
+            name in discriminators for name in ["mpd", "mrd", "msbd", "mstftd"]
+        ]
 
     def forward(self, audio_gt, audio):
         # return self.generators[index](audio_gt, audio)
         loss = 0
-        for index in range(2, len(self.generators)):
-            loss += self.generators[index](audio_gt, audio)
+        for index in range(len(self.generators)):
+            if self.used[index]:
+                loss += self.generators[index](audio_gt, audio)
         return loss
 
 
 class DiscriminatorLoss(torch.nn.Module):
-    def __init__(self, *, mpd, mrd, msbd, mstftd):
+    def __init__(self, *, mpd, mrd, msbd, mstftd, discriminators):
         super(DiscriminatorLoss, self).__init__()
         self.discriminators = torch.nn.ModuleDict(
             {
@@ -455,6 +459,9 @@ class DiscriminatorLoss(torch.nn.Module):
                 "mstftd": DiscriminatorLossHelper(mstftd, 1.0),
             }
         )
+        self.used = {
+            name: name in discriminators for name in ["mpd", "mrd", "msbd", "mstftd"]
+        }
 
     def get_disc_lr_multiplier(self, key):
         return self.discriminators[key].get_disc_lr_multiplier()
@@ -464,8 +471,8 @@ class DiscriminatorLoss(torch.nn.Module):
         # return self.discriminators[key](audio_gt, audio)
         loss = 0
         for key in self.discriminators.keys():
-            # if key != "mpd":
-            loss += self.discriminators[key](audio_gt, audio)
+            if self.used[key]:
+                loss += self.discriminators[key](audio_gt, audio)
         return loss
 
 

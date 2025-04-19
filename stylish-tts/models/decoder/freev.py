@@ -5,6 +5,7 @@ from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 import numpy as np
 from munch import Munch
 from librosa.filters import mel as librosa_mel_fn
+from torchaudio.functional import melscale_fbanks
 import random
 from scipy.signal import get_window
 
@@ -20,39 +21,72 @@ from ..common import get_padding
 
 # import torch.nn.functional as F
 
-mel_window = {}
-inv_mel_window = {}
+
+class InverseMel:
+    def __init__(
+        self,
+        *,
+        n_fft,
+        num_mels,
+        sampling_rate,
+        hop_size,
+        win_size,
+        fmin,
+        fmax,
+        # device
+    ):
+        # mel_np = librosa_mel_fn(
+        #     sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
+        # )
+        mel_basis = melscale_fbanks(
+            n_freqs=n_fft // 2 + 1,
+            f_min=0,
+            f_max=12000,
+            n_mels=num_mels,
+            sample_rate=sampling_rate,
+        )
+        mel_basis = mel_basis.transpose(0, 1)
+        # mel_basis = torch.from_numpy(mel_np).float() # .to(device)
+        # hann_window = torch.hann_window(win_size).to(device)
+        self.inv_basis = mel_basis.pinverse()  # .to(device)
+
+    def execute(self, mel):
+        return self.inv_basis.to(mel.device) @ spectral_de_normalize_torch(mel)
 
 
-def inverse_mel(
-    mel,
-    n_fft,
-    num_mels,
-    sampling_rate,
-    hop_size,
-    win_size,
-    fmin,
-    fmax,
-    in_dataset=False,
-):
-    global inv_mel_window, mel_window
-    device = torch.device("cpu") if in_dataset else mel.device
-    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
-    if ps in inv_mel_window:
-        inv_basis = inv_mel_window[ps]
-    else:
-        if ps in mel_window:
-            mel_basis, _ = mel_window[ps]
-        else:
-            mel_np = librosa_mel_fn(
-                sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
-            )
-            mel_basis = torch.from_numpy(mel_np).float().to(device)
-            hann_window = torch.hann_window(win_size).to(device)
-            mel_window[ps] = (mel_basis.clone(), hann_window.clone())
-        inv_basis = mel_basis.pinverse()
-        inv_mel_window[ps] = inv_basis.clone()
-    return inv_basis.to(device) @ spectral_de_normalize_torch(mel.to(device))
+# mel_window = {}
+# inv_mel_window = {}
+#
+#
+# def inverse_mel(
+#     mel,
+#     n_fft,
+#     num_mels,
+#     sampling_rate,
+#     hop_size,
+#     win_size,
+#     fmin,
+#     fmax,
+#     in_dataset=False,
+# ):
+#     global inv_mel_window, mel_window
+#     device = torch.device("cpu") if in_dataset else mel.device
+#     ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
+#     if ps in inv_mel_window:
+#         inv_basis = inv_mel_window[ps]
+#     else:
+#         if ps in mel_window:
+#             mel_basis, _ = mel_window[ps]
+#         else:
+#             mel_np = librosa_mel_fn(
+#                 sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
+#             )
+#             mel_basis = torch.from_numpy(mel_np).float().to(device)
+#             hann_window = torch.hann_window(win_size).to(device)
+#             mel_window[ps] = (mel_basis.clone(), hann_window.clone())
+#         inv_basis = mel_basis.pinverse()
+#         inv_mel_window[ps] = inv_basis.clone()
+#     return inv_basis.to(device) @ spectral_de_normalize_torch(mel.to(device))
 
 
 def dynamic_range_decompression_torch(x, C=1):
@@ -85,7 +119,7 @@ config_h = Munch(
         "win_size": 1200,
         "sampling_rate": 24000,
         "fmin": 50,
-        "fmax": 12000,
+        "fmax": 550,
         "style_dim": 128,
         "intermediate_dim": 1536,
     }
@@ -169,6 +203,16 @@ class FreevGenerator(torch.nn.Module):
         )
         self.phase_final_layer_norm = nn.LayerNorm(self.dim, eps=1e-6)
         self.apply(self._init_weights)
+        self.inverse_mel = InverseMel(
+            n_fft=self.h.n_fft,
+            num_mels=self.h.num_mels,
+            sampling_rate=self.h.sampling_rate,
+            hop_size=self.h.hop_size,
+            win_size=self.h.win_size,
+            fmin=self.h.fmin,
+            fmax=self.h.fmax,
+            # device=self.device
+        )
 
     def _init_weights(self, m):
         if isinstance(m, nn.Conv1d):  # (nn.Conv1d, nn.Linear)):
@@ -180,20 +224,7 @@ class FreevGenerator(torch.nn.Module):
         har_spec = har_spec.transpose(1, 2)
         har_spec = self.ASP_harmonic_conv(har_spec)
         har_spec = har_spec.transpose(1, 2)
-        inv_amp = (
-            inverse_mel(
-                mel,
-                self.h.n_fft,
-                self.h.num_mels,
-                self.h.sampling_rate,
-                self.h.hop_size,
-                self.h.win_size,
-                self.h.fmin,
-                self.h.fmax,
-            )
-            .abs()
-            .clamp_min(1e-5)
-        )
+        inv_amp = self.inverse_mel.execute(mel).abs().clamp_min(1e-5)
         logamp = inv_amp.log()
         for conv_block in self.amp_convnext:
             logamp = conv_block(logamp, style, har_spec)

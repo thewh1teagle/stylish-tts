@@ -174,12 +174,14 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         mrd=train.model.mrd,
         msbd=train.model.msbd,
         mstftd=train.model.mstftd,
+        discriminators=train.model_config.discriminators,
     ).to(train.config.training.device)
     train.discriminator_loss = DiscriminatorLoss(
         mpd=train.model.mpd,
         mrd=train.model.mrd,
         msbd=train.model.msbd,
         mstftd=train.model.mstftd,
+        discriminators=train.model_config.discriminators,
     ).to(train.config.training.device)
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,

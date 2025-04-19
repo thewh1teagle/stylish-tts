@@ -11,7 +11,7 @@ from utils import length_to_mask
 def validate_alignment(batch, train):
     log = build_loss_log(train)
     # ctc, reconstruction = train.model.text_aligner(batch.mel)
-    mel = rearrange(batch.mel, "b f t -> b t f")
+    mel = rearrange(batch.align_mel, "b f t -> b t f")
     ctc = train.model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
 

@@ -126,6 +126,8 @@ def calculate_lr(key, stage_name, *, train):
         or stage_name == "joint"
     )
     lr = train.config.optimizer.lr
+    if stage_name == "alignment":  # or stage_name == "acoustic":
+        lr /= 10
     weight_decay = 1e-4
     betas = (0.85, 0.99)
     if is_second:
