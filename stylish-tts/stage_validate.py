@@ -12,7 +12,7 @@ def validate_alignment(batch, train):
     log = build_loss_log(train)
     # ctc, reconstruction = train.model.text_aligner(batch.mel)
     mel = rearrange(batch.align_mel, "b f t -> b t f")
-    ctc = train.model.text_aligner(mel, batch.mel_length)
+    ctc, reconstruction = train.model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
 
     # softlog = ctc.log_softmax(dim=2)
@@ -28,7 +28,9 @@ def validate_alignment(batch, train):
         ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="eval"
     )
     log.add_loss("align_ctc", loss_ctc)
-    # log.add_loss("align_rec", torch.nn.functional.l1_loss(reconstruction, batch.mel))
+    log.add_loss(
+        "align_rec", torch.nn.functional.l1_loss(reconstruction, batch.align_mel)
+    )
     return log, None, None, None
 
 

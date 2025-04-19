@@ -28,7 +28,9 @@ def tdnn_blstm_ctc_model(
     )
     encoder_output_layer = nn.Linear(hidden_dim, num_symbols + 1)
 
-    return CTCModel(encoder, encoder_output_layer)
+    return CTCModel(
+        encoder, encoder_output_layer, n_token=num_symbols, n_mels=input_dim
+    )
 
 
 def tdnn_blstm_ctc_model_base(n_mels, num_symbols):
@@ -51,10 +53,18 @@ class CTCModel(torch.nn.Module):
     This implements a CTC model with an encoder and a projection layer
     """
 
-    def __init__(self, encoder, encoder_output_layer) -> None:
+    def __init__(self, encoder, encoder_output_layer, n_token, n_mels) -> None:
         super().__init__()
         self.encoder = encoder
         self.encoder_output_layer = encoder_output_layer
+
+        self.decode = nn.Sequential(
+            nn.Linear(n_token, 256, bias=False),
+            nn.LeakyReLU(),
+            nn.Linear(256, 256, bias=False),
+            nn.LeakyReLU(),
+            nn.Linear(256, n_mels, bias=False),
+        )
 
     def ctc_output(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -67,7 +77,6 @@ class CTCModel(torch.nn.Module):
           Return a tensor that can be used for CTC decoding.
           Its shape is (B, T, V), where V is the number of classes
         """
-        x = self.encoder_output_layer(x)
         x = x.permute(1, 0, 2)  # (N, T, C) -> (T, N, C)
         x = nn.functional.log_softmax(x, dim=-1)  # (T, N, C)
         return x
@@ -123,9 +132,15 @@ class CTCModel(torch.nn.Module):
             lengths=source_lengths,
         )
 
-        ctc_log_prob = self.ctc_output(source_encodings)
+        posterior = self.encoder_output_layer(source_encodings)
+        # Remove blanks
+        posterior = posterior[:, :, :-1]
+        mels = self.decode(posterior)
+        mels = rearrange(mels, "b t d -> b d t")
+        mels = F.interpolate(mels, scale_factor=2, mode="nearest")
+        ctc_log_prob = self.ctc_output(posterior)
 
-        return ctc_log_prob
+        return ctc_log_prob, mels
 
 
 class TdnnBlstm(nn.Module):

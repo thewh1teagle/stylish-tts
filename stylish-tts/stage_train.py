@@ -23,7 +23,7 @@ def train_alignment(
     # ctc = (b t k), reconstruction = (b f t)
     # ctc, reconstruction = model.text_aligner(batch.mel)
     mel = rearrange(batch.align_mel, "b f t -> b t f")
-    ctc = model.text_aligner(mel, batch.mel_length)
+    ctc, reconstruction = model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
     loss_ctc = train.align_loss(
         ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="train"
@@ -43,8 +43,8 @@ def train_alignment(
     # )
     log.add_loss(
         "align_loss",
-        # loss_ctc + 0.1 * torch.nn.functional.l1_loss(reconstruction, batch.mel),
-        loss_ctc,
+        loss_ctc + 0.1 * torch.nn.functional.l1_loss(reconstruction, batch.align_mel),
+        # loss_ctc,
     )
     # log.add_loss("align_ctc", loss_ctc)
     # log.add_loss("align_rec", 0.1 * torch.nn.functional.l1_loss(reconstruction, batch.mel))

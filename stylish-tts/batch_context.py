@@ -91,7 +91,7 @@ class BatchContext:
         # --- Monotonic Attention Path ---
         with torch.no_grad():
             mels = rearrange(mels, "b f t -> b t f")
-            prediction = self.model.text_aligner(mels, mel_lengths)
+            prediction, _ = self.model.text_aligner(mels, mel_lengths)
             prediction = rearrange(prediction, "t b k -> b t k")
             # alignment_list = []
             # scores_list = []
