@@ -418,7 +418,7 @@ def soft_alignment(pred, phonemes, mask):
     # ph_blank = F.pad(ph_blank, (0, 1), value=blank_id)
     # ph_blank = rearrange(ph_blank, "b p -> b 1 p")
     ph_blank = rearrange(phonemes, "b p -> b 1 p")
-    pred = pred.softmax(dim=2)
+    # pred = pred.softmax(dim=2)
     pred = pred[:, :, :-1]
     pred = F.normalize(input=pred, p=1, dim=2)
     probability = torch.take_along_dim(input=pred, indices=ph_blank, dim=2)

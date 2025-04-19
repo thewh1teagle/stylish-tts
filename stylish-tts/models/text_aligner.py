@@ -134,8 +134,8 @@ class CTCModel(torch.nn.Module):
 
         posterior = self.encoder_output_layer(source_encodings)
         # Remove blanks
-        posterior = posterior[:, :, :-1]
-        mels = self.decode(posterior)
+        mels = posterior[:, :, :-1]
+        mels = self.decode(mels)
         mels = rearrange(mels, "b t d -> b d t")
         mels = F.interpolate(mels, scale_factor=2, mode="nearest")
         ctc_log_prob = self.ctc_output(posterior)
