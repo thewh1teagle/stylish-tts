@@ -93,29 +93,51 @@ class BatchContext:
             mels = rearrange(mels, "b f t -> b t f")
             prediction, _ = self.model.text_aligner(mels, mel_lengths)
             prediction = rearrange(prediction, "t b k -> b t k")
-            # alignment_list = []
-            # scores_list = []
-            # for i in range(prediction.shape[0]):
-            #     p = prediction[i:i+1].contiguous()
-            #     t = texts[i:i+1, 0:text_lengths[i].item()]
-            #     ml = mel_lengths[i:i+1] // 2
-            #     tl = text_lengths[i:i+1]
-            #     alignment, scores = torchaudio.functional.forced_align(
-            #         log_probs=p,
-            #         targets=t,
-            #         input_lengths=ml,
-            #         target_lengths=tl,
-            #         blank=self.train.model_config.text_encoder.n_token,
-            #     )
-            #     alignment_list.append(alignment)
-            #     scores_list.append(scores.exp())
-            # alignment = torch.cat(alignment_list, dim=0)
-            # breakpoint()
+
+            max_text_len = text_lengths.max()
+            alignment_list = []
+            scores_list = []
+            attentions = []
+            blank = self.train.model_config.text_encoder.n_token
+            for i in range(prediction.shape[0]):
+                p = prediction[i : i + 1].contiguous()
+                t = texts[i : i + 1, 0 : text_lengths[i].item()]
+                ml = mel_lengths[i : i + 1] // 2
+                tl = text_lengths[i : i + 1]
+                alignment, scores = torchaudio.functional.forced_align(
+                    log_probs=p,
+                    targets=t,
+                    input_lengths=ml,
+                    target_lengths=tl,
+                    blank=blank,
+                )
+                atensor = torch.zeros(
+                    [1, max_text_len, mels.shape[1]], device=mels.device
+                )
+                text_index = 0
+                last_text = alignment[0]
+                was_blank = False
+                for i in range(alignment.shape[0]):
+                    if alignment[i] != blank:
+                        if alignment[i] != last_text or was_blank:
+                            text_index += 1
+                            last_text = alignment[i]
+                            was_blank = False
+                    else:
+                        was_blank = True
+                    assert alignment[i] == blank or alignment[i] == t[0, text_index]
+                    atensor[0, text_index, i] = 1
+                alignment_list.append(atensors)
+                scores_list.append(scores.exp())
+
+            duration = torch.cat(alignment_list, dim=0)
+            breakpoint()
             # soft = (b t p)
-            soft = soft_alignment(prediction, texts, self.text_mask)
-            soft = rearrange(soft, "b t k -> b k t")
-            mask_ST = mask_from_lens(soft, text_lengths, mel_lengths)
-            duration = maximum_path(soft, mask_ST)
+
+            # soft = soft_alignment(prediction, texts, self.text_mask)
+            # soft = rearrange(soft, "b t k -> b k t")
+            # mask_ST = mask_from_lens(soft, text_lengths, mel_lengths)
+            # duration = maximum_path(soft, mask_ST)
             duration = F.interpolate(duration, scale_factor=2, mode="nearest")
 
         # # --- Text Encoder Forward Pass ---
@@ -418,7 +440,8 @@ def soft_alignment(pred, phonemes, mask):
     # ph_blank = F.pad(ph_blank, (0, 1), value=blank_id)
     # ph_blank = rearrange(ph_blank, "b p -> b 1 p")
     ph_blank = rearrange(phonemes, "b p -> b 1 p")
-    # pred = pred.softmax(dim=2)
+    # pred = pred.exp()
+    pred = pred.softmax(dim=2)
     pred = pred[:, :, :-1]
     pred = F.normalize(input=pred, p=1, dim=2)
     probability = torch.take_along_dim(input=pred, indices=ph_blank, dim=2)
