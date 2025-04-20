@@ -58,13 +58,13 @@ class CTCModel(torch.nn.Module):
         self.encoder = encoder
         self.encoder_output_layer = encoder_output_layer
 
-        self.decode = nn.Sequential(
-            nn.Linear(n_token, 256, bias=False),
-            nn.LeakyReLU(),
-            nn.Linear(256, 256, bias=False),
-            nn.LeakyReLU(),
-            nn.Linear(256, n_mels, bias=False),
-        )
+        # self.decode = nn.Sequential(
+        #     nn.Linear(n_token, 256, bias=False),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(256, 256, bias=False),
+        #     nn.LeakyReLU(),
+        #     nn.Linear(256, n_mels, bias=False),
+        # )
 
     def ctc_output(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -134,13 +134,13 @@ class CTCModel(torch.nn.Module):
 
         posterior = self.encoder_output_layer(source_encodings)
         # Remove blanks
-        mels = posterior[:, :, :-1]
-        mels = self.decode(mels)
-        mels = rearrange(mels, "b t d -> b d t")
-        mels = F.interpolate(mels, scale_factor=2, mode="nearest")
+        # mels = posterior[:, :, :-1]
+        # mels = self.decode(mels)
+        # mels = rearrange(mels, "b t d -> b d t")
+        # mels = F.interpolate(mels, scale_factor=2, mode="nearest")
         ctc_log_prob = self.ctc_output(posterior)
 
-        return ctc_log_prob, mels
+        return ctc_log_prob, None  # mels
 
 
 class TdnnBlstm(nn.Module):

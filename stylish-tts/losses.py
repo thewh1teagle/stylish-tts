@@ -720,9 +720,9 @@ class CTCLossWithLabelPriors(nn.Module):
                 _temp = torch.stack([self.log_priors_sum, log_batch_priors_sum], dim=-1)
                 self.log_priors_sum = torch.logsumexp(_temp, dim=-1)
 
-            # Apply the label priors
-            if self.log_priors is not None and self.prior_scaling_factor > 0:
-                log_probs = log_probs - self.log_priors * self.prior_scaling_factor
+        # Apply the label priors
+        if self.log_priors is not None and self.prior_scaling_factor > 0:
+            log_probs = log_probs - self.log_priors * self.prior_scaling_factor
 
         # Compute CTC loss
         dense_fsa_vec = k2.DenseFsaVec(
