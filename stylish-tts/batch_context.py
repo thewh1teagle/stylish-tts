@@ -111,27 +111,27 @@ class BatchContext:
                     target_lengths=tl,
                     blank=blank,
                 )
+                alignment = alignment.squeeze()
                 atensor = torch.zeros(
-                    [1, max_text_len, mels.shape[1]], device=mels.device
+                    [1, max_text_len, alignment.shape[0]], device=mels.device
                 )
                 text_index = 0
                 last_text = alignment[0]
                 was_blank = False
                 for i in range(alignment.shape[0]):
-                    if alignment[i] != blank:
+                    if alignment[i] == blank:
+                        was_blank = True
+                    else:
                         if alignment[i] != last_text or was_blank:
                             text_index += 1
                             last_text = alignment[i]
                             was_blank = False
-                    else:
-                        was_blank = True
                     assert alignment[i] == blank or alignment[i] == t[0, text_index]
                     atensor[0, text_index, i] = 1
-                alignment_list.append(atensors)
+                alignment_list.append(atensor)
                 scores_list.append(scores.exp())
 
             duration = torch.cat(alignment_list, dim=0)
-            breakpoint()
             # soft = (b t p)
 
             # soft = soft_alignment(prediction, texts, self.text_mask)
