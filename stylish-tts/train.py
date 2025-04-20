@@ -338,6 +338,15 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             progress_bar.set_postfix(postfix) if progress_bar is not None else None
             if do_val or do_save:
                 progress_bar.clear() if progress_bar is not None else None
+
+                # EXPERIMENTAL: DO THE UNTHINKABLE
+                if train.manifest.stage == "alignment":
+                    print("Training on the validation data like a boss.")
+                    for _, batch in enumerate(train.val_dataloader):
+                        train.batch_manager.train_iterate(
+                            batch, train, progress_bar=None
+                        )
+
                 train.stage.validate(train)
                 progress_bar.display() if progress_bar is not None else None
             if do_save:

@@ -109,12 +109,12 @@ stages = {
         validate_fn=validate_acoustic,
         train_models=[
             "text_encoder",
-            "acoustic_style_encoder",
+            # "acoustic_style_encoder",
             "decoder",
-            "generator",
+            # "generator",
             # "text_aligner",
         ],
-        eval_models=["text_aligner"],
+        eval_models=["text_aligner", "acoustic_style_encoder", "generator"],
         adversarial=True,
         inputs=[
             "text",

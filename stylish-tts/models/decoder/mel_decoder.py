@@ -36,11 +36,27 @@ class MelDecoder(torch.nn.Module):
                     dilation=[1],
                     activation=True,
                 ),
+                ConvNeXtBlock(
+                    dim_in=bottleneck_dim,
+                    dim_out=bottleneck_dim,
+                    intermediate_dim=bottleneck_dim,
+                    style_dim=style_dim,
+                    dilation=[1],
+                    activation=True,
+                ),
             ]
         )
 
         self.decode1 = torch.nn.ModuleList(
             [
+                ConvNeXtBlock(
+                    dim_in=bottleneck_dim + 3 * residual_dim,
+                    dim_out=bottleneck_dim,
+                    intermediate_dim=bottleneck_dim,
+                    style_dim=style_dim,
+                    dilation=[1],
+                    activation=True,
+                ),
                 ConvNeXtBlock(
                     dim_in=bottleneck_dim + 3 * residual_dim,
                     dim_out=bottleneck_dim,
@@ -85,11 +101,20 @@ class MelDecoder(torch.nn.Module):
                     dilation=[1],
                     activation=True,
                 ),
+                ConvNeXtBlock(
+                    dim_in=dim_in,
+                    dim_out=dim_in,
+                    intermediate_dim=bottleneck_dim,
+                    style_dim=style_dim,
+                    dilation=[1],
+                    activation=True,
+                ),
             ]
         )
 
         self.F0_conv = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(1, residual_dim, kernel_size=1)),
+            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             torch.nn.InstanceNorm1d(residual_dim, affine=True),
         )
@@ -97,11 +122,13 @@ class MelDecoder(torch.nn.Module):
         self.N_conv = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(1, residual_dim, kernel_size=1)),
             BasicConvNeXtBlock(residual_dim, residual_dim * 2),
+            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             torch.nn.InstanceNorm1d(residual_dim, affine=True),
         )
 
         self.asr_res = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(dim_in, residual_dim, kernel_size=1)),
+            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             torch.nn.InstanceNorm1d(residual_dim, affine=True),
         )
 
