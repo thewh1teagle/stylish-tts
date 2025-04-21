@@ -15,6 +15,7 @@ from losses import (
 )
 from torch.utils.tensorboard.writer import SummaryWriter
 from text_utils import TextCleaner
+import torchaudio
 
 
 class Manifest:
@@ -98,6 +99,14 @@ class TrainContext:
         )
 
         self.text_cleaner = TextCleaner(self.model_config.symbol)
+
+        self.to_mel = torchaudio.transforms.MelSpectrogram(
+            n_mels=self.model_config.n_mels,
+            n_fft=self.model_config.n_fft,
+            win_length=self.model_config.win_length,
+            hop_length=self.model_config.hop_length,
+            sample_rate=self.model_config.sample_rate,
+        ).to(self.config.training.device)
 
     def reset_out_dir(self, stage_name):
         self.out_dir = osp.join(self.base_output_dir, stage_name)
