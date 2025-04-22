@@ -5,7 +5,7 @@ import pathlib
 
 from einops import rearrange
 import numpy
-from safetensors.torch import load_file
+from safetensors.torch import load_file, save_file
 import soundfile
 import torch
 import torchaudio
@@ -128,7 +128,7 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
         )
         alignment = alignment.squeeze()
         atensor = torch.zeros(
-            [1, text.shape[1], alignment.shape[0]], device=mels.device
+            [1, text.shape[1], alignment.shape[0]], device=mels.device, dtype=bool
         )
         text_index = 0
         last_text = alignment[0]
@@ -148,6 +148,7 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
     with open("scores.txt", "w") as f:
         for name in scores_map.keys():
             f.write(str(scores_map[name]) + " " + name + "\n")
+    return alignment_map
 
 
 def audio_list(path, wavdir, model_config):
