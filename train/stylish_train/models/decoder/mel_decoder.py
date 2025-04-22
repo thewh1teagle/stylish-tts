@@ -36,27 +36,11 @@ class MelDecoder(torch.nn.Module):
                     dilation=[1],
                     activation=True,
                 ),
-                ConvNeXtBlock(
-                    dim_in=bottleneck_dim,
-                    dim_out=bottleneck_dim,
-                    intermediate_dim=bottleneck_dim,
-                    style_dim=style_dim,
-                    dilation=[1],
-                    activation=True,
-                ),
             ]
         )
 
         self.decode1 = torch.nn.ModuleList(
             [
-                ConvNeXtBlock(
-                    dim_in=bottleneck_dim + 3 * residual_dim,
-                    dim_out=bottleneck_dim,
-                    intermediate_dim=bottleneck_dim,
-                    style_dim=style_dim,
-                    dilation=[1],
-                    activation=True,
-                ),
                 ConvNeXtBlock(
                     dim_in=bottleneck_dim + 3 * residual_dim,
                     dim_out=bottleneck_dim,
@@ -101,20 +85,11 @@ class MelDecoder(torch.nn.Module):
                     dilation=[1],
                     activation=True,
                 ),
-                ConvNeXtBlock(
-                    dim_in=dim_in,
-                    dim_out=dim_in,
-                    intermediate_dim=bottleneck_dim,
-                    style_dim=style_dim,
-                    dilation=[1],
-                    activation=True,
-                ),
             ]
         )
 
         self.F0_conv = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(1, residual_dim, kernel_size=1)),
-            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             torch.nn.InstanceNorm1d(residual_dim, affine=True),
         )
@@ -122,13 +97,11 @@ class MelDecoder(torch.nn.Module):
         self.N_conv = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(1, residual_dim, kernel_size=1)),
             BasicConvNeXtBlock(residual_dim, residual_dim * 2),
-            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             torch.nn.InstanceNorm1d(residual_dim, affine=True),
         )
 
         self.asr_res = torch.nn.Sequential(
             weight_norm(torch.nn.Conv1d(dim_in, residual_dim, kernel_size=1)),
-            BasicConvNeXtBlock(residual_dim, residual_dim * 2),
             torch.nn.InstanceNorm1d(residual_dim, affine=True),
         )
 
@@ -137,7 +110,7 @@ class MelDecoder(torch.nn.Module):
         )
 
     def forward(self, asr, F0_curve, N_curve, s, pretrain=False, probing=False):
-        # asr = F.interpolate(asr, scale_factor=2, mode="nearest")
+        asr = torch.nn.functional.interpolate(asr, scale_factor=2, mode="nearest")
         F0 = self.F0_conv(F0_curve.unsqueeze(1))
         N = self.N_conv(N_curve.unsqueeze(1))
 

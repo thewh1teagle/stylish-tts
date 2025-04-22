@@ -79,6 +79,10 @@ class DatasetConfig(BaseModel):
         ...,
         description="Path to the precomputed pitch safetensor file for your segments.",
     )
+    alignment_path: str = Field(
+        ...,
+        description="Path to the precomputed alignment safetensor file for your segments.",
+    )
 
 
 class LossWeightConfig(BaseModel):

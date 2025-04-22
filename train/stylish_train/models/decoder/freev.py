@@ -132,7 +132,7 @@ class FreevGenerator(torch.nn.Module):
         h = config_h
         self.h = config_h
         self.dim = 512
-        self.num_layers = 10
+        self.num_layers = 8
         window = torch.hann_window(h.win_size)
         self.register_buffer("window", window, persistent=False)
 
@@ -198,7 +198,7 @@ class FreevGenerator(torch.nn.Module):
                     style_dim=h.style_dim,
                     dilation=[1, 3, 5],
                 )
-                for _ in range(2)
+                for _ in range(1)
             ]
         )
         self.phase_final_layer_norm = nn.LayerNorm(self.dim, eps=1e-6)

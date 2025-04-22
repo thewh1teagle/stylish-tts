@@ -35,9 +35,6 @@ from utils import (
     plot_mel_signed_difference_to_figure,
 )
 
-# discriminators = ["msbd", "mstftd"]
-# discriminators = ["mpd", "mrd", "msbd", "mstftd"]
-
 
 class StageConfig:
     def __init__(
@@ -61,7 +58,7 @@ class StageConfig:
 
 stages = {
     "alignment": StageConfig(
-        next_stage="vocoder",
+        next_stage=None,
         train_fn=train_alignment,
         validate_fn=validate_alignment,
         train_models=["text_aligner"],
@@ -75,7 +72,7 @@ stages = {
         ],
     ),
     "vocoder": StageConfig(
-        next_stage="pre_acoustic",
+        next_stage=None,
         train_fn=train_vocoder,
         validate_fn=validate_vocoder,
         train_models=["acoustic_style_encoder", "generator"],
@@ -93,8 +90,8 @@ stages = {
         next_stage="acoustic",
         train_fn=train_pre_acoustic,
         validate_fn=validate_acoustic,
-        train_models=["text_encoder", "decoder"],
-        eval_models=["text_aligner", "acoustic_style_encoder", "generator"],
+        train_models=["text_encoder", "decoder", "acoustic_style_encoder", "generator"],
+        eval_models=[],
         adversarial=False,
         inputs=[
             "text",
@@ -106,6 +103,7 @@ stages = {
             "sentence_embedding",
             "voiced",
             "align_mel",
+            "alignment",
         ],
     ),
     "acoustic": StageConfig(
@@ -114,12 +112,11 @@ stages = {
         validate_fn=validate_acoustic,
         train_models=[
             "text_encoder",
-            # "acoustic_style_encoder",
+            "acoustic_style_encoder",
             "decoder",
-            # "generator",
-            # "text_aligner",
+            "generator",
         ],
-        eval_models=["text_aligner", "acoustic_style_encoder", "generator"],
+        eval_models=[],
         adversarial=True,
         inputs=[
             "text",
@@ -131,6 +128,7 @@ stages = {
             "sentence_embedding",
             "voiced",
             "align_mel",
+            "alignment",
         ],
     ),
     "pre_textual": StageConfig(
@@ -149,7 +147,7 @@ stages = {
             "acoustic_style_encoder",
             "decoder",
             "generator",
-            "text_aligner",
+            # "text_aligner",
         ],
         adversarial=False,
         inputs=[
@@ -162,6 +160,7 @@ stages = {
             "sentence_embedding",
             "voiced",
             "align_mel",
+            "alignment",
         ],
     ),
     "textual": StageConfig(
@@ -180,7 +179,7 @@ stages = {
             "acoustic_style_encoder",
             "decoder",
             "generator",
-            "text_aligner",
+            # "text_aligner",
         ],
         adversarial=False,
         inputs=[
@@ -193,6 +192,7 @@ stages = {
             "sentence_embedding",
             "voiced",
             "align_mel",
+            "alignment",
         ],
     ),
     "joint": StageConfig(
@@ -211,7 +211,7 @@ stages = {
             "decoder",
             "generator",
             "acoustic_style_encoder",
-            "text_aligner",
+            # "text_aligner",
         ],
         adversarial=True,
         inputs=[
@@ -224,6 +224,7 @@ stages = {
             "sentence_embedding",
             "voiced",
             "align_mel",
+            "alignment",
         ],
     ),
     "sbert": StageConfig(
@@ -246,7 +247,7 @@ stages = {
             "text_encoder",
             "decoder",
             "generator",
-            "text_aligner",
+            # "text_aligner",
         ],
         adversarial=False,
         inputs=[
@@ -258,6 +259,7 @@ stages = {
             "pitch",
             "sentence_embedding",
             "align_mel",
+            "alignment",
         ],
     ),
 }
@@ -560,6 +562,7 @@ batch_names = [
     "sentence_embedding",
     "voiced",
     "align_mel",
+    "alignment",
 ]
 
 

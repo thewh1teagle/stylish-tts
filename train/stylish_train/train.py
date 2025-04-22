@@ -111,8 +111,11 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
     if not osp.exists(train.config.dataset.val_data):
         exit(f"Validation data not found at {train.config.dataset.val_data}")
     if not osp.exists(train.config.dataset.wav_path):
-        exit(f"Root path not found at {train.config.dataset.wav_path}")
-
+        exit(f"Root wav path not found at {train.config.dataset.wav_path}")
+    if not osp.exists(train.config.dataset.pitch_path):
+        exit(f"Pitch path not found at {train.config.dataset.pitch_path}")
+    if not osp.exists(train.config.dataset.alignment_path) and stage != "alignment":
+        exit(f"Alignment path not found at {train.config.dataset.alignment_path}")
     val_list = get_data_path_list(train.config.dataset.val_data)
     # force somewhat determanistic selection of validation samples
     hashed_data = []
@@ -137,6 +140,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         text_cleaner=train.text_cleaner,
         model_config=train.model_config,
         pitch_path=train.config.dataset.pitch_path,
+        alignment_path=train.config.dataset.alignment_path,
     )
     val_time_bins = val_dataset.time_bins()
     train.val_dataloader = build_dataloader(

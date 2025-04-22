@@ -35,18 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 def build_model(model_config: ModelConfig):
-    # text_aligner = TextAligner(
-    #     n_mels=model_config.n_mels, n_token=model_config.text_encoder.n_token
-    # )
     text_aligner = tdnn_blstm_ctc_model_base(
         model_config.n_mels, model_config.text_encoder.n_token
     )
-    # text_aligner = TextAligner(
-    #     input_dim=model_config.n_mels,
-    #     n_token=model_config.text_encoder.n_token,
-    #     **(model_config.text_aligner.model_dump()),
-    # )
-    # pitch_extractor = PitchExtractor(**(model_config.pitch_extractor.dict()))
     bert = PLBERT(
         vocab_size=model_config.text_encoder.n_token,
         **(model_config.plbert.model_dump()),

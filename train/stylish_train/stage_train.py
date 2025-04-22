@@ -98,16 +98,16 @@ def train_pre_acoustic(
 ) -> Tuple[LossLog, Optional[torch.Tensor]]:
     state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
-        # pred = state.acoustic_prediction_single(batch, use_random_mono=True)
-        pred = state.mel_reconstruction(batch)
+        pred = state.acoustic_prediction_single(batch, use_random_mono=True)
+        # rec = state.mel_reconstruction(batch)
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
-        # train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
-        log.add_loss("mel-reconstruction", F.smooth_l1_loss(pred, batch.mel) * 100)
-    # freev_loss(log, pred, batch.audio_gt, train)
+        train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
+        # log.add_loss("mel-reconstruction", F.smooth_l1_loss(rec, batch.mel) * 100)
+    freev_loss(log, pred, batch.audio_gt, train)
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
-    # return log.detach(), pred.audio.detach()
-    return log.detach(), pred.detach()
+    return log.detach(), pred.audio.detach()
+    # return log.detach(), pred.detach()
 
 
 def train_acoustic(
@@ -161,7 +161,7 @@ def train_acoustic(
         #             "mono", torch.nn.functional.l1_loss(*(state.duration_results)) * 10
         #         )
 
-        freev_loss(log, pred, batch.audio_gt, train)
+        # freev_loss(log, pred, batch.audio_gt, train)
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )

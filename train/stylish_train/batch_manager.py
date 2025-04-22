@@ -53,6 +53,7 @@ class BatchManager:
             text_cleaner=text_cleaner,
             model_config=train.model_config,
             pitch_path=dataset_config.pitch_path,
+            alignment_path=dataset_config.alignment_path,
         )
         self.time_bins: Dict[int, List[int]] = self.dataset.time_bins()
         self.process_count: int = 1
@@ -76,8 +77,8 @@ class BatchManager:
         batch_size = self.probe_batch_max
         if train.manifest.stage == "alignment":
             batch_size *= 10
-        elif train.manifest.stage == "pre_acoustic":
-            batch_size *= 5
+        # elif train.manifest.stage == "pre_acoustic":
+        #     batch_size *= 5
         time_keys = sorted(list(self.time_bins.keys()))
         max_frame_size = get_frame_count(time_keys[-1])
         iterator = tqdm.tqdm(

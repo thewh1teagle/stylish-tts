@@ -80,11 +80,17 @@ class FilePathDataset(torch.utils.data.Dataset):
         text_cleaner,
         model_config,
         pitch_path,
+        alignment_path,
     ):
         self.pitch = {}
         with safe_open(pitch_path, framework="pt", device="cpu") as f:
             for key in f.keys():
                 self.pitch[key] = f.get_tensor(key)
+        self.alignment = {}
+        if osp.isfile(alignment_path):
+            with safe_open(alignment_path, framework="pt", device="cpu") as f:
+                for key in f.keys():
+                    self.alignment[key] = f.get_tensor(key)
         self.data_list = []
         sentences = []
         for line in data_list:
@@ -246,6 +252,11 @@ class FilePathDataset(torch.utils.data.Dataset):
         pitch = None
         if path in self.pitch:
             pitch = torch.nan_to_num(self.pitch[path].detach().clone())
+        alignment = None
+        if path in self.alignment:
+            alignment = self.alignment[path]
+            # alignment = torch.nn.functional.interpolate(alignment, scale_factor=2, mode="nearest")
+            alignment = alignment.detach()
         sentence_embedding = torch.from_numpy(
             sbert.encode([self.sentences[idx]], show_progress_bar=False)
         ).float()
@@ -263,6 +274,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             sentence_embedding,
             voiced_tensor,
             align_mel,
+            alignment,
         )
 
     def _load_tensor(self, data):
@@ -360,6 +372,7 @@ class Collater(object):
         sentence_embeddings = torch.zeros(batch_size, 384).float()
         voiced = torch.zeros((batch_size, max_text_length)).float()
         align_mels = torch.zeros((batch_size, 80, max_mel_length)).float()
+        alignments = torch.zeros((batch_size, max_text_length, max_mel_length // 2))
 
         for bid, (
             label,
@@ -374,6 +387,7 @@ class Collater(object):
             sentence,
             voiced_one,
             align_mel,
+            alignment,
         ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -396,6 +410,7 @@ class Collater(object):
             sentence_embeddings[bid] = sentence
             voiced[bid, :text_size] = voiced_one
             align_mels[bid, :, :mel_size] = align_mel
+            alignments[bid, :text_size, : mel_size // 2] = alignment
 
         result = (
             waves,
@@ -411,6 +426,7 @@ class Collater(object):
             sentence_embeddings,
             voiced,
             align_mels,
+            alignments,
         )
         return result
 
