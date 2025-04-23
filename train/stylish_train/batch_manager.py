@@ -224,6 +224,6 @@ class BatchManager:
             + (train.manifest.current_epoch - 1) * train.manifest.steps_per_epoch
         )
         step_limit = train.stage.max_epoch * train.manifest.steps_per_epoch
-        train.stage.optimizer.scheduler(step, step_limit)
+        train.stage.optimizer.scheduler(step, step_limit, train.manifest.stage)
         train.stage.optimizer.step_discriminator_schedulers()
         return result
