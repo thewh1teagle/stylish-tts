@@ -169,7 +169,60 @@ def teytaut_align(mels, text, mel_length, text_length, prediction):
     return duration
 
 
+from torch.nn import functional as F
+
+
 def soft_alignment(pred, phonemes):
+    """
+    Args:
+        pred (b t k): Predictions of k (+ blank) tokens at time frame t
+        phonemes (b p): Target sequence of phonemes
+        mask (b p): Mask for target sequence
+    Returns:
+        (b t p): Phoneme predictions for each time frame t
+    """
+    # mask = rearrange(mask, "b p -> b 1 p")
+    # Convert to <blank>, <phoneme>, <blank> ...
+    # blank_id = pred.shape[2] - 1
+    # blanks = torch.full_like(phonemes, blank_id)
+    # ph_blank = rearrange([phonemes, blanks], "n b p -> b (p n)")
+    # ph_blank = F.pad(ph_blank, (0, 1), value=blank_id)
+    # ph_blank = rearrange(ph_blank, "b p -> b 1 p")
+    ph_blank = rearrange(phonemes, "b p -> b 1 p")
+    pred = pred.softmax(dim=2)
+    pred = pred[:, :, :-1]
+    pred = F.normalize(input=pred, p=1, dim=2)
+    probability = torch.take_along_dim(input=pred, indices=ph_blank, dim=2)
+
+    base_case = torch.zeros_like(ph_blank, dtype=pred.dtype).to(pred.device)
+    base_case[:, :, 0] = 1
+    result = [base_case]
+    prev = base_case
+
+    # Now everything should be (b t p)
+    for i in range(1, probability.shape[1]):
+        p0 = prev
+        p1 = F.pad(prev[:, :, :-1], (1, 0), value=0)
+        # p2 = F.pad(prev[:, :, :-2], (2, 0), value=0)
+        # p2_mask = torch.not_equal(ph_blank, blank_id)
+        prob = probability[:, i, :]
+        prob = rearrange(prob, "b p -> b 1 p")
+        # prev = (p0 + p1 + p2 * p2_mask) * prob
+        prev = (p0 + p1) * prob
+        prev = F.normalize(input=prev, p=1, dim=2)
+        result.append(prev)
+    result = torch.cat(result, dim=1)
+    # unblank_indices = torch.arange(
+    #     0, result.shape[2], 2, dtype=int, device=result.device
+    # )
+    # result = torch.index_select(input=result, dim=2, index=unblank_indices)
+    # result = F.normalize(input=result, p=1, dim=2)
+    result = (result + 1e-12).log()
+    # result = result * ~mask
+    return result
+
+
+def soft_alignment_bad(pred, phonemes):
     """
     Args:
         pred (b t k): Predictions of k (+ blank) tokens at time frame t
@@ -211,6 +264,7 @@ def soft_alignment(pred, phonemes):
         prob = rearrange(prob, "b p -> b 1 p")
         # prev = (p0 + p1 + p2 * p2_mask) * prob
         prev = torch.logaddexp(p0, p1) + prob
+        prev = prev.log_softmax(dim=2)
         # prev = torch.nn.functional.normalize(input=prev, p=1, dim=2)
         result.append(prev)
     result = torch.cat(result, dim=1)
