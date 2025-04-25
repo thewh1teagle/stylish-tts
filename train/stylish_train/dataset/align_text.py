@@ -188,8 +188,10 @@ def soft_alignment(pred, phonemes):
     ph_blank = rearrange(phonemes, "b p -> b 1 p")
     # pred = pred.softmax(dim=2)
     pred = pred[:, :, :-1]
-    # pred = torch.nn.functional.normalize(input=pred, p=1, dim=2)
-    pred = pred.log_softmax(dim=2)
+    pred = pred.exp()
+    pred = torch.nn.functional.normalize(input=pred, p=1, dim=2)
+    pred = pred.log()
+    # pred = pred.log_softmax(dim=2)
     probability = torch.take_along_dim(input=pred, indices=ph_blank, dim=2)
 
     base_case = torch.full_like(ph_blank, fill_value=-math.inf, dtype=pred.dtype).to(
