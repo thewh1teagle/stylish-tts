@@ -202,7 +202,7 @@ def soft_alignment(pred, phonemes):
     # Now everything should be (b t p)
     for i in range(1, probability.shape[1]):
         p0 = prev
-        p1 = torch.nn.functional.pad(prev[:, :, :-1], (1, 0), value=0)
+        p1 = torch.nn.functional.pad(prev[:, :, :-1], (1, 0), value=-math.inf)
         # p2 = F.pad(prev[:, :, :-2], (2, 0), value=0)
         # p2_mask = torch.not_equal(ph_blank, blank_id)
         prob = probability[:, i, :]
