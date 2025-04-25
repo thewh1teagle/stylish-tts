@@ -83,8 +83,12 @@ class MultiOptimizer:
         else:
             _ = [self.optimizers[key].zero_grad() for key in self.keys]
 
-    def scheduler(self, step: int, step_limit: int):
+    def scheduler(self, step: int, step_limit: int, stage: str):
         logical_step = step * logical_step_limit // step_limit
+        plateau = 0.9
+        if stage == "pre_acoustic":
+            plateau = 0.5
+        logical_step = min(logical_step, logical_step_limit * plateau)
         for key in self.keys:
             if key not in discriminators:
                 self.schedulers[key].scheduler.last_epoch = logical_step
