@@ -1,10 +1,44 @@
+import random
 import torch
+from torch.nn import functional as F
 from einops import rearrange
 
 from batch_context import BatchContext
 from loss_log import build_loss_log
 from losses import compute_duration_ce_loss
 from utils import length_to_mask
+
+
+@torch.no_grad()
+def validate_text_encoder(batch, train):
+    log = build_loss_log(train)
+
+    submask = torch.ones(
+        [batch.mel.shape[0], batch.mel.shape[2]], dtype=bool, device=batch.mel.device
+    )
+    for i in range(batch.mel.shape[2] // 100 + 1):
+        substart = random.randrange(batch.mel.shape[2])
+        subend = min(substart + 32, batch.mel.shape[2]) + 1
+        # subend = random.randrange(substart + 4, min(substart + 16, batch.mel.shape[2])) + 1
+        submask[:, substart:subend] = False
+    submask = submask.unsqueeze(1)
+    masked_mel = batch.mel * submask
+    corrupted = train.model.text_mel_generator(masked_mel)
+    corrupted = masked_mel + corrupted * ~submask
+    text_spread = batch.text.unsqueeze(1).float() @ batch.alignment
+    text_spread = F.interpolate(text_spread, scale_factor=2, mode="nearest-exact")
+    text_spread = text_spread.squeeze(1).int()
+    embedding = train.model.text_encoder(text_spread)
+    embedding = rearrange(embedding, "b t c -> b c t")
+    prediction = train.model.text_mel_classifier(corrupted.detach(), embedding)
+
+    log.add_loss("text_gen", F.l1_loss(corrupted * ~submask, batch.mel * ~submask))
+    disc_logits = prediction.squeeze(2)
+    disc_labels = (~submask).float()
+    disc_loss = F.binary_cross_entropy_with_logits(disc_logits, disc_labels)
+    log.add_loss("text_disc", disc_loss)
+
+    return log.detach(), None, None, None
 
 
 @torch.no_grad()

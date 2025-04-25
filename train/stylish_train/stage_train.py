@@ -1,4 +1,5 @@
 import math
+import random
 from typing import Optional, Tuple
 import torch
 from torch.nn import functional as F
@@ -7,6 +8,48 @@ from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
 from losses import magphase_loss, compute_duration_ce_loss, freev_loss
 from utils import length_to_mask
+
+
+def train_text_encoder(
+    batch, model, train, probing
+) -> Tuple[LossLog, Optional[torch.Tensor]]:
+    log = build_loss_log(train)
+
+    submask = torch.ones(
+        [batch.mel.shape[0], batch.mel.shape[2]], dtype=bool, device=batch.mel.device
+    )
+    for i in range(batch.mel.shape[2] // 100 + 1):
+        substart = random.randrange(batch.mel.shape[2])
+        subend = min(substart + 32, batch.mel.shape[2]) + 1
+        submask[:, substart:subend] = False
+    submask = submask.unsqueeze(1)
+    masked_mel = batch.mel * submask
+    corrupted = model.text_mel_generator(masked_mel)
+    corrupted = masked_mel + corrupted * ~submask
+    text_spread = batch.text.unsqueeze(1).float() @ batch.alignment
+    text_spread = F.interpolate(text_spread, scale_factor=2, mode="nearest-exact")
+    text_spread = text_spread.squeeze(1).int()
+    embedding = model.text_encoder(text_spread)
+    embedding = rearrange(embedding, "b t c -> b c t")
+    prediction_disc = model.text_mel_classifier(corrupted.detach(), embedding)
+
+    train.stage.optimizer.zero_grad()
+    prediction_gen = model.text_mel_classifier(corrupted, embedding.detach())
+    log.add_loss("mel_rec", F.l1_loss(corrupted * ~submask, batch.mel * ~submask))
+    gen_logits = prediction_gen.squeeze(2)
+    gen_labels = submask.float()
+    gen_loss = F.binary_cross_entropy_with_logits(gen_logits, gen_labels)
+    log.add_loss("text_gen", gen_loss)
+    train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
+    train.stage.optimizer.step("text_mel_generator")
+
+    train.stage.optimizer.zero_grad()
+    disc_logits = prediction_disc.squeeze(2)
+    disc_labels = (~submask).float()
+    disc_loss = F.binary_cross_entropy_with_logits(disc_logits, disc_labels)
+    log.add_loss("text_disc", disc_loss)
+    train.accelerator.backward(disc_loss * math.sqrt(batch.text.shape[0]))
+    return log.detach(), None
 
 
 def train_alignment(
@@ -82,13 +125,13 @@ def train_vocoder(
         log = build_loss_log(train)
         train.stft_loss(pred.audio.squeeze(1), gt, log)
         freev_loss(log, pred, gt, train)
-        log.add_loss(
-            "generator",
-            train.generator_loss(
-                gt.detach().unsqueeze(1).float(),
-                pred.audio,
-            ).mean(),
-        )
+        # log.add_loss(
+        #     "generator",
+        #     train.generator_loss(
+        #         gt.detach().unsqueeze(1).float(),
+        #         pred.audio,
+        #     ).mean(),
+        # )
     train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.mel.shape[0]))
     return log.detach(), pred.audio.detach()
 

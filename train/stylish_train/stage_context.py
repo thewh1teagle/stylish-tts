@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from loss_log import combine_logs
 from stage_train import (
+    train_text_encoder,
     train_alignment,
     train_vocoder,
     train_pre_acoustic,
@@ -22,6 +23,7 @@ from stage_train import (
 )
 
 from stage_validate import (
+    validate_text_encoder,
     validate_alignment,
     validate_vocoder,
     validate_acoustic,
@@ -57,6 +59,20 @@ class StageConfig:
 
 
 stages = {
+    "text_encoder": StageConfig(
+        next_stage="vocoder",
+        train_fn=train_text_encoder,
+        validate_fn=validate_text_encoder,
+        train_models=["text_encoder", "text_mel_classifier"],
+        eval_models=["text_mel_generator"],
+        adversarial=False,
+        inputs=[
+            "text",
+            "alignment",
+            "mel",
+            "mel_length",
+        ],
+    ),
     "alignment": StageConfig(
         next_stage=None,
         train_fn=train_alignment,
@@ -72,12 +88,12 @@ stages = {
         ],
     ),
     "vocoder": StageConfig(
-        next_stage=None,
+        next_stage="pre_acoustic",
         train_fn=train_vocoder,
         validate_fn=validate_vocoder,
         train_models=["acoustic_style_encoder", "generator"],
         eval_models=[],
-        adversarial=True,
+        adversarial=False,
         inputs=[
             "text",
             "text_length",

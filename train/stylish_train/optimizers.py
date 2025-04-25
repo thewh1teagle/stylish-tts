@@ -126,7 +126,7 @@ def calculate_lr(key, stage_name, *, train):
         or stage_name == "joint"
     )
     lr = train.config.optimizer.lr
-    if stage_name == "alignment":
+    if stage_name == "alignment" or stage_name == "text_encoder":
         lr /= 10
     # elif stage_name == "pre_acoustic":
     #     lr /= 5

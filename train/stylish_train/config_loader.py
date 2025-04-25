@@ -33,6 +33,10 @@ class TrainingPlanConfig(BaseModel):
     Training plan configuration that defines the number of epochs for different stages.
     """
 
+    text_encoder: int = Field(
+        default=10,
+        description="Number of epochs for pretraining the text encoder model.",
+    )
     alignment: int = Field(
         default=10,
         description="Number of epochs for pretraining the text alignment model.",
@@ -110,6 +114,8 @@ class LossWeightConfig(BaseModel):
     stft_reconstruction: float = Field(
         ..., description="Weight for STFT reconstruction loss"
     )
+    mel_rec: float = Field(..., description="Weight for text mel reconstruction")
+    text_gen: float = Field(..., description="Weight for text mel generator model")
 
 
 class OptimizerConfig(BaseModel):

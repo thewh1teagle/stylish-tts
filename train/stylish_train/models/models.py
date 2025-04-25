@@ -7,6 +7,8 @@ import safetensors.torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from reformer_pytorch import ReformerLM, Autopadder
+
 from config_loader import ModelConfig
 
 
@@ -20,7 +22,9 @@ from .discriminators.multi_stft import MultiScaleSTFTDiscriminator
 
 from .duration_predictor import DurationPredictor
 from .pitch_energy_predictor import PitchEnergyPredictor
-from .text_encoder import TextEncoder
+
+# from .text_encoder import TextEncoder
+from .text_encoder import TextMelGenerator, TextMelClassifier, TextEncoder
 from .style_encoder import StyleEncoder
 from .decoder.mel_decoder import MelDecoder
 from .decoder.freev import FreevGenerator
@@ -54,11 +58,40 @@ def build_model(model_config: ModelConfig):
     decoder = MelDecoder()
     generator = FreevGenerator()
 
+    # text_encoder = TextEncoder(
+    #     channels=model_config.inter_dim,
+    #     kernel_size=model_config.text_encoder.kernel_size,
+    #     depth=model_config.text_encoder.n_layer,
+    #     n_symbols=model_config.text_encoder.n_token,
+    # )
+
+    text_mel_generator = TextMelGenerator(
+        dim_in=model_config.n_mels,
+        hidden_dim=512,
+        num_heads=16,
+        num_layers=10,
+    )
+
+    # text_encoder = Autopadder(ReformerLM(
+    #     num_tokens = model_config.text_encoder.n_token,
+    #     # emb_dim = 128,
+    #     dim = model_config.inter_dim,
+    #     dim_head = 64,
+    #     heads = 16,
+    #     depth = 10,
+    #     ff_mult = 4,
+    #     max_seq_len = 2304,
+    #     return_embeddings = True
+    # ))
     text_encoder = TextEncoder(
-        channels=model_config.inter_dim,
-        kernel_size=model_config.text_encoder.kernel_size,
-        depth=model_config.text_encoder.n_layer,
-        n_symbols=model_config.text_encoder.n_token,
+        num_tokens=model_config.text_encoder.n_token,
+        inter_dim=model_config.inter_dim,
+        num_heads=8,
+        num_layers=6,
+    )
+
+    text_mel_classifier = TextMelClassifier(
+        inter_dim=model_config.inter_dim, n_mels=model_config.n_mels
     )
 
     duration_predictor = DurationPredictor(
@@ -105,6 +138,8 @@ def build_model(model_config: ModelConfig):
         decoder=decoder,
         generator=generator,
         text_encoder=text_encoder,
+        text_mel_generator=text_mel_generator,
+        text_mel_classifier=text_mel_classifier,
         # TODO Make this a config option
         # TODO Make the sbert model a config option
         textual_prosody_encoder=nn.Linear(

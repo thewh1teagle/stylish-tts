@@ -110,7 +110,7 @@ class MelDecoder(torch.nn.Module):
         )
 
     def forward(self, asr, F0_curve, N_curve, s, pretrain=False, probing=False):
-        asr = torch.nn.functional.interpolate(asr, scale_factor=2, mode="nearest")
+        # asr = torch.nn.functional.interpolate(asr, scale_factor=2, mode="nearest")
         F0 = self.F0_conv(F0_curve.unsqueeze(1))
         N = self.N_conv(N_curve.unsqueeze(1))
 
