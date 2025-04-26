@@ -1,7 +1,7 @@
 import torch
 import torchaudio
 from nnAudio import features
-from ..norm2d import NormConv2d
+from .norm2d import NormConv2d
 from einops import rearrange
 from munch import Munch
 
