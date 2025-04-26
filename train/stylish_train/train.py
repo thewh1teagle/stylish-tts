@@ -9,6 +9,7 @@ from config_loader import load_config_yaml, load_model_config_yaml
 from train_context import TrainContext
 import hashlib
 import numpy as np
+from safetensors.torch import save_file
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
@@ -266,6 +267,8 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
                 logger_manager.reset_file_handler(train_logger, train.out_dir)
         else:
             done = True
+    if train.manifest.stage == "alignment":
+        save_alignment(train)
     train.accelerator.end_training()
 
 
@@ -372,6 +375,12 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
         progress_bar.close() if progress_bar is not None else None
     train.stage.validate(train)
     save_checkpoint(train, prefix="checkpoint_final", long=False)
+
+
+def save_alignment(train: TrainContext) -> None:
+    path = osp.join(train.base_output_dir, "alignment_model.safetensors")
+    logger.info(f"Saving alignment to {path}")
+    save_file(train.model.text_aligner.state_dict(), path)
 
 
 def save_checkpoint(
