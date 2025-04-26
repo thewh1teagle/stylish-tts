@@ -328,7 +328,10 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                     combine_logs(logs).broadcast(train.manifest, train.stage)
                     progress_bar.display() if progress_bar is not None else None
                     logs = []
-            num = train.manifest.current_total_step
+            num = (
+                train.manifest.current_step
+                + (train.manifest.current_epoch - 1) * train.manifest.steps_per_epoch
+            )
             val_step = train.config.training.val_interval
             save_step = train.config.training.save_interval
             do_val = num % val_step == 0
