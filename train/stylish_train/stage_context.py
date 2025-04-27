@@ -60,7 +60,7 @@ class StageConfig:
 
 stages = {
     "text_encoder": StageConfig(
-        next_stage="vocoder",
+        next_stage="pre_acoustic",
         train_fn=train_text_encoder,
         validate_fn=validate_text_encoder,
         train_models=["text_encoder", "text_mel_classifier"],

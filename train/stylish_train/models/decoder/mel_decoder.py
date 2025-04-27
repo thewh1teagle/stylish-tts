@@ -10,7 +10,7 @@ class MelDecoder(torch.nn.Module):
         dim_in=512,
         style_dim=128,
         residual_dim=64,
-        dim_out=80,
+        dim_out=512,
         intermediate_dim=1536,
         num_layers=8,
     ):

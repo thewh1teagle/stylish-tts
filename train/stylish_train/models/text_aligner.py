@@ -10,7 +10,6 @@ import torch
 from torch import nn
 from torch.nn import TransformerEncoder
 import torch.nn.functional as F
-from .text_aligner_layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
 from einops import rearrange
 
 

@@ -107,13 +107,14 @@ LRELU_SLOPE = 0.1
 
 config_h = Munch(
     {
-        "ASP_channel": 1025,
+        "ASP_channel": 512,
         "ASP_input_conv_kernel_size": 7,
+        "ASP_output_conv_kernel_size": 7,
         "PSP_channel": 512,
         "PSP_input_conv_kernel_size": 7,
         "PSP_output_R_conv_kernel_size": 7,
         "PSP_output_I_conv_kernel_size": 7,
-        "num_mels": 80,
+        "num_mels": 512,
         "n_fft": 2048,
         "hop_size": 300,
         "win_size": 1200,
@@ -153,12 +154,28 @@ class FreevGenerator(torch.nn.Module):
             # padding=get_padding(h.ASP_input_conv_kernel_size, 1),
         )
 
+        self.ASP_input_conv = Conv1d(
+            h.num_mels,
+            h.ASP_channel,
+            h.ASP_input_conv_kernel_size,
+            1,
+            padding=get_padding(h.ASP_input_conv_kernel_size, 1),
+        )
+
         self.PSP_input_conv = Conv1d(
             h.num_mels,
             h.PSP_channel,
             h.PSP_input_conv_kernel_size,
             1,
             padding=get_padding(h.PSP_input_conv_kernel_size, 1),
+        )
+
+        self.ASP_output_conv = Conv1d(
+            h.ASP_channel,
+            h.n_fft // 2 + 1,
+            h.ASP_output_conv_kernel_size,
+            1,
+            padding=get_padding(h.ASP_output_conv_kernel_size, 1),
         )
 
         self.PSP_output_R_conv = Conv1d(
@@ -176,6 +193,7 @@ class FreevGenerator(torch.nn.Module):
             padding=get_padding(h.PSP_output_I_conv_kernel_size, 1),
         )
 
+        self.amp_norm = nn.LayerNorm(self.dim, eps=1e-6)
         self.phase_norm = nn.LayerNorm(self.dim, eps=1e-6)
         self.phase_convnext = nn.ModuleList(
             [
@@ -198,21 +216,22 @@ class FreevGenerator(torch.nn.Module):
                     style_dim=h.style_dim,
                     dilation=[1, 3, 5],
                 )
-                for _ in range(1)
+                for _ in range(self.num_layers)
             ]
         )
+        self.amp_final_layer_norm = nn.LayerNorm(self.dim, eps=1e-6)
         self.phase_final_layer_norm = nn.LayerNorm(self.dim, eps=1e-6)
         self.apply(self._init_weights)
-        self.inverse_mel = InverseMel(
-            n_fft=self.h.n_fft,
-            num_mels=self.h.num_mels,
-            sampling_rate=self.h.sampling_rate,
-            hop_size=self.h.hop_size,
-            win_size=self.h.win_size,
-            fmin=self.h.fmin,
-            fmax=self.h.fmax,
-            # device=self.device
-        )
+        # self.inverse_mel = InverseMel(
+        #     n_fft=self.h.n_fft,
+        #     num_mels=self.h.num_mels,
+        #     sampling_rate=self.h.sampling_rate,
+        #     hop_size=self.h.hop_size,
+        #     win_size=self.h.win_size,
+        #     fmin=self.h.fmin,
+        #     fmax=self.h.fmax,
+        #     # device=self.device
+        # )
 
     def _init_weights(self, m):
         if isinstance(m, nn.Conv1d):  # (nn.Conv1d, nn.Linear)):
@@ -224,11 +243,17 @@ class FreevGenerator(torch.nn.Module):
         har_spec = har_spec.transpose(1, 2)
         har_spec = self.ASP_harmonic_conv(har_spec)
         har_spec = har_spec.transpose(1, 2)
-        inv_amp = self.inverse_mel.execute(mel).abs().clamp_min(1e-5)
-        logamp = inv_amp.log()
+        # inv_amp = self.inverse_mel.execute(mel).abs().clamp_min(1e-5)
+        # logamp = inv_amp.log()
+
+        logamp = self.ASP_input_conv(mel)
+        logamp = self.amp_norm(logamp.transpose(1, 2))
+        logamp = logamp.transpose(1, 2)
         for conv_block in self.amp_convnext:
             logamp = conv_block(logamp, style, har_spec)
-        logamp = F.pad(logamp, pad=(0, 1), mode="replicate")
+        logamp = self.amp_final_layer_norm(logamp.transpose(1, 2))
+        logamp = logamp.transpose(1, 2)
+        logamp = self.ASP_output_conv(logamp)
 
         pha = self.PSP_input_conv(mel)
         pha = self.phase_norm(pha.transpose(1, 2))
@@ -241,6 +266,8 @@ class FreevGenerator(torch.nn.Module):
         I = self.PSP_output_I_conv(pha)
 
         pha = torch.atan2(I, R)
+
+        logamp = F.pad(logamp, pad=(0, 1), mode="replicate")
         pha = F.pad(pha, pad=(0, 1), mode="replicate")
         # rea is the real part of the complex number
         rea = torch.exp(logamp) * torch.cos(pha)
