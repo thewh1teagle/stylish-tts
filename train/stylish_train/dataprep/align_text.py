@@ -122,8 +122,10 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
         text_lengths = torch.zeros([1], dtype=int, device=device)
         text_lengths[0] = text.shape[1]
 
-        # alignment = torch_align(mels, text, mel_lengths, text_lengths, prediction, model_config)
-        alignment = teytaut_align(mels, text, mel_lengths, text_lengths, prediction)
+        alignment = torch_align(
+            mels, text, mel_lengths, text_lengths, prediction, model_config
+        )
+        # alignment = teytaut_align(mels, text, mel_lengths, text_lengths, prediction)
         alignment_map[name] = alignment
 
         # scores_map[name] = scores.exp().mean().item()

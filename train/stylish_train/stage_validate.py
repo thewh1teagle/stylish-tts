@@ -1,5 +1,6 @@
 import random
 import torch
+import torchaudio
 from torch.nn import functional as F
 from einops import rearrange
 
@@ -62,7 +63,22 @@ def validate_alignment(batch, train):
     loss_ctc = train.align_loss(
         ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="eval"
     )
-    log.add_loss("align_ctc", loss_ctc)
+    blank = train.model_config.text_encoder.n_token
+    logprobs = rearrange(ctc, "t b k -> b t k")
+    confidence_total = 0.0
+    confidence_count = 0
+    for i in range(mel.shape[0]):
+        _, scores = torchaudio.functional.forced_align(
+            log_probs=logprobs[i].unsqueeze(0).contiguous(),
+            targets=batch.text[i, : batch.text_length[i].item()].unsqueeze(0),
+            input_lengths=batch.mel_length[i].unsqueeze(0) // 2,
+            target_lengths=batch.text_length[i].unsqueeze(0),
+            blank=blank,
+        )
+        confidence_total += scores.exp().sum()
+        confidence_count += scores.shape[-1]
+    log.add_loss("confidence", confidence_total / confidence_count)
+    log.add_loss("align_loss", loss_ctc)
     # log.add_loss(
     #     "align_rec", torch.nn.functional.l1_loss(reconstruction, batch.align_mel)
     # )

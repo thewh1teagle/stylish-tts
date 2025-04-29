@@ -79,7 +79,7 @@ class LossLog:
     def backwards_loss(self):
         total = 0
         for key, value in self.metrics.items():
-            if key == "generator":
+            if key == "generator" or key == "align_loss":
                 loss = value
             else:
                 loss = value / value.detach()
