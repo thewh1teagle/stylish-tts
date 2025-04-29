@@ -87,7 +87,7 @@ class MultiOptimizer:
         logical_step = step * logical_step_limit // step_limit
         plateau = 0.9
         if stage == "pre_acoustic":
-            plateau = 0.5
+            plateau = 0.7
         logical_step = min(logical_step, logical_step_limit * plateau)
         for key in self.keys:
             if key not in discriminators:

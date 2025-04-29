@@ -2,6 +2,7 @@ import math
 import torch
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
+from torchaudio.models import Conformer
 
 
 class LearnedDownSample(torch.nn.Module):
@@ -116,35 +117,67 @@ class ResBlk(torch.nn.Module):
         return x / math.sqrt(2)  # unit variance
 
 
+# class StyleEncoder(torch.nn.Module):
+#     def __init__(
+#         self, dim_in=48, style_dim=48, max_conv_dim=384, skip_downsamples=False
+#     ):
+#         super().__init__()
+#         blocks = []
+#         blocks += [spectral_norm(torch.nn.Conv2d(1, dim_in, 3, 1, 1))]
+#
+#         dim_out = 0
+#         repeat_num = 4
+#         for i in range(repeat_num):
+#             dim_out = min(dim_in * 2, max_conv_dim)
+#             down = "half"
+#             if i == repeat_num - 1 and skip_downsamples:
+#                 down = "none"
+#             blocks += [ResBlk(dim_in, dim_out, downsample=down)]
+#             dim_in = dim_out
+#
+#         blocks += [torch.nn.LeakyReLU(0.2)]
+#         blocks += [spectral_norm(torch.nn.Conv2d(dim_out, dim_out, 5, 1, 0))]
+#         blocks += [torch.nn.AdaptiveAvgPool2d(1)]
+#         blocks += [torch.nn.LeakyReLU(0.2)]
+#         self.shared = torch.nn.Sequential(*blocks)
+#
+#         self.unshared = torch.nn.Linear(dim_out, style_dim)
+#
+#     def forward(self, x):
+#         h = self.shared(x)
+#         h = h.view(h.size(0), -1)
+#         s = self.unshared(h)
+#
+#         return s
+
+
 class StyleEncoder(torch.nn.Module):
-    def __init__(
-        self, dim_in=48, style_dim=48, max_conv_dim=384, skip_downsamples=False
-    ):
+    def __init__(self, *, mel_dim, style_dim, hidden_dim, num_heads, num_layers):
         super().__init__()
-        blocks = []
-        blocks += [spectral_norm(torch.nn.Conv2d(1, dim_in, 3, 1, 1))]
+        self.mel_proj = torch.nn.Conv1d(mel_dim, hidden_dim, kernel_size=3, padding=1)
+        self.conformer_pre = Conformer(
+            input_dim=hidden_dim,
+            num_heads=num_heads,
+            ffn_dim=hidden_dim * 2,
+            num_layers=1,
+            depthwise_conv_kernel_size=31,
+            use_group_norm=True,
+        )
+        self.conformer_body = Conformer(
+            input_dim=hidden_dim,
+            num_heads=num_heads,
+            ffn_dim=hidden_dim * 2,
+            num_layers=num_layers - 1,
+            depthwise_conv_kernel_size=15,
+            use_group_norm=True,
+        )
+        self.out = torch.nn.Linear(hidden_dim, style_dim)
 
-        dim_out = 0
-        repeat_num = 4
-        for i in range(repeat_num):
-            dim_out = min(dim_in * 2, max_conv_dim)
-            down = "half"
-            if i == repeat_num - 1 and skip_downsamples:
-                down = "none"
-            blocks += [ResBlk(dim_in, dim_out, downsample=down)]
-            dim_in = dim_out
-
-        blocks += [torch.nn.LeakyReLU(0.2)]
-        blocks += [spectral_norm(torch.nn.Conv2d(dim_out, dim_out, 5, 1, 0))]
-        blocks += [torch.nn.AdaptiveAvgPool2d(1)]
-        blocks += [torch.nn.LeakyReLU(0.2)]
-        self.shared = torch.nn.Sequential(*blocks)
-
-        self.unshared = torch.nn.Linear(dim_out, style_dim)
-
-    def forward(self, x):
-        h = self.shared(x)
-        h = h.view(h.size(0), -1)
-        s = self.unshared(h)
-
-        return s
+    def forward(self, mel, mel_lengths):
+        x = self.mel_proj(mel)
+        x = x.transpose(-1, -2)
+        x, output_lengths = self.conformer_pre(x, mel_lengths)
+        x, output_lengths = self.conformer_body(x, mel_lengths)
+        x = x.transpose(-1, -2)
+        x = self.out(x.mean(axis=-1))
+        return x
