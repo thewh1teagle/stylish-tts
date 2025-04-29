@@ -1,4 +1,4 @@
-from monotonic_align.core1alt import maximum_path_c1alt
+from monotonic_align.core import maximum_path_c
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -23,7 +23,7 @@ def maximum_path(neg_cent, mask):
     t_s_max = np.ascontiguousarray(
         mask.sum(2)[:, 0].data.cpu().numpy().astype(np.int32)
     )
-    maximum_path_c1alt(path, neg_cent, t_t_max, t_s_max)
+    maximum_path_c(path, neg_cent, t_t_max, t_s_max)
     return torch.from_numpy(path).to(device=device, dtype=dtype)
 
 

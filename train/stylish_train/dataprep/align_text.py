@@ -65,6 +65,7 @@ def main(config_path, model_config_path, out, model):
     )
     aligner = aligner.to(device)
     aligner.load_state_dict(aligner_dict)
+    aligner = aligner.eval()
 
     text_cleaner = TextCleaner(model_config.symbol)
 
@@ -121,7 +122,7 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
         text_lengths = torch.zeros([1], dtype=int, device=device)
         text_lengths[0] = text.shape[1]
 
-        # alignment = torch_align(mels, text, mel_lengths, text_lengths, prediction)
+        # alignment = torch_align(mels, text, mel_lengths, text_lengths, prediction, model_config)
         alignment = teytaut_align(mels, text, mel_lengths, text_lengths, prediction)
         alignment_map[name] = alignment
 
@@ -132,7 +133,7 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
     return alignment_map
 
 
-def torch_align(mels, text, mel_length, text_length):
+def torch_align(mels, text, mel_length, text_length, prediction, model_config):
     blank = model_config.text_encoder.n_token
     alignment, scores = torchaudio.functional.forced_align(
         log_probs=prediction,
@@ -162,7 +163,8 @@ def torch_align(mels, text, mel_length, text_length):
 
 
 def teytaut_align(mels, text, mel_length, text_length, prediction):
-    soft = soft_alignment(prediction, text)
+    # soft = soft_alignment(prediction, text)
+    soft = soft_alignment_bad(prediction, text)
     soft = rearrange(soft, "b t k -> b k t")
     mask_ST = mask_from_lens(soft, text_length, mel_length)
     duration = maximum_path(soft, mask_ST)
