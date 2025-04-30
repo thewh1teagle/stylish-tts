@@ -8,6 +8,7 @@ win_length: 1200
 hop_length: 300
 style_dim: 128
 inter_dim: 512
+discriminators: ["msbd", "mstftd"]
 
 text_aligner:
   hidden_dim: 256
@@ -42,13 +43,16 @@ plbert:
 #   gen_istft_hop_size: 5
 #   depth: 2
 
+# decoder:
+#   type: 'vocos'
+#   intermediate_dim: 1536
+#   num_layers: 8
+#   gen_istft_n_fft: 2048
+#   gen_istft_win_length: 1200
+#   gen_istft_hop_length: 300
+
 decoder:
-  type: 'vocos'
-  intermediate_dim: 1536
-  num_layers: 8
-  gen_istft_n_fft: 2048
-  gen_istft_win_length: 1200
-  gen_istft_hop_length: 300
+  type: 'freev'
 
 text_encoder:
   kernel_size: 5
