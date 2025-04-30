@@ -33,9 +33,17 @@ class TrainingPlanConfig(BaseModel):
     Training plan configuration that defines the number of epochs for different stages.
     """
 
+    text_encoder: int = Field(
+        default=10,
+        description="Number of epochs for pretraining the text encoder model.",
+    )
     alignment: int = Field(
         default=10,
         description="Number of epochs for pretraining the text alignment model.",
+    )
+    vocoder: int = Field(
+        default=10,
+        description="Number of epochs for pretraining the vocoder generator.",
     )
     pre_acoustic: int = Field(
         default=10,
@@ -75,6 +83,10 @@ class DatasetConfig(BaseModel):
         ...,
         description="Path to the precomputed pitch safetensor file for your segments.",
     )
+    alignment_path: str = Field(
+        ...,
+        description="Path to the precomputed alignment safetensor file for your segments.",
+    )
 
 
 class LossWeightConfig(BaseModel):
@@ -102,6 +114,8 @@ class LossWeightConfig(BaseModel):
     stft_reconstruction: float = Field(
         ..., description="Weight for STFT reconstruction loss"
     )
+    mel_rec: float = Field(..., description="Weight for text mel reconstruction")
+    text_gen: float = Field(..., description="Weight for text mel generator model")
 
 
 class OptimizerConfig(BaseModel):
@@ -426,6 +440,9 @@ class ModelConfig(BaseModel):
     style_dim: int = Field(..., description="Dimension of the style vector.")
     inter_dim: int = Field(
         ..., description="Dimension of the embedding used between models."
+    )
+    discriminators: List[str] = Field(
+        ..., description="List of discriminators to use (can be mpd, mrd, msbd, mstftd)"
     )
 
     text_aligner: TextAlignerConfig = Field(

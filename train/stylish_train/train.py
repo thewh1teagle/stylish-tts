@@ -9,6 +9,7 @@ from config_loader import load_config_yaml, load_model_config_yaml
 from train_context import TrainContext
 import hashlib
 import numpy as np
+from safetensors.torch import save_file
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
@@ -111,8 +112,11 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
     if not osp.exists(train.config.dataset.val_data):
         exit(f"Validation data not found at {train.config.dataset.val_data}")
     if not osp.exists(train.config.dataset.wav_path):
-        exit(f"Root path not found at {train.config.dataset.wav_path}")
-
+        exit(f"Root wav path not found at {train.config.dataset.wav_path}")
+    if not osp.exists(train.config.dataset.pitch_path):
+        exit(f"Pitch path not found at {train.config.dataset.pitch_path}")
+    if not osp.exists(train.config.dataset.alignment_path) and stage != "alignment":
+        exit(f"Alignment path not found at {train.config.dataset.alignment_path}")
     val_list = get_data_path_list(train.config.dataset.val_data)
     # force somewhat determanistic selection of validation samples
     hashed_data = []
@@ -137,6 +141,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         text_cleaner=train.text_cleaner,
         model_config=train.model_config,
         pitch_path=train.config.dataset.pitch_path,
+        alignment_path=train.config.dataset.alignment_path,
     )
     val_time_bins = val_dataset.time_bins()
     train.val_dataloader = build_dataloader(
@@ -174,12 +179,14 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         mrd=train.model.mrd,
         msbd=train.model.msbd,
         mstftd=train.model.mstftd,
+        discriminators=train.model_config.discriminators,
     ).to(train.config.training.device)
     train.discriminator_loss = DiscriminatorLoss(
         mpd=train.model.mpd,
         mrd=train.model.mrd,
         msbd=train.model.msbd,
         mstftd=train.model.mstftd,
+        discriminators=train.model_config.discriminators,
     ).to(train.config.training.device)
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,
@@ -260,6 +267,8 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
                 logger_manager.reset_file_handler(train_logger, train.out_dir)
         else:
             done = True
+    if train.manifest.stage == "alignment":
+        save_alignment(train)
     train.accelerator.end_training()
 
 
@@ -322,7 +331,10 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
                     combine_logs(logs).broadcast(train.manifest, train.stage)
                     progress_bar.display() if progress_bar is not None else None
                     logs = []
-            num = train.manifest.current_total_step
+            num = (
+                train.manifest.current_step
+                + (train.manifest.current_epoch - 1) * train.manifest.steps_per_epoch
+            )
             val_step = train.config.training.val_interval
             save_step = train.config.training.save_interval
             do_val = num % val_step == 0
@@ -336,6 +348,15 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
             progress_bar.set_postfix(postfix) if progress_bar is not None else None
             if do_val or do_save:
                 progress_bar.clear() if progress_bar is not None else None
+
+                # EXPERIMENTAL: DO THE UNTHINKABLE
+                if train.manifest.stage == "alignment":
+                    print("Training on the validation data like a boss.")
+                    for _, batch in enumerate(train.val_dataloader):
+                        train.batch_manager.train_iterate(
+                            batch, train, progress_bar=None
+                        )
+
                 train.stage.validate(train)
                 progress_bar.display() if progress_bar is not None else None
             if do_save:
@@ -345,6 +366,7 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
         if len(logs) > 0:
             combine_logs(logs).broadcast(train.manifest, train.stage)
             logs = []
+        train.align_loss.on_train_epoch_end(train)
         train.manifest.current_epoch += 1
         train.manifest.current_step = 0
         train.manifest.training_log.append(
@@ -353,6 +375,12 @@ def train_val_loop(train: TrainContext, should_fast_forward=False):
         progress_bar.close() if progress_bar is not None else None
     train.stage.validate(train)
     save_checkpoint(train, prefix="checkpoint_final", long=False)
+
+
+def save_alignment(train: TrainContext) -> None:
+    path = osp.join(train.base_output_dir, "alignment_model.safetensors")
+    logger.info(f"Saving alignment to {path}")
+    save_file(train.model.text_aligner.state_dict(), path)
 
 
 def save_checkpoint(

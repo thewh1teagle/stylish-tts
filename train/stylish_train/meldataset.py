@@ -3,6 +3,7 @@ import os.path as osp
 import numpy as np
 import soundfile as sf
 import librosa
+from librosa.filters import mel as librosa_mel_fn
 import tqdm
 
 import torch
@@ -19,6 +20,56 @@ logger.setLevel(logging.DEBUG)
 
 sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
 
+mel_window = {}
+
+
+def param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device):
+    return f"{sampling_rate}-{n_fft}-{num_mels}-{fmin}-{fmax}-{win_size}-{device}"
+
+
+def mel_spectrogram(
+    y,
+    n_fft,
+    num_mels,
+    sampling_rate,
+    hop_size,
+    win_size,
+    fmin,
+    fmax,
+    center=True,
+    in_dataset=False,
+):
+    global mel_window
+    # device = torch.device("cpu") if in_dataset else y.device
+    device = "cpu"
+    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
+    if ps in mel_window:
+        mel_basis, hann_window = mel_window[ps]
+        # print(mel_basis, hann_window)
+        # mel_basis, hann_window = mel_basis.to(y.device), hann_window.to(y.device)
+    else:
+        mel = librosa_mel_fn(
+            sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
+        )
+        mel_basis = torch.from_numpy(mel).float().to(device)
+        hann_window = torch.hann_window(win_size).to(device)
+        mel_window[ps] = (mel_basis.clone(), hann_window.clone())
+
+    spec = torch.stft(
+        y.to(device),
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window.to(device),
+        center=True,
+        return_complex=True,
+    )
+
+    spec = mel_basis.to(device) @ spec.abs()
+    # spec = spectral_normalize_torch(spec)
+
+    return spec  # [batch_size,n_fft/2+1,frames]
+
 
 class FilePathDataset(torch.utils.data.Dataset):
     def __init__(
@@ -29,11 +80,17 @@ class FilePathDataset(torch.utils.data.Dataset):
         text_cleaner,
         model_config,
         pitch_path,
+        alignment_path,
     ):
         self.pitch = {}
         with safe_open(pitch_path, framework="pt", device="cpu") as f:
             for key in f.keys():
                 self.pitch[key] = f.get_tensor(key)
+        self.alignment = {}
+        if osp.isfile(alignment_path):
+            with safe_open(alignment_path, framework="pt", device="cpu") as f:
+                for key in f.keys():
+                    self.alignment[key] = f.get_tensor(key)
         self.data_list = []
         sentences = []
         for line in data_list:
@@ -46,6 +103,15 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.text_cleaner = text_cleaner
 
         self.df = pd.DataFrame(self.data_list)
+        self.model_config = model_config
+
+        self.to_align_mel = torchaudio.transforms.MelSpectrogram(
+            n_mels=80,  # align seems to perform worse on higher n_mels
+            n_fft=model_config.n_fft,
+            win_length=model_config.win_length,
+            hop_length=model_config.hop_length,
+            sample_rate=model_config.sample_rate,
+        )
 
         self.to_mel = torchaudio.transforms.MelSpectrogram(
             n_mels=model_config.n_mels,
@@ -74,11 +140,26 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.sample_rate = model_config.sample_rate
         self.hop_length = model_config.hop_length
 
-    def preprocess(self, wave):
+    # def to_mel(self, wave_tensor):
+    #     return mel_spectrogram(
+    #         y=wave_tensor,
+    #         n_fft=self.model_config.n_fft,
+    #         num_mels=self.model_config.n_mels,
+    #         sampling_rate=self.model_config.sample_rate,
+    #         hop_size=self.model_config.hop_length,
+    #         win_size=self.model_config.win_length,
+    #         fmin=50,
+    #         fmax=550,
+    #     )
+
+    def preprocess(self, wave, align=False):
         mean, std = -4, 4
         # wave_tensor = torch.from_numpy(wave).float()
         wave_tensor = wave
-        mel_tensor = self.to_mel(wave_tensor)
+        if align:
+            mel_tensor = self.to_align_mel(wave_tensor)
+        else:
+            mel_tensor = self.to_mel(wave_tensor)
         mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
         return mel_tensor
 
@@ -135,13 +216,14 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         data = self.data_list[idx]
         path = data[0]
-        wave, text_tensor, speaker_id, mel_tensor, voiced_tensor = self._load_tensor(
-            data
+        wave, text_tensor, speaker_id, mel_tensor, voiced_tensor, align_mel = (
+            self._load_tensor(data)
         )
 
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
         acoustic_feature = acoustic_feature[:, : (length_feature - length_feature % 2)]
+        align_mel = align_mel[:, : (length_feature - length_feature % 2)]
 
         # get reference sample
         if self.multispeaker:
@@ -170,6 +252,11 @@ class FilePathDataset(torch.utils.data.Dataset):
         pitch = None
         if path in self.pitch:
             pitch = torch.nan_to_num(self.pitch[path].detach().clone())
+        alignment = None
+        if path in self.alignment:
+            alignment = self.alignment[path]
+            # alignment = torch.nn.functional.interpolate(alignment, scale_factor=2, mode="nearest")
+            alignment = alignment.detach()
         sentence_embedding = torch.from_numpy(
             sbert.encode([self.sentences[idx]], show_progress_bar=False)
         ).float()
@@ -186,6 +273,8 @@ class FilePathDataset(torch.utils.data.Dataset):
             pitch,
             sentence_embedding,
             voiced_tensor,
+            align_mel,
+            alignment,
         )
 
     def _load_tensor(self, data):
@@ -221,9 +310,10 @@ class FilePathDataset(torch.utils.data.Dataset):
         voiced.append(0)
         voiced = torch.tensor(voiced, dtype=torch.float32)
 
-        mel_tensor = self.preprocess(wave).squeeze()
+        mel_tensor = self.preprocess(wave, align=False).squeeze()
+        align_mel = self.preprocess(wave, align=True).squeeze()
 
-        return (wave, text, speaker_id, mel_tensor, voiced)
+        return (wave, text, speaker_id, mel_tensor, voiced, align_mel)
 
     def _load_data(self, data):
         max_mel_length = 192
@@ -281,6 +371,8 @@ class Collater(object):
         pitches = torch.zeros((batch_size, max_mel_length)).float()
         sentence_embeddings = torch.zeros(batch_size, 384).float()
         voiced = torch.zeros((batch_size, max_text_length)).float()
+        align_mels = torch.zeros((batch_size, 80, max_mel_length)).float()
+        alignments = torch.zeros((batch_size, max_text_length, max_mel_length // 2))
 
         for bid, (
             label,
@@ -294,6 +386,8 @@ class Collater(object):
             pitch,
             sentence,
             voiced_one,
+            align_mel,
+            alignment,
         ) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -315,6 +409,8 @@ class Collater(object):
                 pitches[bid] = pitch
             sentence_embeddings[bid] = sentence
             voiced[bid, :text_size] = voiced_one
+            align_mels[bid, :, :mel_size] = align_mel
+            alignments[bid, :text_size, : mel_size // 2] = alignment
 
         result = (
             waves,
@@ -329,6 +425,8 @@ class Collater(object):
             pitches,
             sentence_embeddings,
             voiced,
+            align_mels,
+            alignments,
         )
         return result
 

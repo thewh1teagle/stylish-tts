@@ -11,7 +11,9 @@ import matplotlib.pyplot as plt
 
 from loss_log import combine_logs
 from stage_train import (
+    train_text_encoder,
     train_alignment,
+    train_vocoder,
     train_pre_acoustic,
     train_acoustic,
     train_pre_textual,
@@ -21,7 +23,9 @@ from stage_train import (
 )
 
 from stage_validate import (
+    validate_text_encoder,
     validate_alignment,
+    validate_vocoder,
     validate_acoustic,
     validate_textual,
     validate_sbert,
@@ -32,9 +36,6 @@ from utils import (
     plot_spectrogram_to_figure,
     plot_mel_signed_difference_to_figure,
 )
-
-discriminators = ["mrd", "msbd", "mstftd"]
-# discriminators = ["mpd", "mrd", "msbd", "mstftd"]
 
 
 class StageConfig:
@@ -58,8 +59,22 @@ class StageConfig:
 
 
 stages = {
-    "alignment": StageConfig(
+    "text_encoder": StageConfig(
         next_stage="pre_acoustic",
+        train_fn=train_text_encoder,
+        validate_fn=validate_text_encoder,
+        train_models=["text_encoder", "text_mel_classifier"],
+        eval_models=["text_mel_generator"],
+        adversarial=False,
+        inputs=[
+            "text",
+            "alignment",
+            "mel",
+            "mel_length",
+        ],
+    ),
+    "alignment": StageConfig(
+        next_stage=None,
         train_fn=train_alignment,
         validate_fn=validate_alignment,
         train_models=["text_aligner"],
@@ -68,16 +83,31 @@ stages = {
         inputs=[
             "text",
             "text_length",
-            "mel",
+            "align_mel",
             "mel_length",
+        ],
+    ),
+    "vocoder": StageConfig(
+        next_stage="pre_acoustic",
+        train_fn=train_vocoder,
+        validate_fn=validate_vocoder,
+        train_models=["acoustic_style_encoder", "generator"],
+        eval_models=[],
+        adversarial=False,
+        inputs=[
+            "text",
+            "text_length",
+            "mel",
+            "audio_gt",
+            "pitch",
         ],
     ),
     "pre_acoustic": StageConfig(
         next_stage="acoustic",
         train_fn=train_pre_acoustic,
         validate_fn=validate_acoustic,
-        train_models=["text_encoder", "acoustic_style_encoder", "decoder"],
-        eval_models=["text_aligner"],
+        train_models=["text_encoder", "decoder", "acoustic_style_encoder", "generator"],
+        eval_models=[],
         adversarial=False,
         inputs=[
             "text",
@@ -88,6 +118,8 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
+            "alignment",
         ],
     ),
     "acoustic": StageConfig(
@@ -98,7 +130,7 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
-            "text_aligner",
+            "generator",
         ],
         eval_models=[],
         adversarial=True,
@@ -111,6 +143,8 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
+            "alignment",
         ],
     ),
     "pre_textual": StageConfig(
@@ -128,7 +162,8 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
-            "text_aligner",
+            "generator",
+            # "text_aligner",
         ],
         adversarial=False,
         inputs=[
@@ -140,6 +175,8 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
+            "alignment",
         ],
     ),
     "textual": StageConfig(
@@ -157,7 +194,8 @@ stages = {
             "text_encoder",
             "acoustic_style_encoder",
             "decoder",
-            "text_aligner",
+            "generator",
+            # "text_aligner",
         ],
         adversarial=False,
         inputs=[
@@ -169,6 +207,8 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
+            "alignment",
         ],
     ),
     "joint": StageConfig(
@@ -185,8 +225,9 @@ stages = {
         eval_models=[
             "text_encoder",
             "decoder",
+            "generator",
             "acoustic_style_encoder",
-            "text_aligner",
+            # "text_aligner",
         ],
         adversarial=True,
         inputs=[
@@ -198,6 +239,8 @@ stages = {
             "pitch",
             "sentence_embedding",
             "voiced",
+            "align_mel",
+            "alignment",
         ],
     ),
     "sbert": StageConfig(
@@ -219,7 +262,8 @@ stages = {
             "bert_encoder",
             "text_encoder",
             "decoder",
-            "text_aligner",
+            "generator",
+            # "text_aligner",
         ],
         adversarial=False,
         inputs=[
@@ -230,6 +274,8 @@ stages = {
             "audio_gt",
             "pitch",
             "sentence_embedding",
+            "align_mel",
+            "alignment",
         ],
     ),
 }
@@ -332,6 +378,7 @@ class StageContext:
             config.train_models,
             config.eval_models,
             config.adversarial,
+            train,
         )
         result, audio = self.train_fn(batch, model, train, probing)
         optimizer_step(self.optimizer, config.train_models)
@@ -344,7 +391,7 @@ class StageContext:
             # d_index = train.manifest.current_total_step % 4
             d_loss = train.discriminator_loss(audio_gt, audio)
             train.accelerator.backward(d_loss * math.sqrt(batch.text.shape[0]))
-            optimizer_step(self.optimizer, discriminators)
+            optimizer_step(self.optimizer, train.model_config.discriminators)
             train.stage.optimizer.zero_grad()
             result.add_loss("discriminator", d_loss)
         return result.detach()
@@ -530,6 +577,8 @@ batch_names = [
     "pitch",
     "sentence_embedding",
     "voiced",
+    "align_mel",
+    "alignment",
 ]
 
 
@@ -549,13 +598,13 @@ def prepare_batch(
     return Munch(**prepared)
 
 
-def prepare_model(model, device, training_set, eval_set, adversarial) -> Munch:
+def prepare_model(model, device, training_set, eval_set, adversarial, train) -> Munch:
     """
     Prepares models for training or evaluation, attaches them to the cpu memory if unused, returns an object which contains only the models that will be used.
     """
     disc_set = []
     if adversarial:
-        disc_set = discriminators
+        disc_set = train.model_config.discriminators
     result = {}
     for key in model:
         if key in training_set or key in eval_set or key in disc_set:

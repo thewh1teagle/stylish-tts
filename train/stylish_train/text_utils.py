@@ -1,12 +1,12 @@
 # IPA Phonemizer: https://github.com/bootphon/phonemizer
-from config_loader import SymbolConfig
+# from config_loader import SymbolConfig
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class TextCleaner:
-    def __init__(self, symbols: SymbolConfig):
+    def __init__(self, symbols):
         self._pad = symbols.pad  # "$"
         self._punctuation = symbols.punctuation  # ';:,.!?¡¿—…"()“” '
         self._letters = (

@@ -6,7 +6,7 @@ import transformers
 
 logger = logging.getLogger(__name__)
 logical_step_limit = 10000
-logical_step_warmup = 100
+logical_step_warmup = 250
 
 discriminators = {"mpd", "mrd", "msbd", "mstftd"}
 
@@ -83,8 +83,12 @@ class MultiOptimizer:
         else:
             _ = [self.optimizers[key].zero_grad() for key in self.keys]
 
-    def scheduler(self, step: int, step_limit: int):
+    def scheduler(self, step: int, step_limit: int, stage: str):
         logical_step = step * logical_step_limit // step_limit
+        plateau = 0.9
+        if stage == "pre_acoustic":
+            plateau = 0.7
+        logical_step = min(logical_step, logical_step_limit * plateau)
         for key in self.keys:
             if key not in discriminators:
                 self.schedulers[key].scheduler.last_epoch = logical_step
@@ -126,6 +130,10 @@ def calculate_lr(key, stage_name, *, train):
         or stage_name == "joint"
     )
     lr = train.config.optimizer.lr
+    if stage_name == "alignment" or stage_name == "text_encoder":
+        lr /= 10
+    # elif stage_name == "pre_acoustic":
+    #     lr /= 5
     weight_decay = 1e-4
     betas = (0.85, 0.99)
     if is_second:
