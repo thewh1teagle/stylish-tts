@@ -26,6 +26,10 @@ class TrainingConfig(BaseModel):
     probe_batch_max: int = Field(
         ..., description="Maximum batch size to attempt during bin probing."
     )
+    probe_alignment_batch_max: int = Field(
+        ..., description="Maximum alignment batch size to attempt during bin probing."
+    )
+
 
 
 class TrainingPlanConfig(BaseModel):

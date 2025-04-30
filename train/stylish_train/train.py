@@ -158,6 +158,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
     train.batch_manager = BatchManager(
         train.config.dataset,
         train.out_dir,
+        probe_alignment_batch_max=train.config.training.probe_alignment_batch_max,
         probe_batch_max=train.config.training.probe_batch_max,
         device=train.config.training.device,
         accelerator=train.accelerator,
