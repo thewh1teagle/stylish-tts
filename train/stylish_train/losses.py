@@ -720,9 +720,9 @@ class CTCLossWithLabelPriors(nn.Module):
                 _temp = torch.stack([self.log_priors_sum, log_batch_priors_sum], dim=-1)
                 self.log_priors_sum = torch.logsumexp(_temp, dim=-1)
 
-        # Apply the label priors
-        if self.log_priors is not None and self.prior_scaling_factor > 0:
-            log_probs = log_probs - self.log_priors * self.prior_scaling_factor
+            # Apply the label priors
+            if self.log_priors is not None and self.prior_scaling_factor > 0:
+                log_probs = log_probs - self.log_priors * self.prior_scaling_factor
 
         # Compute CTC loss
         dense_fsa_vec = k2.DenseFsaVec(
@@ -750,7 +750,6 @@ class CTCLossWithLabelPriors(nn.Module):
             )
             num_samples = num_samples.sum().log().to(log_priors_sums.device)
             new_log_prior = log_priors_sums - num_samples
-
             if False:
                 print(
                     "new_priors: ",
@@ -779,6 +778,7 @@ class CTCLossWithLabelPriors(nn.Module):
             self.log_priors = new_log_prior
             self.log_priors_sum = None
             self.num_samples = 0
+            # print(self.log_priors)
 
             # if pl_module.global_rank == 0:
             #     exp_dir = pathlib.Path(trainer.default_root_dir)
