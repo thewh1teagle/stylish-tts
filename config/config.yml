@@ -32,6 +32,7 @@ dataset:
   val_data: "path/to/your/val-list.txt"
   wav_path: "path/to/your/wav-files"
   pitch_path: "path/to/your/pitch.safetensors"
+  alignment_path: "path/to/your/alignment.safetensors"
 
 validation:
   # Number of samples to generate per validation step
