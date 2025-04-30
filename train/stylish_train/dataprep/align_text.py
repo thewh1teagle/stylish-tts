@@ -70,20 +70,26 @@ def main(config_path, model_config_path, out, model):
     text_cleaner = TextCleaner(model_config.symbol)
 
     wavdir = pathlib.Path(config.dataset.wav_path)
-    vals = calculate_alignments(
+    vals, scores = calculate_alignments(
         pathlib.Path(config.dataset.val_data),
         wavdir,
         aligner,
         model_config,
         text_cleaner,
     )
-    trains = calculate_alignments(
+    with open("scores_val.txt", "w") as f:
+        for name in scores.keys():
+            f.write(str(scores[name]) + " " + name + "\n")
+    trains, scores = calculate_alignments(
         pathlib.Path(config.dataset.train_data),
         wavdir,
         aligner,
         model_config,
         text_cleaner,
     )
+    with open("scores_train.txt", "w") as f:
+        for name in scores.keys():
+            f.write(str(scores[name]) + " " + name + "\n")
     result = vals | trains
     save_file(result, out)
 
@@ -122,15 +128,13 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
         text_lengths = torch.zeros([1], dtype=int, device=device)
         text_lengths[0] = text.shape[1]
 
-        # alignment = torch_align(mels, text, mel_lengths, text_lengths, prediction, model_config)
-        alignment = teytaut_align(mels, text, mel_lengths, text_lengths, prediction)
+        alignment, scores = torch_align(
+            mels, text, mel_lengths, text_lengths, prediction, model_config
+        )
+        # alignment = teytaut_align(mels, text, mel_lengths, text_lengths, prediction)
         alignment_map[name] = alignment
-
-        # scores_map[name] = scores.exp().mean().item()
-    # with open("scores.txt", "w") as f:
-    #     for name in scores_map.keys():
-    #         f.write(str(scores_map[name]) + " " + name + "\n")
-    return alignment_map
+        scores_map[name] = scores.exp().mean().item()
+    return alignment_map, scores_map
 
 
 def torch_align(mels, text, mel_length, text_length, prediction, model_config):
@@ -159,7 +163,7 @@ def torch_align(mels, text, mel_length, text_length, prediction, model_config):
                 was_blank = False
         assert alignment[i] == blank or alignment[i] == text[0, text_index]
         atensor[0, text_index, i] = 1
-    return atensor
+    return atensor, scores
 
 
 def teytaut_align(mels, text, mel_length, text_length, prediction):
