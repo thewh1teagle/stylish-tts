@@ -63,7 +63,7 @@ def validate_alignment(batch, train):
     loss_ctc = train.align_loss(
         ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="eval"
     )
-    priors = train.align_loss.last_priors.exp().sum().item()
+
     blank = train.model_config.text_encoder.n_token
     logprobs = rearrange(ctc, "t b k -> b t k")
     confidence_total = 0.0
