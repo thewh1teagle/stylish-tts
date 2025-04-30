@@ -126,6 +126,8 @@ class OptimizerConfig(BaseModel):
     lr: float = Field(..., description="General learning rate.")
     bert_lr: float = Field(..., description="Learning rate for the PLBERT model.")
     ft_lr: float = Field(..., description="Learning rate for acoustic modules.")
+    alignment_lr: float = Field(..., description="Alignment learning rate.")
+    text_encoder_lr: float = Field(..., description="Text encoder pretraining learning rate.")
 
 
 ######## Model Configuration ########
