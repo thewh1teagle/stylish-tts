@@ -165,6 +165,7 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def time_bins(self):
         sample_lengths = []
+        total_audio_length = 0
         iterator = tqdm.tqdm(
             iterable=self.data_list,
             desc="Calculating segment lengths",
@@ -182,9 +183,11 @@ class FilePathDataset(torch.utils.data.Dataset):
             if sr != self.sample_rate:
                 wave_len *= self.sample_rate / sr
             sample_lengths.append(wave_len)
+            total_audio_length += wave_len / sr
         iterator.clear()
         iterator.close()
         time_bins = {}
+        logger.info(f"Total segment lengths: {total_audio_length / 3600.0:.2f}h")
         for i in range(len(sample_lengths)):
             phonemes = self.data_list[i][1]
             bin_num = get_time_bin(sample_lengths[i], self.hop_length)
@@ -257,6 +260,11 @@ class FilePathDataset(torch.utils.data.Dataset):
             alignment = self.alignment[path]
             # alignment = torch.nn.functional.interpolate(alignment, scale_factor=2, mode="nearest")
             alignment = alignment.detach()
+        else:
+            alignment = torch.zeros(
+                (text_tensor.shape[0], align_mel.shape[1] // 2),
+                dtype=torch.float32 # Match Collater's target dtype
+            )
         sentence_embedding = torch.from_numpy(
             sbert.encode([self.sentences[idx]], show_progress_bar=False)
         ).float()
