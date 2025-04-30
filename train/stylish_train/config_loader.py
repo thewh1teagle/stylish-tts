@@ -26,6 +26,10 @@ class TrainingConfig(BaseModel):
     probe_batch_max: int = Field(
         ..., description="Maximum batch size to attempt during bin probing."
     )
+    probe_alignment_batch_max: int = Field(
+        ..., description="Maximum alignment batch size to attempt during bin probing."
+    )
+
 
 
 class TrainingPlanConfig(BaseModel):
@@ -126,6 +130,8 @@ class OptimizerConfig(BaseModel):
     lr: float = Field(..., description="General learning rate.")
     bert_lr: float = Field(..., description="Learning rate for the PLBERT model.")
     ft_lr: float = Field(..., description="Learning rate for acoustic modules.")
+    alignment_lr: float = Field(..., description="Alignment learning rate.")
+    text_encoder_lr: float = Field(..., description="Text encoder pretraining learning rate.")
 
 
 ######## Model Configuration ########

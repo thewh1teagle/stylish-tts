@@ -14,6 +14,7 @@ training:
   # Increasing this slows training overall even if
   # epochs go by faster.
   probe_batch_max: 32
+  probe_alignment_batch_max: 320
 
 # Number of epochs to train each stage.
 training_plan:
@@ -78,8 +79,8 @@ loss_weight:
 # Learning rates are pre-tuned. Do not change these unless
 # you know what you are doing
 optimizer:
-  lr: 0.0001 # general learning rate
-  bert_lr: 0.00001 # learning rate for PLBERT
-  ft_lr: 0.00001 # learning rate for acoustic modules (i.e. decoder, textual_style_encoder and prosody_style_encoder)
-  alignment_lr: 0.00001 # alignment learning rate
-  text_encoder_lr: 0.00001 # text encoder pretraining lr
+  lr: 1e-4 # general learning rate
+  bert_lr: 1e-5 # learning rate for PLBERT
+  ft_lr: 1e-5 # learning rate for acoustic modules (i.e. decoder, textual_style_encoder and prosody_style_encoder)
+  alignment_lr: 1e-5 # alignment learning rate
+  text_encoder_lr: 1e-5 # text encoder pretraining lr

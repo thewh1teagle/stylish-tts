@@ -28,6 +28,7 @@ class BatchManager:
         accelerator: Optional["Accelerator"] = None,
         *,
         probe_batch_max: int,
+        probe_alignment_batch_max: int,
         device: str,
         multispeaker: bool,
         text_cleaner: TextCleaner,
@@ -37,6 +38,7 @@ class BatchManager:
     ):
         self.train_path: str = dataset_config.train_data
         self.probe_batch_max: int = probe_batch_max
+        self.probe_alignment_batch_max: int = probe_alignment_batch_max
         self.log_dir: str = log_dir
         self.device: str = device
         self.multispeaker: bool = multispeaker
@@ -76,7 +78,7 @@ class BatchManager:
         train.stage.reset_batch_sizes()
         batch_size = self.probe_batch_max
         if train.manifest.stage == "alignment":
-            batch_size *= 10
+            batch_size = self.probe_alignment_batch_max
         # elif train.manifest.stage == "pre_acoustic":
         #     batch_size *= 5
         time_keys = sorted(list(self.time_bins.keys()))
