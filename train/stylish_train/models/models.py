@@ -87,7 +87,7 @@ def build_model(model_config: ModelConfig):
         num_tokens=model_config.text_encoder.n_token,
         inter_dim=model_config.inter_dim,
         num_heads=8,
-        num_layers=6,
+        num_layers=4,
     )
 
     text_mel_classifier = TextMelClassifier(
