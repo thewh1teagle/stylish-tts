@@ -116,34 +116,34 @@ def build_model(model_config: ModelConfig):
     #    dropout=model_config.prosody_predictor.dropout,
     # )
 
-    # style_encoder = StyleEncoder(
-    #     dim_in=model_config.style_encoder.dim_in,
-    #     style_dim=model_config.style_dim,
-    #     max_conv_dim=model_config.style_encoder.hidden_dim,
-    #     skip_downsamples=model_config.style_encoder.skip_downsamples,
-    # )
     style_encoder = StyleEncoder(
-        mel_dim=model_config.n_mels,
+        dim_in=model_config.style_encoder.dim_in,
         style_dim=model_config.style_dim,
-        # TODO Add config values
-        hidden_dim=512,
-        num_heads=8,
-        num_layers=6,
+        max_conv_dim=model_config.style_encoder.hidden_dim,
+        skip_downsamples=model_config.style_encoder.skip_downsamples,
     )
-    # predictor_encoder = StyleEncoder(
-    #     dim_in=model_config.style_encoder.dim_in,
+    # style_encoder = StyleEncoder(
+    #     mel_dim=model_config.n_mels,
     #     style_dim=model_config.style_dim,
-    #     max_conv_dim=model_config.style_encoder.hidden_dim,
-    #     skip_downsamples=model_config.style_encoder.skip_downsamples,
+    #     # TODO Add config values
+    #     hidden_dim=512,
+    #     num_heads=8,
+    #     num_layers=6,
     # )
     predictor_encoder = StyleEncoder(
-        mel_dim=model_config.n_mels,
+        dim_in=model_config.style_encoder.dim_in,
         style_dim=model_config.style_dim,
-        # TODO Add config values
-        hidden_dim=512,
-        num_heads=8,
-        num_layers=6,
+        max_conv_dim=model_config.style_encoder.hidden_dim,
+        skip_downsamples=model_config.style_encoder.skip_downsamples,
     )
+    # predictor_encoder = StyleEncoder(
+    #     mel_dim=model_config.n_mels,
+    #     style_dim=model_config.style_dim,
+    #     # TODO Add config values
+    #     hidden_dim=512,
+    #     num_heads=8,
+    #     num_layers=6,
+    # )
 
     nets = Munch(
         bert=bert,
