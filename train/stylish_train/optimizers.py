@@ -1,8 +1,10 @@
 # coding:utf-8
 import torch
-from torch.optim import AdamW
+from torch.optim import AdamW, lr_scheduler, Optimizer
 import logging
 import transformers
+from losses import DiscriminatorLoss
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 logical_step_limit = 10000
@@ -12,7 +14,7 @@ discriminators = {"mpd", "mrd", "msbd", "mstftd"}
 
 
 class MultiOptimizer:
-    def __init__(self, *, optimizers, schedulers, discriminator_loss):
+    def __init__(self, *, optimizers: Dict[Optimizer], schedulers: Dict[lr_scheduler.LRScheduler], discriminator_loss: DiscriminatorLoss):
         self.optimizers = optimizers
         self.schedulers = schedulers
         self.discriminator_loss = discriminator_loss
@@ -61,6 +63,7 @@ class MultiOptimizer:
         if isinstance(lr, torch.Tensor):
             lr = lr.item()
         for key in discriminators:
+            self.discriminator_loss.discriminators[key].last_loss = 0.5
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):
                     param_group["lr"].fill_(lr)
