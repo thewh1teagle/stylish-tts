@@ -475,6 +475,20 @@ class DiscriminatorLoss(torch.nn.Module):
                 loss += self.discriminators[key](audio_gt, audio)
         return loss
 
+    def state_dict(self, *args, **kwargs):
+        state = {}
+        for key, helper in self.discriminators.items():
+            state[f"discriminators.{key}.last_loss"] = helper.last_loss
+            state[f"discriminators.{key}.weight"] = helper.weight
+        return state
+    
+    def load_state_dict(self, state_dict, strict=True):
+        for key, helper in self.discriminators.items():
+            if f"discriminators.{key}.last_loss" in state_dict:
+                helper.last_loss = state_dict[f"discriminators.{key}.last_loss"]
+            if f"discriminators.{key}.weight" in state_dict:
+                helper.weight = state_dict[f"discriminators.{key}.weight"]
+        return state_dict
 
 class DiscriminatorLossHelper(torch.nn.Module):
     """

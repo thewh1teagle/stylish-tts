@@ -23,6 +23,7 @@ class MultiOptimizer:
             self.optimizers[key] = accelerator.prepare(self.optimizers[key])
             if key not in discriminators:
                 self.schedulers[key] = accelerator.prepare(self.schedulers[key])
+        self.discriminator_loss = accelerator.register_for_checkpointing(self.discriminator_loss)
 
     def reset_lr(self, stage_name, train):
         for key in train.model.keys():
