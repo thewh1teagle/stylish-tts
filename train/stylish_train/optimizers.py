@@ -14,7 +14,7 @@ discriminators = {"mpd", "mrd", "msbd", "mstftd"}
 
 
 class MultiOptimizer:
-    def __init__(self, *, optimizers: Dict[Optimizer], schedulers: Dict[lr_scheduler.LRScheduler], discriminator_loss: DiscriminatorLoss):
+    def __init__(self, *, optimizers: Dict[str, Optimizer], schedulers: Dict[str, lr_scheduler.LRScheduler], discriminator_loss: DiscriminatorLoss):
         self.optimizers = optimizers
         self.schedulers = schedulers
         self.discriminator_loss = discriminator_loss
