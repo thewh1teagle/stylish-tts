@@ -425,14 +425,14 @@ def freev_loss(log, pred, gt_audio, train):
 
 
 class GeneratorLoss(torch.nn.Module):
-    def __init__(self, *, mpd, mrd, msbd, mstftd, discriminators):
+    def __init__(self, *, mpd, mrd, msbd, mstftd, discriminators, loss_weights):
         super(GeneratorLoss, self).__init__()
         self.generators = torch.nn.ModuleList(
             [
-                GeneratorLossHelper(mpd, 1.0),
-                GeneratorLossHelper(mrd, 0.2),
-                GeneratorLossHelper(msbd, 1.0),
-                GeneratorLossHelper(mstftd, 1.0),
+                GeneratorLossHelper(mpd, loss_weights.mpd),
+                GeneratorLossHelper(mrd, loss_weights.mrd),
+                GeneratorLossHelper(msbd, loss_weights.msbd),
+                GeneratorLossHelper(mstftd, loss_weights.mstftd),
             ]
         )
         self.used = [
@@ -449,14 +449,14 @@ class GeneratorLoss(torch.nn.Module):
 
 
 class DiscriminatorLoss(torch.nn.Module):
-    def __init__(self, *, mpd, mrd, msbd, mstftd, discriminators):
+    def __init__(self, *, mpd, mrd, msbd, mstftd, discriminators, loss_weights):
         super(DiscriminatorLoss, self).__init__()
         self.discriminators = torch.nn.ModuleDict(
             {
-                "mpd": DiscriminatorLossHelper(mpd, 1.0),
-                "mrd": DiscriminatorLossHelper(mrd, 0.2),
-                "msbd": DiscriminatorLossHelper(msbd, 1.0),
-                "mstftd": DiscriminatorLossHelper(mstftd, 1.0),
+                "mpd": DiscriminatorLossHelper(mpd, loss_weights.mpd),
+                "mrd": DiscriminatorLossHelper(mrd, loss_weights.mrd),
+                "msbd": DiscriminatorLossHelper(msbd, loss_weights.msbd),
+                "mstftd": DiscriminatorLossHelper(mstftd, loss_weights.mstftd),
             }
         )
         self.used = {
@@ -475,6 +475,20 @@ class DiscriminatorLoss(torch.nn.Module):
                 loss += self.discriminators[key](audio_gt, audio)
         return loss
 
+    def state_dict(self, *args, **kwargs):
+        state = {}
+        for key, helper in self.discriminators.items():
+            state[f"discriminators.{key}.last_loss"] = helper.last_loss
+            state[f"discriminators.{key}.weight"] = helper.weight
+        return state
+    
+    def load_state_dict(self, state_dict, strict=True):
+        for key, helper in self.discriminators.items():
+            if f"discriminators.{key}.last_loss" in state_dict:
+                helper.last_loss = state_dict[f"discriminators.{key}.last_loss"]
+            if f"discriminators.{key}.weight" in state_dict:
+                helper.weight = state_dict[f"discriminators.{key}.weight"]
+        return state_dict
 
 class DiscriminatorLossHelper(torch.nn.Module):
     """

@@ -76,6 +76,14 @@ loss_weight:
   mel_rec: 2
   text_gen: 1
 
+# Discriminator weights are pre-tuned. Do not change these unless you
+# know what you are doing.
+discriminator_loss_weight:
+  mpd: 1.0 # multi-period
+  mrd: 0.2 # multi-resolution
+  msbd: 1.0 # multi-subband-cqt
+  mstftd: 1.0 # multi-stft
+
 # Learning rates are pre-tuned. Do not change these unless
 # you know what you are doing
 optimizer:

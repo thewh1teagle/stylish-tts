@@ -121,6 +121,11 @@ class LossWeightConfig(BaseModel):
     mel_rec: float = Field(..., description="Weight for text mel reconstruction")
     text_gen: float = Field(..., description="Weight for text mel generator model")
 
+class DiscriminatorLossWeightConfig(BaseModel):
+    mpd: float = Field(..., description="Weight for Multi-Period discriminator.")
+    mrd: float = Field(..., description="Weight for Multi-Resolution discriminator.")
+    msbd: float = Field(..., description="Weight for Multi-Scale Sub-Band CQT discriminator.")
+    mstftd: float = Field(..., description="Weight for Multi-Scale STFT discriminator.")
 
 class OptimizerConfig(BaseModel):
     """
@@ -420,6 +425,9 @@ class Config(BaseModel):
     dataset: DatasetConfig = Field(..., description="Dataset configuration parameters.")
     loss_weight: LossWeightConfig = Field(
         ..., description="Loss weight configuration for various loss components."
+    )
+    discriminator_loss_weight: DiscriminatorLossWeightConfig = Field(
+        ..., description="Loss weight configuration for discriminators."
     )
     optimizer: OptimizerConfig = Field(
         ..., description="Optimizer configuration parameters."

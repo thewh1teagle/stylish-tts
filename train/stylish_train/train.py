@@ -181,6 +181,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         msbd=train.model.msbd,
         mstftd=train.model.mstftd,
         discriminators=train.model_config.discriminators,
+        loss_weights=train.config.discriminator_loss_weight,
     ).to(train.config.training.device)
     train.discriminator_loss = DiscriminatorLoss(
         mpd=train.model.mpd,
@@ -188,6 +189,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         msbd=train.model.msbd,
         mstftd=train.model.mstftd,
         discriminators=train.model_config.discriminators,
+        loss_weights=train.config.discriminator_loss_weight,
     ).to(train.config.training.device)
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,
@@ -222,7 +224,7 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
             train.manifest.current_epoch = 1
             train.manifest.current_step = 0
             train.stage.begin_stage(stage, train)
-        train.stage.optimizer.reset_discriminator_schedulers()
+        # train.stage.optimizer.reset_discriminator_schedulers()
         # if train.manifest.stage == "acoustic" and stage == "textual":
         #     logger.info("Cloning style encoder into prosodic style encoder...")
         #     train.model.prosodic_style_encoder.load_state_dict(
