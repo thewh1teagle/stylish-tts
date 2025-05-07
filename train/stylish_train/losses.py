@@ -24,9 +24,10 @@ class SpectralConvergenceLoss(torch.nn.Module):
         Returns:
             Tensor: Spectral convergence loss value.
         """
-        num = torch.linalg.matrix_norm(y_mag - x_mag)
-        denom = torch.linalg.matrix_norm(y_mag)
-        return (num / denom).mean()
+        # num = torch.linalg.matrix_norm(y_mag - x_mag)
+        # denom = torch.linalg.matrix_norm(y_mag)
+        # return (num / denom).mean()
+        return torch.norm(y_mag - x_mag, p=1) / torch.norm(y_mag, p=1)
 
 
 class STFTLoss(torch.nn.Module):
@@ -67,19 +68,26 @@ class STFTLoss(torch.nn.Module):
             Tensor: Spectral convergence loss value.
             Tensor: Log STFT magnitude loss value.
         """
+        # x_mag = self.to_mel(x)
+        # x_norm = torch.log(torch.norm(x_mag, dim=2))
+        # x_log = torch.log(1 + x_mag)
+
+        # y_mag = self.to_mel(y)
+        # y_norm = torch.log(torch.norm(y_mag, dim=2))
+        # y_log = torch.log(1 + y_mag)
+
+        # sc_loss = F.mse_loss(x_log, y_log) * 2
+        # return sc_loss
         x_mag = self.to_mel(x)
-        x_norm = torch.log(torch.norm(x_mag, dim=2))
-        x_log = torch.log(1 + x_mag)
+        mean, std = -4, 4
+        x_mag = (torch.log(1e-5 + x_mag) - mean) / std
 
         y_mag = self.to_mel(y)
-        y_norm = torch.log(torch.norm(y_mag, dim=2))
-        y_log = torch.log(1 + y_mag)
+        mean, std = -4, 4
+        y_mag = (torch.log(1e-5 + y_mag) - mean) / std
 
-        sc_loss = F.mse_loss(x_log, y_log) * 2
-        # sc_loss = self.spectral_convergence_loss(x_log, y_log)
-        energy_loss = F.smooth_l1_loss(x_norm, y_norm)
-        # log_loss = F.l1_loss(x_log, y_log)
-        return sc_loss, energy_loss  # , log_loss
+        sc_loss = self.spectral_convergence_loss(x_mag, y_mag)
+        return sc_loss
 
 
 class Resolution:
@@ -91,12 +99,15 @@ class Resolution:
 
 
 resolutions = [
-    Resolution(fft=256, hop=31, window=67, mels=40),
-    Resolution(fft=256, hop=67, window=127, mels=40),
-    Resolution(fft=512, hop=127, window=257, mels=80),
-    Resolution(fft=1024, hop=257, window=509, mels=120),
-    Resolution(fft=2048, hop=509, window=1021, mels=120),
-    Resolution(fft=4096, hop=1021, window=2053, mels=120),
+    # Resolution(fft=256, hop=31, window=67, mels=40),
+    # Resolution(fft=256, hop=67, window=127, mels=40),
+    # Resolution(fft=512, hop=127, window=257, mels=80),
+    # Resolution(fft=1024, hop=257, window=509, mels=120),
+    # Resolution(fft=2048, hop=509, window=1021, mels=120),
+    # Resolution(fft=4096, hop=1021, window=2053, mels=120),
+    Resolution(fft=1024, hop=120, window=600, mels=128),
+    Resolution(fft=2048, hop=240, window=1200, mels=128),
+    Resolution(fft=512, hop=50, window=240, mels=128),
 ]
 
 
@@ -145,23 +156,13 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
             Tensor: Multi resolution log STFT magnitude loss value.
         """
         sc_loss = 0.0
-        energy_loss = 0.0
-        # log_loss = 0.0
         for f in self.stft_losses:
-            # sc_l, energy_l, log_l = f(x, y)
-            sc_l, energy_l = f(x, y)
-            sc_loss += sc_l
-            energy_loss += energy_l
-            # log_loss += log_l
+            sc_loss += f(x, y)
         sc_loss /= len(self.stft_losses)
-        energy_loss /= len(self.stft_losses)
-        # log_loss /= len(self.stft_losses)
 
         log.add_loss("mel", sc_loss)
-        # log.add_loss("mel_energy", energy_loss)
-        # log.add_loss("mel_log", log_loss)
 
-        return sc_loss, energy_loss  # , log_loss
+        return sc_loss
 
 
 mp_window = torch.hann_window(20).to("cuda")
@@ -481,7 +482,7 @@ class DiscriminatorLoss(torch.nn.Module):
             state[f"discriminators.{key}.last_loss"] = helper.last_loss
             state[f"discriminators.{key}.weight"] = helper.weight
         return state
-    
+
     def load_state_dict(self, state_dict, strict=True):
         for key, helper in self.discriminators.items():
             if f"discriminators.{key}.last_loss" in state_dict:
@@ -489,6 +490,7 @@ class DiscriminatorLoss(torch.nn.Module):
             if f"discriminators.{key}.weight" in state_dict:
                 helper.weight = state_dict[f"discriminators.{key}.weight"]
         return state_dict
+
 
 class DiscriminatorLossHelper(torch.nn.Module):
     """

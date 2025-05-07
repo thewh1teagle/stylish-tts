@@ -1,5 +1,6 @@
 from typing import Optional
 import torch
+from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 from einops import rearrange
@@ -14,6 +15,65 @@ from .conv_next import BasicConvNeXtBlock
 
 # from reformer_pytorch import Reformer, Autopadder
 from torchaudio.models import Conformer
+
+
+class TextEncoder(nn.Module):
+    def __init__(self, channels, kernel_size, depth, n_symbols, actv=nn.LeakyReLU(0.2)):
+        super().__init__()
+        self.embedding = nn.Embedding(n_symbols, channels)
+
+        padding = (kernel_size - 1) // 2
+        self.cnn = nn.ModuleList()
+        for _ in range(depth):
+            self.cnn.append(
+                nn.Sequential(
+                    weight_norm(
+                        nn.Conv1d(
+                            channels, channels, kernel_size=kernel_size, padding=padding
+                        )
+                    ),
+                    LayerNorm(channels),
+                    actv,
+                    nn.Dropout(0.2),
+                )
+            )
+        # self.cnn = nn.Sequential(*self.cnn)
+
+        self.lstm = nn.LSTM(
+            channels, channels // 2, 1, batch_first=True, bidirectional=True
+        )
+
+    def forward(self, x, input_lengths, m):
+        x = self.embedding(x)  # [B, T, emb]
+        x = x.transpose(1, 2)  # [B, emb, T]
+        m = m.to(input_lengths.device).unsqueeze(1)
+        x.masked_fill_(m, 0.0)
+
+        for c in self.cnn:
+            x = c(x)
+            x.masked_fill_(m, 0.0)
+
+        x = x.transpose(1, 2)  # [B, T, chn]
+
+        input_lengths = input_lengths.cpu().numpy()
+        x = nn.utils.rnn.pack_padded_sequence(
+            x, input_lengths, batch_first=True, enforce_sorted=False
+        )
+
+        self.lstm.flatten_parameters()
+        x, _ = self.lstm(x)
+        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
+        x = x.transpose(-1, -2)
+        x_pad = torch.zeros([x.shape[0], x.shape[1], m.shape[-1]])
+
+        x_pad[:, :, : x.shape[-1]] = x
+        x = x_pad.to(x.device)
+
+        x.masked_fill_(m, 0.0)
+
+        return x
+
 
 # class TextEncoder(torch.nn.Module):
 #     def __init__(
@@ -114,26 +174,26 @@ class LayerNorm(torch.nn.Module):
         return x.transpose(1, -1)
 
 
-class TextEncoder(torch.nn.Module):
-    def __init__(self, *, num_tokens, inter_dim, num_heads, num_layers):
-        super().__init__()
-        self.embed = torch.nn.Embedding(num_tokens, inter_dim)
-        self.conformer = Conformer(
-            input_dim=inter_dim,
-            num_heads=num_heads,
-            ffn_dim=inter_dim * 2,
-            num_layers=num_layers,
-            depthwise_conv_kernel_size=15,
-            use_group_norm=True,
-        )
-
-    def forward(self, x):
-        lengths = torch.full(
-            [x.shape[0]], fill_value=x.shape[1], dtype=int, device=x.device
-        )
-        x = self.embed(x)
-        x, _ = self.conformer(x, lengths)
-        return x
+# class TextEncoder(torch.nn.Module):
+#     def __init__(self, *, num_tokens, inter_dim, num_heads, num_layers):
+#         super().__init__()
+#         self.embed = torch.nn.Embedding(num_tokens, inter_dim)
+#         self.conformer = Conformer(
+#             input_dim=inter_dim,
+#             num_heads=num_heads,
+#             ffn_dim=inter_dim * 2,
+#             num_layers=num_layers,
+#             depthwise_conv_kernel_size=15,
+#             use_group_norm=True,
+#         )
+#
+#     def forward(self, x):
+#         lengths = torch.full(
+#             [x.shape[0]], fill_value=x.shape[1], dtype=int, device=x.device
+#         )
+#         x = self.embed(x)
+#         x, _ = self.conformer(x, lengths)
+#         return x
 
 
 class TextMelGenerator(torch.nn.Module):
