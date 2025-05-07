@@ -5,7 +5,6 @@ import torch
 from torch.nn import functional as F
 import torchaudio
 from einops import rearrange, reduce
-from monotonic_align import mask_from_lens
 import train_context
 from config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
