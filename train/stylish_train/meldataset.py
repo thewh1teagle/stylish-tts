@@ -263,7 +263,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         else:
             alignment = torch.zeros(
                 (text_tensor.shape[0], align_mel.shape[1] // 2),
-                dtype=torch.float32 # Match Collater's target dtype
+                dtype=torch.float32,  # Match Collater's target dtype
             )
         sentence_embedding = torch.from_numpy(
             sbert.encode([self.sentences[idx]], show_progress_bar=False)
@@ -529,10 +529,21 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
 
         sample_keys = list(samples.keys())
         while len(sample_keys) > 0:
+            index = 0
             if self.shuffle:
-                index = torch.randint(0, len(sample_keys), [1], generator=g)[0]
-            else:
-                index = 0
+                total_weight = 0
+                for key in sample_keys:
+                    total_weight += len(samples[key]) // self.get_batch_size(key) + 1
+                weight = torch.randint(0, total_weight, [1], generator=g)[0]
+                for i in range(len(sample_keys)):
+                    weight -= (
+                        len(samples[sample_keys[i]])
+                        // self.get_batch_size(sample_keys[i])
+                        + 1
+                    )
+                    if weight <= 0:
+                        index = i
+                        break
             key = sample_keys[index]
             current_samples = samples[key]
             batch_size = min(len(current_samples), self.get_batch_size(key))

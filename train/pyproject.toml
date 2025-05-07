@@ -15,7 +15,6 @@ dependencies = [
     "espeakng-loader>=0.2.4",
     "phonemizer-fork>=3.3.2",
     "transformers>=4.48.2",
-    "monotonic-align>=1.0.0",
     "matplotlib>=3.10.0",
     "scikit-learn>=1.6.1",
     "librosa>=0.10.2.post1",
@@ -41,7 +40,6 @@ dev = [
 ]
 
 [tool.uv.sources]
-monotonic-align = { git = "https://github.com/resemble-ai/monotonic_align.git" }
 k2 = { url = "https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/k2-1.24.4.dev20250208+cuda12.4.torch2.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"}
 
 

@@ -13,15 +13,15 @@ training:
   # Maximum number of segments per batch.
   # Increasing this slows training overall even if
   # epochs go by faster.
-  probe_batch_max: 32
-  probe_alignment_batch_max: 320
+  probe_batch_max: 2
+  probe_alignment_batch_max: 128
 
 # Number of epochs to train each stage.
 training_plan:
   alignment: 5
-  pre_acoustic: 3
+  pre_acoustic: 1
   acoustic: 5
-  pre_textual: 30
+  pre_textual: 10
   textual: 2
   joint: 2
   sbert: 12
@@ -49,7 +49,7 @@ validation:
 # know what you are doing.
 loss_weight:
   # mel reconstruction loss
-  mel: 2
+  mel: 5
   # generator loss
   generator: 1
   # speech-language model feature matching loss

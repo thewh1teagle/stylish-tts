@@ -1,47 +1,48 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from xlstm import (
-    xLSTMBlockStackConfig,
-    mLSTMBlockConfig,
-    mLSTMLayerConfig,
-    xLSTMBlockStack,
-)
 from .common import LinearNorm
 
 
 class DurationPredictor(nn.Module):
     def __init__(self, style_dim, d_hid, nlayers, max_dur=50, dropout=0.1):
         super().__init__()
-
-        self.cfg = xLSTMBlockStackConfig(
-            mlstm_block=mLSTMBlockConfig(
-                mlstm=mLSTMLayerConfig(
-                    conv1d_kernel_size=4, qkv_proj_blocksize=4, num_heads=4
-                )
-            ),
-            context_length=d_hid,
-            num_blocks=8,
-            embedding_dim=d_hid + style_dim,
-        )
-        self.lstm = xLSTMBlockStack(self.cfg)
-        self.duration_encoder = DurationEncoder(
+        self.text_encoder = DurationEncoder(
             sty_dim=style_dim, d_model=d_hid, nlayers=nlayers, dropout=dropout
         )
-        self.prepare_projection = nn.Linear(d_hid + style_dim, d_hid)
+
+        self.lstm = nn.LSTM(
+            d_hid + style_dim, d_hid // 2, 1, batch_first=True, bidirectional=True
+        )
         self.duration_proj = LinearNorm(d_hid, max_dur)
 
     def forward(self, texts, style, text_lengths, alignment, mask):
-        d = self.duration_encoder(texts, style, text_lengths, mask)
-        x = self.lstm(d)
-        x = self.prepare_projection(x)
-        x = x.transpose(-1, -2)
-        x = x.permute(0, 2, 1)
+        d = self.text_encoder(texts, style, text_lengths, mask)
+
+        # predict duration
+        input_lengths = text_lengths.cpu().numpy()
+        x = nn.utils.rnn.pack_padded_sequence(
+            d, input_lengths, batch_first=True, enforce_sorted=False
+        )
+
+        mask = mask.to(text_lengths.device).unsqueeze(1)
+
+        self.lstm.flatten_parameters()
+        x, _ = self.lstm(x)
+        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
+        x_pad = torch.zeros([x.shape[0], mask.shape[-1], x.shape[-1]])
+
+        x_pad[:, : x.shape[1], :] = x
+        x = x_pad.to(x.device)
+
         duration = self.duration_proj(
             nn.functional.dropout(x, 0.5, training=self.training)
         )
-        encoding = d.transpose(-1, -2) @ alignment
-        return duration.squeeze(-1), encoding
+
+        en = d.transpose(-1, -2) @ alignment
+
+        return duration.squeeze(-1), en
 
 
 class DurationEncoder(nn.Module):
