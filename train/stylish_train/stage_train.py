@@ -153,8 +153,8 @@ def train_pre_acoustic(
             )
         # log.add_loss("mel-reconstruction", F.smooth_l1_loss(rec, batch.mel) * 100)
     freev_loss(log, pred, batch.audio_gt, train)
-    # train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
-    train.accelerator.backward(log.total())
+    train.accelerator.backward(log.backwards_loss() * math.sqrt(batch.text.shape[0]))
+    # train.accelerator.backward(log.total())
     return log.detach(), pred.audio.detach()
     # return log.detach(), pred.detach()
 
