@@ -263,10 +263,10 @@ class BatchContext:
         )
         style_embedding = self.acoustic_style_embedding(batch.mel)
         prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
-        plbert_embedding = self.model.bert(
-            batch.text, attention_mask=(~self.text_mask).int()
-        )
-        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        # plbert_embedding = self.model.bert(
+        #    batch.text, attention_mask=(~self.text_mask).int()
+        # )
+        duration_encoding = text_encoding.transpose(-1, -2)
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
@@ -300,10 +300,11 @@ class BatchContext:
         )
         style_embedding = self.textual_style_embedding(batch.sentence_embedding)
         prosody_embedding = self.textual_prosody_embedding(batch.sentence_embedding)
-        plbert_embedding = self.model.bert(
-            batch.text, attention_mask=(~self.text_mask).int()
-        )
-        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        # plbert_embedding = self.model.bert(
+        #    batch.text, attention_mask=(~self.text_mask).int()
+        # )
+        # duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        duration_encoding = text_encoding.transpose(-1, -2)
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
@@ -324,6 +325,7 @@ class BatchContext:
         return prediction
 
     def textual_bootstrap_prediction(self, batch):
+        text_encoding = self.text_encoding(batch.text, batch.text_length)
         _ = self.acoustic_duration(
             batch,
             # batch.align_mel,
@@ -334,10 +336,11 @@ class BatchContext:
             # use_random_choice=False,
         )
         prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
-        plbert_embedding = self.model.bert(
-            batch.text, attention_mask=(~self.text_mask).int()
-        )
-        duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        # plbert_embedding = self.model.bert(
+        #     batch.text, attention_mask=(~self.text_mask).int()
+        # )
+        # duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        duration_encoding = text_encoding.transpose(-1, -2)
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
