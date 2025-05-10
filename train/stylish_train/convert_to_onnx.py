@@ -325,9 +325,9 @@ import onnx
 onnx_model = onnx.load('stylish.onnx')
 for node in onnx_model.graph.node:
     if node.op_type == "Transpose":
-        if node.name == "/Transpose_78":  
+        if node.name == "/Transpose_72":  
             perm = list(node.attribute[0].ints)  
             perm = [2 if i == -1 else i for i in perm]  
             node.attribute[0].ints[:] = perm  
-onnx.save(onnx_model, "styletts.onnx")
+onnx.save(onnx_model, "stylish.onnx")
 print('Exported!!!')
