@@ -329,7 +329,7 @@ model.model.generator.stft = CustomSTFT(
     win_length=model.model.generator.gen_istft_n_fft,
 )
 model.model.generator.stft.cuda().eval()
-gen = Generator(model.model.generator)
+generator = Generator(model.model.generator)
 
 texts = torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).cuda()
 text_lengths = torch.zeros([1], dtype=int).cuda()
@@ -375,7 +375,7 @@ input_dtypes = torch.float32, torch.float32, torch.float32, torch.float32
 input_names = "mel, style, pitch, energy".split(", ")
 with torch.no_grad():
     torch.onnx.export(
-        model.model.generator,
+        generator,
         tuple(
             [
                 torch.ones(input_shape, dtype=dtype).cuda()
