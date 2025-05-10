@@ -266,7 +266,8 @@ class BatchContext:
         # plbert_embedding = self.model.bert(
         #    batch.text, attention_mask=(~self.text_mask).int()
         # )
-        duration_encoding = text_encoding.transpose(-1, -2)
+        # duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+        duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
@@ -304,7 +305,7 @@ class BatchContext:
         #    batch.text, attention_mask=(~self.text_mask).int()
         # )
         # duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
-        duration_encoding = text_encoding.transpose(-1, -2)
+        duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
@@ -340,7 +341,7 @@ class BatchContext:
         #     batch.text, attention_mask=(~self.text_mask).int()
         # )
         # duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
-        duration_encoding = text_encoding.transpose(-1, -2)
+        duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
