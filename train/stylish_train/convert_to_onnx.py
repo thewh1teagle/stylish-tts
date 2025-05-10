@@ -7,11 +7,11 @@ import torchaudio
 from einops import rearrange, reduce
 
 # import train_context
-from config_loader import Config
+from stylish_lib.config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
-from config_loader import load_model_config_yaml
-from text_utils import TextCleaner
+from stylish_lib.config_loader import load_model_config_yaml
+from stylish_lib.text_utils import TextCleaner
 from sentence_transformers import SentenceTransformer
 import torch
 import torch.nn as nn
