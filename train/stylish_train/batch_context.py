@@ -6,7 +6,7 @@ from torch.nn import functional as F
 import torchaudio
 from einops import rearrange, reduce
 import train_context
-from config_loader import Config
+from stylish_lib.config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 
 
@@ -268,7 +268,9 @@ class BatchContext:
             plbert_embedding = self.model.bert(
                 batch.text, attention_mask=(~self.text_mask).int()
             )
-            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
+                -1, -2
+            )
         else:
             duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(
@@ -308,7 +310,9 @@ class BatchContext:
             plbert_embedding = self.model.bert(
                 batch.text, attention_mask=(~self.text_mask).int()
             )
-            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
+                -1, -2
+            )
         else:
             duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(
@@ -346,7 +350,9 @@ class BatchContext:
             plbert_embedding = self.model.bert(
                 batch.text, attention_mask=(~self.text_mask).int()
             )
-            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(-1, -2)
+            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
+                -1, -2
+            )
         else:
             duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(

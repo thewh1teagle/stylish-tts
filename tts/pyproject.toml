@@ -1,4 +1,15 @@
 [project]
 name = "stylish-tts"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
+dependencies = [
+    "onnx>=1.17.0",
+    "sentence-transformers>=4.1.0",
+    "torch>=2.7.0",
+    "stylish-lib",
+    "click>=8.1.8",
+    "onnxruntime-gpu>=1.22.0",
+]
+
+[tool.uv.sources]
+stylish-lib = { path = "../lib/", editable = true }
