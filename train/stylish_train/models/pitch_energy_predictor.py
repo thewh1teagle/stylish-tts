@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm
+from .common import InstanceNorm1d
 
 
 class PitchEnergyPredictor(torch.nn.Module):
@@ -132,7 +133,7 @@ class UpSample1d(nn.Module):
 class AdaIN1d(nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
-        self.norm = nn.InstanceNorm1d(num_features, affine=False)
+        self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
 
     def forward(self, x, s):

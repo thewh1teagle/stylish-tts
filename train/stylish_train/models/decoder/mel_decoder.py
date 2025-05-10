@@ -5,12 +5,13 @@ from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
 from ..conv_next import ConvNeXtBlock, BasicConvNeXtBlock
+from ..common import InstanceNorm1d
 
 
 class AdaIN1d(nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
-        self.norm = nn.InstanceNorm1d(num_features, affine=False)
+        self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
 
     def forward(self, x, s):
@@ -93,7 +94,7 @@ class UpSample1d(nn.Module):
             return x
         else:
             return torch.nn.functional.interpolate(
-                x, scale_factor=2, mode="nearest-exact"
+                x, scale_factor=2, mode="nearest"
             )
 
 
