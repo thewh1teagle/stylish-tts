@@ -369,7 +369,8 @@ outputs = session.run(
 )
 
 print("Using RingFormer in PyTorch...")
-print(gen(*outputs))
+torch_outputs = [torch.from_numpy(out).cuda() for out in outputs]
+print(gen(*torch_outputs))
 
 print("Using broken RingFormer in ONNX...")
 input_names = "mel, style, pitch, energy".split(", ")
