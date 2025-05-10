@@ -310,9 +310,9 @@ sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
 modules = build_model(model_config)
 model = Stylish(**modules, device="cuda").eval()
 model.generator.stft = CustomSTFT(
-    filter_length=model.model.generator.gen_istft_n_fft,
-    hop_length=model.model.generator.gen_istft_hop_size,
-    win_length=model.model.generator.gen_istft_n_fft,
+    filter_length=model.generator.gen_istft_n_fft,
+    hop_length=model.generator.gen_istft_hop_size,
+    win_length=model.generator.gen_istft_n_fft,
 )
 model.generator.stft.cuda().eval()
 texts = torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).cuda()
@@ -339,9 +339,9 @@ import onnx
 onnx_model = onnx.load('stylish.onnx')
 for node in onnx_model.graph.node:
     if node.op_type == "Transpose":
-        if node.name == "/Transpose_72":  
+        if node.name == "/text_encoder_1/Transpose_7":  
             perm = list(node.attribute[0].ints)  
             perm = [2 if i == -1 else i for i in perm]  
             node.attribute[0].ints[:] = perm  
 onnx.save(onnx_model, "stylish.onnx")
-print('Exported!!!')
+print('Exported!')
