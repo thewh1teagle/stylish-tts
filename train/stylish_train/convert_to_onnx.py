@@ -1,12 +1,14 @@
+import os
+import os.path as osp
 import random
 from typing import Optional
 
 import torch
+import torch.nn as nn
 from torch.nn import functional as F
 import torchaudio
 from einops import rearrange, reduce
 
-# import train_context
 from stylish_lib.config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
@@ -14,16 +16,10 @@ from stylish_lib.config_loader import load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
 from sentence_transformers import SentenceTransformer
 from models.onnx_models import Stylish, Generator, CustomSTFT
-import torch
-import torch.nn as nn
 import click
-
 
 from attr import attr
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 
 @click.command()
@@ -31,22 +27,38 @@ import torch.nn.functional as F
 @click.option("--out_dir", type=str)
 @click.option("--checkpoint", default="", type=str)
 def main(model_config_path, out_dir, checkpoint):
-    model_config = load_model_config_yaml(model_config_path)
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+
+    if osp.exists(model_config_path):
+        model_config = load_model_config_yaml(model_config_path)
+    else:
+        exit(f"Model configuration not found: {model_config_path}")
+    if out_dir is None:
+        exit(f"No out_dir was specified.")
+    if not osp.exists(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+    if not osp.exists(out_dir):
+        exit(f"Failed to create or find out_dir at {out_dir}.")
+
     text_cleaner = TextCleaner(model_config.symbol)
     sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
-    model = Stylish(model_config, "cuda").eval()
-    model.model.generator.stft = CustomSTFT(
+    model = Stylish(model_config, device).eval()
+    stft = CustomSTFT(
         filter_length=model.model.generator.gen_istft_n_fft,
         hop_length=model.model.generator.gen_istft_hop_size,
         win_length=model.model.generator.gen_istft_n_fft,
     )
-    model.model.generator.stft.cuda().eval()
+    model.model.generator.stft = stft.to(device).eval()
     generator = Generator(model.model.generator)
 
-    texts = torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).cuda()
-    text_lengths = torch.zeros([1], dtype=int).cuda()
+    texts = (
+        torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).to(device)
+    )
+    text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = texts.shape[1]
-    text_mask = torch.ones(1, texts.shape[1], dtype=bool).cuda()
+    text_mask = torch.ones(1, texts.shape[1], dtype=bool).to(device)
     sentence_embedding = (
         torch.from_numpy(
             sbert.encode(
@@ -57,7 +69,7 @@ def main(model_config_path, out_dir, checkpoint):
             )
         )
         .float()
-        .cuda()
+        .to(device)
     )
 
     inputs = (texts, text_lengths, text_mask, sentence_embedding)
@@ -89,7 +101,7 @@ def main(model_config_path, out_dir, checkpoint):
             generator,
             tuple(
                 [
-                    torch.ones(input_shape, dtype=dtype).cuda()
+                    torch.ones(input_shape, dtype=dtype).to(device)
                     for input_shape, dtype in zip(input_shapes, input_dtypes)
                 ]
             ),
@@ -108,3 +120,7 @@ def main(model_config_path, out_dir, checkpoint):
                 }
             ),
         )
+
+
+if __name__ == "__main__":
+    main()
