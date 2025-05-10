@@ -10,9 +10,6 @@ from einops import rearrange, reduce
 from config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
-from config_loader import load_model_config_yaml
-from text_utils import TextCleaner
-from sentence_transformers import SentenceTransformer
 import torch
 import torch.nn as nn
 

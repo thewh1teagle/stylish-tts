@@ -2,15 +2,20 @@ import os.path as osp
 
 import click
 import onnx
+import torch
+from sentence_transformers import SentenceTransformer
 
+from models.models import build_model
 from models.onnx_models import Stylish, CustomSTFT
+from config_loader import load_model_config_yaml
+from text_utils import TextCleaner
 
 
 @click.command()
 @click.option("-cp", "--model_config_path", default="config/model.config.yml", type=str)
 @click.option("--out_dir", type=str)
 @click.option("--checkpoint", default="", type=str)
-def main(modeL_config_path, out_dir, checkpoint):
+def main(model_config_path, out_dir, checkpoint):
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
@@ -21,12 +26,12 @@ def main(modeL_config_path, out_dir, checkpoint):
     sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
     modules = build_model(model_config)
     model = Stylish(**modules, device=device).eval()
-    model.generator.stft = CustomSTFT(
+    stft = CustomSTFT(
         filter_length=model.generator.gen_istft_n_fft,
         hop_length=model.generator.gen_istft_hop_size,
         win_length=model.generator.gen_istft_n_fft,
     )
-    model.generator.stft.to(device)().eval()
+    model.generator.stft = stft.to(device).eval()
     texts = (
         torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).to(device)
     )
@@ -71,3 +76,7 @@ def main(modeL_config_path, out_dir, checkpoint):
                 node.attribute[0].ints[:] = perm
     onnx.save(onnx_model, "stylish.onnx")
     print("Exported!")
+
+
+if __name__ == "__main__":
+    main()

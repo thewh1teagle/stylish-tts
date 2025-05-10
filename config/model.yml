@@ -16,7 +16,8 @@ text_aligner:
 
 plbert:
   enabled: true
-  path: 'path/to/your/plbert.safetensors'
+  # Optional (defaults to pretrained plbert model trained for English)
+  # path: 'path/to/your/plbert.safetensors'
   hidden_size: 768
   num_attention_heads: 12
   intermediate_size: 2048

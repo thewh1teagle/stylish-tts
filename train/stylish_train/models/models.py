@@ -199,9 +199,15 @@ def build_model(model_config: ModelConfig):
     if model_config.plbert.enabled:
         nets.bert = PLBERT(
             vocab_size=model_config.text_encoder.n_token,
-            **{k: v for k, v in model_config.plbert.model_dump().items() if k not in ["enabled", "path"]},
+            **{
+                k: v
+                for k, v in model_config.plbert.model_dump().items()
+                if k not in ["enabled", "path"]
+            },
         )
-        nets.bert_encoder = nn.Linear(nets.bert.config.hidden_size, model_config.inter_dim),
+        nets.bert_encoder = nn.Linear(
+            nets.bert.config.hidden_size, model_config.inter_dim
+        )
 
     return nets  # , kdiffusion
 
@@ -229,5 +235,10 @@ def load_defaults(train, model):
 
         # Load pretrained PLBERT
         if train.model_config.plbert.enabled:
-            params = safetensors.torch.load_file(train.model_config.plbert.path)
+            path = train.model_config.plbert.path
+            if path is None:
+                path = hf_hub_download(
+                    repo_id="stylish-tts/plbert", filename="plbert.safetensors"
+                )
+            params = safetensors.torch.load_file(path)
             model.bert.load_state_dict(params, strict=False)
