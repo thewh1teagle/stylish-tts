@@ -33,6 +33,7 @@ dependencies = [
     "reformer-pytorch>=1.4.4",
     "onnx>=1.17.0",
     "stylish-lib",
+    "onnxruntime-gpu>=1.22.0",
 ]
 
 [dependency-groups]

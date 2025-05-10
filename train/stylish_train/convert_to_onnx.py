@@ -82,44 +82,44 @@ def main(model_config_path, out_dir, checkpoint):
             input_names=["texts", "text_lengths", "text_mask", "sentence_embedding"],
             output_names=["waveform"],
             dynamic_axes={
-                "texts": {0: "batch_size", 1: "num_token"},
-                "text_mask": {0: "batch_size", 1: "num_token"},
+                "texts": {1: "num_token"},
+                "text_mask": {1: "num_token"},
                 "waveform": {0: "num_samples"},
             },
         )
 
-    input_shapes = (
-        torch.Size([1, 512, 1150]),
-        torch.Size([1, 128]),
-        torch.Size([1, 1150]),
-        torch.Size([1, 1150]),
-    )
-    input_dtypes = torch.float32, torch.float32, torch.float32, torch.float32
-    input_names = "mel, style, pitch, energy".split(", ")
-    with torch.no_grad():
-        torch.onnx.export(
-            generator,
-            tuple(
-                [
-                    torch.ones(input_shape, dtype=dtype).to(device)
-                    for input_shape, dtype in zip(input_shapes, input_dtypes)
-                ]
-            ),
-            opset_version=19,
-            f=f"{out_dir}/ringformer.onnx",
-            input_names=input_names,
-            output_names=["waveform"],
-            dynamic_axes=dict(
-                {
-                    k: {
-                        i: f"dim_{i}"
-                        for i, d in enumerate(v)
-                        if d > 1 and d != 512 and d != 640
-                    }
-                    for k, v in zip(input_names, input_shapes)
-                }
-            ),
-        )
+    # input_shapes = (
+    #     torch.Size([1, 512, 1150]),
+    #     torch.Size([1, 128]),
+    #     torch.Size([1, 1150]),
+    #     torch.Size([1, 1150]),
+    # )
+    # input_dtypes = torch.float32, torch.float32, torch.float32, torch.float32
+    # input_names = "mel, style, pitch, energy".split(", ")
+    # with torch.no_grad():
+    #     torch.onnx.export(
+    #         generator,
+    #         tuple(
+    #             [
+    #                 torch.ones(input_shape, dtype=dtype).to(device)
+    #                 for input_shape, dtype in zip(input_shapes, input_dtypes)
+    #             ]
+    #         ),
+    #         opset_version=19,
+    #         f=f"{out_dir}/ringformer.onnx",
+    #         input_names=input_names,
+    #         output_names=["waveform"],
+    #         dynamic_axes=dict(
+    #             {
+    #                 k: {
+    #                     i: f"dim_{i}"
+    #                     for i, d in enumerate(v)
+    #                     if d > 1 and d != 512 and d != 640
+    #                 }
+    #                 for k, v in zip(input_names, input_shapes)
+    #             }
+    #         ),
+    #     )
 
 
 if __name__ == "__main__":

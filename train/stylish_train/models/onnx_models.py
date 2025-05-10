@@ -279,14 +279,14 @@ class Stylish(nn.Module):
         pitch_prediction, energy_prediction = self.model.pitch_energy_predictor(
             prosody, prosody_embedding
         )
-        mel, f0_curve = self.model.decoder(
-            text_encoding @ duration_prediction,
-            pitch_prediction,
-            energy_prediction,
-            style_embedding,
-            probing=False,
-        )
-        return mel, style_embedding, f0_curve, energy_prediction
+        # mel, f0_curve = self.model.decoder(
+        #     text_encoding @ duration_prediction,
+        #     pitch_prediction,
+        #     energy_prediction,
+        #     style_embedding,
+        #     probing=False,
+        # )
+        # return mel, style_embedding, f0_curve, energy_prediction
         """return (
             text_encoding,
             duration_prediction,
@@ -294,14 +294,14 @@ class Stylish(nn.Module):
             energy_prediction,
             style_embedding,
         )"""
-        """prediction = self.decoding_single(
+        prediction = self.decoding_single(
             text_encoding,
             duration_prediction,
             pitch_prediction,
             energy_prediction,
             style_embedding,
         )
-        return prediction.audio.squeeze()"""
+        return prediction.audio.squeeze(0)
 
 
 class Generator(torch.nn.Module):

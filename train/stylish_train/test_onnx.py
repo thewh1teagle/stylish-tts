@@ -65,6 +65,7 @@ def main(model_config_path, dir, checkpoint):
         f"{dir}/stylish.onnx",
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
+    print("before")
     outputs = session.run(
         None,
         {
@@ -74,17 +75,23 @@ def main(model_config_path, dir, checkpoint):
             "sentence_embedding": sentence_embedding.cpu().numpy(),
         },
     )
-
-    print("Using RingFormer in PyTorch...")
-    torch_outputs = [torch.from_numpy(out).cuda() for out in outputs]
-    print(gen(*torch_outputs))
-
-    print("Using broken RingFormer in ONNX...")
-    input_names = "mel, style, pitch, energy".split(", ")
-    inp = {name: output for name, output in zip(input_names[:3], outputs[:3])}
-    session = ort.InferenceSession(
-        f"{dir}/ringformer.onnx",
-        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-    )
-    outputs = session.run(None, inp)
+    print("after")
     print(outputs)
+
+    # print("Using RingFormer in PyTorch...")
+    # torch_outputs = [torch.from_numpy(out).cuda() for out in outputs]
+    # print(gen(*torch_outputs))
+
+    # print("Using broken RingFormer in ONNX...")
+    # input_names = "mel, style, pitch, energy".split(", ")
+    # inp = {name: output for name, output in zip(input_names[:3], outputs[:3])}
+    # session = ort.InferenceSession(
+    #     f"{dir}/ringformer.onnx",
+    #     providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    # )
+    # outputs = session.run(None, inp)
+    # print(outputs)
+
+
+if __name__ == "__main__":
+    main()
