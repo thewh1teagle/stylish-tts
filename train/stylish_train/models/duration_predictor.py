@@ -81,7 +81,7 @@ class DurationEncoder(nn.Module):
         for block in self.lstms:
             if isinstance(block, AdaLayerNorm):
                 x = block(x.transpose(-1, -2), style).transpose(-1, -2)
-                x = torch.cat([x, s.permute(1, -1, 0)], dim=1)
+                x = torch.cat([x, s.permute(1, 2, 0)], dim=1)
                 x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
             else:
                 x = x.transpose(-1, -2)
