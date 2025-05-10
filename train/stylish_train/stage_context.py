@@ -155,6 +155,8 @@ stages = {
             "acoustic_prosody_encoder",
             "duration_predictor",
             "pitch_energy_predictor",
+            "bert",
+            "bert_encoder",
         ],
         eval_models=[
             "text_encoder",
@@ -185,6 +187,8 @@ stages = {
             "acoustic_prosody_encoder",
             "duration_predictor",
             "pitch_energy_predictor",
+            "bert",
+            "bert_encoder",
         ],
         eval_models=[
             "text_encoder",
