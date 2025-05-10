@@ -186,7 +186,8 @@ class PLBERTConfig(BaseModel):
     """
     Configuration for the PLBERT model.
     """
-
+    enabled: bool = Field(..., description="Enable PL-BERT.")
+    path: bool = Field(..., description="Path to the safetensors checkpoint.")
     hidden_size: int = Field(..., description="Hidden size of the PLBERT model.")
     num_attention_heads: int = Field(
         ..., description="Number of attention heads in the PLBERT model."

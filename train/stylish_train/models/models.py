@@ -43,10 +43,6 @@ def build_model(model_config: ModelConfig):
     text_aligner = tdnn_blstm_ctc_model_base(
         model_config.n_mels, model_config.text_encoder.n_token
     )
-    bert = PLBERT(
-        vocab_size=model_config.text_encoder.n_token,
-        **(model_config.plbert.model_dump()),
-    )
 
     assert model_config.decoder.type in [
         # "istftnet",
@@ -165,8 +161,6 @@ def build_model(model_config: ModelConfig):
     # )
 
     nets = Munch(
-        bert=bert,
-        bert_encoder=nn.Linear(bert.config.hidden_size, model_config.inter_dim),
         # predictor=predictor,
         duration_predictor=duration_predictor,
         pitch_energy_predictor=pitch_energy_predictor,
@@ -202,6 +196,13 @@ def build_model(model_config: ModelConfig):
         # ),
     )
 
+    if model_config.plbert.enabled:
+        nets.bert = PLBERT(
+            vocab_size=model_config.text_encoder.n_token,
+            **{k: v for k, v in model_config.plbert.model_dump().items() if k not in ["enabled", "path"]},
+        )
+        nets.bert_encoder = nn.Linear(nets.bert.config.hidden_size, model_config.inter_dim),
+
     return nets  # , kdiffusion
 
 
@@ -227,7 +228,6 @@ def load_defaults(train, model):
         # model.pitch_extractor.load_state_dict(params)
 
         # Load pretrained PLBERT
-        params = safetensors.torch.load_file(
-            hf_hub_download(repo_id="stylish-tts/plbert", filename="plbert.safetensors")
-        )
-        model.bert.load_state_dict(params, strict=False)
+        if train.model_config.plbert.enabled:
+            params = safetensors.torch.load_file(train.model_config.plbert.path)
+            model.bert.load_state_dict(params, strict=False)
