@@ -12,6 +12,7 @@ import random
 import numpy as np
 from scipy.signal import get_window
 import logging
+from ..common import InstanceNorm1d
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ LRELU_SLOPE = 0.1
 class AdaIN1d(nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
-        self.norm = nn.InstanceNorm1d(num_features, affine=False)
+        self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
 
     def forward(self, x, s):
