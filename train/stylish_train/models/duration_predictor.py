@@ -20,7 +20,7 @@ class DurationPredictor(nn.Module):
         d = self.text_encoder(texts, style, text_lengths, mask)
 
         # predict duration
-        input_lengths = text_lengths.cpu().numpy()
+        input_lengths = text_lengths.cpu()
         x = nn.utils.rnn.pack_padded_sequence(
             d, input_lengths, batch_first=True, enforce_sorted=False
         )
@@ -75,7 +75,7 @@ class DurationEncoder(nn.Module):
         x.masked_fill_(masks.unsqueeze(-1).transpose(0, 1), 0.0)
 
         x = x.transpose(0, 1)
-        input_lengths = text_lengths.cpu().numpy()
+        input_lengths = text_lengths.cpu()
         x = x.transpose(-1, -2)
 
         for block in self.lstms:

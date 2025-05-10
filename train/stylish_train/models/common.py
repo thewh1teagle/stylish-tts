@@ -24,11 +24,35 @@ class LinearNorm(torch.nn.Module):
     def forward(self, x):
         return self.linear_layer(x)
 
+class InstanceNorm1d(torch.nn.Module):
+    """An implementation of InstanceNorm1d compatible with ONNX"""
+    def __init__(self, num_features, eps=1e-5, affine=True):
+        super().__init__()
+        self.eps = eps
+        self.affine = affine
+        if self.affine:
+            self.weight = torch.nn.Parameter(torch.ones(num_features))
+            self.bias = torch.nn.Parameter(torch.zeros(num_features))
+        else:
+            self.register_parameter('weight', None)
+            self.register_parameter('bias', None)
+
+    def forward(self, x):
+        # x shape: (N, C, L)
+        mean = x.mean(dim=[2], keepdim=True)
+        var = x.var(dim=[2], keepdim=True, unbiased=False)
+        x_normalized = (x - mean) / torch.sqrt(var + self.eps)
+        if self.affine:
+            # reshape weight and bias for broadcasting
+            weight = self.weight.view(1, -1, 1)
+            bias = self.bias.view(1, -1, 1)
+            x_normalized = x_normalized * weight + bias
+        return x_normalized
 
 class ClampedInstanceNorm1d(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super(ClampedInstanceNorm1d, self).__init__()
-        self.norm = torch.nn.InstanceNorm1d(*args, **kwargs)
+        self.norm = InstanceNorm1d(*args, **kwargs)
 
     def forward(self, x):
         return self.norm(leaky_clamp(x, -1e15, 1e15))

@@ -55,7 +55,7 @@ class TextEncoder(nn.Module):
 
         x = x.transpose(1, 2)  # [B, T, chn]
 
-        input_lengths = input_lengths.cpu().numpy()
+        input_lengths = input_lengths.cpu()
         x = nn.utils.rnn.pack_padded_sequence(
             x, input_lengths, batch_first=True, enforce_sorted=False
         )

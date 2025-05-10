@@ -2,7 +2,7 @@ from typing import List, Optional
 import torch
 from torch.nn.utils.parametrizations import weight_norm
 
-from .common import get_padding, init_weights, leaky_clamp
+from .common import get_padding, init_weights, leaky_clamp, InstanceNorm1d
 
 
 class ConvNeXtBlock(torch.nn.Module):
@@ -66,7 +66,7 @@ class ConvNeXtBlock(torch.nn.Module):
 class AdaNorm1d(torch.nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
-        self.norm = torch.nn.InstanceNorm1d(num_features, affine=False)
+        self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = torch.nn.Linear(style_dim, num_features * 2)
 
     def forward(self, x, s):
