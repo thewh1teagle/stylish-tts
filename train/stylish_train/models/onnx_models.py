@@ -7,7 +7,6 @@ import torchaudio
 from einops import rearrange, reduce
 
 # import train_context
-from config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
 import torch

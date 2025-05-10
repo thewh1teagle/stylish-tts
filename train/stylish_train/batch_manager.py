@@ -10,11 +10,11 @@ from meldataset import (
 )
 import utils
 from accelerate.accelerator import Accelerator
-from text_utils import TextCleaner
+from stylish_lib.text_utils import TextCleaner
 from torch.utils.data import DataLoader
 import tqdm
 import logging
-from config_loader import DatasetConfig
+from stylish_lib.config_loader import DatasetConfig
 from loss_log import LossLog
 
 logger = logging.getLogger(__name__)

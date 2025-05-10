@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from reformer_pytorch import ReformerLM, Autopadder
 
-from config_loader import ModelConfig
+from stylish_lib.config_loader import ModelConfig
 
 
 from .text_aligner import tdnn_blstm_ctc_model_base

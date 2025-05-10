@@ -1,4 +1,4 @@
-from config_loader import Config, ModelConfig
+from stylish_lib.config_loader import Config, ModelConfig
 from batch_manager import BatchManager
 from typing import Optional, Any
 import os.path as osp
@@ -14,7 +14,7 @@ from losses import (
     CTCLossWithLabelPriors,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
-from text_utils import TextCleaner
+from stylish_lib.text_utils import TextCleaner
 import torchaudio
 
 

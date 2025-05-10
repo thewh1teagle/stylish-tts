@@ -32,6 +32,7 @@ dependencies = [
     "k2>=1.24.4.dev20250208",
     "reformer-pytorch>=1.4.4",
     "onnx>=1.17.0",
+    "stylish_lib",
 ]
 
 [dependency-groups]
@@ -42,7 +43,7 @@ dev = [
 
 [tool.uv.sources]
 k2 = { url = "https://huggingface.co/csukuangfj/k2/resolve/main/ubuntu-cuda/k2-1.24.4.dev20250208+cuda12.4.torch2.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"}
-
+stylish_lib = { path = "../lib/", editable = true }
 
 # [[tool.uv.index]]
 # url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/"

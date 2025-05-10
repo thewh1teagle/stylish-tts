@@ -5,7 +5,7 @@ import shutil
 import logging
 import random
 from logging import StreamHandler
-from config_loader import load_config_yaml, load_model_config_yaml
+from stylish_lib.config_loader import load_config_yaml, load_model_config_yaml
 from train_context import TrainContext
 import hashlib
 import numpy as np

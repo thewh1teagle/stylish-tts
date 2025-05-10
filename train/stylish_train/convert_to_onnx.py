@@ -7,8 +7,8 @@ from sentence_transformers import SentenceTransformer
 
 from models.models import build_model
 from models.onnx_models import Stylish, CustomSTFT
-from config_loader import load_model_config_yaml
-from text_utils import TextCleaner
+from stylish_lib.config_loader import load_model_config_yaml
+from stylish_lib.text_utils import TextCleaner
 
 
 @click.command()
