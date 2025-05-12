@@ -196,18 +196,16 @@ def build_model(model_config: ModelConfig):
         # ),
     )
 
-    if model_config.plbert.enabled:
-        nets.bert = PLBERT(
-            vocab_size=model_config.text_encoder.n_token,
-            **{
-                k: v
-                for k, v in model_config.plbert.model_dump().items()
-                if k not in ["enabled", "path"]
-            },
-        )
-        nets.bert_encoder = nn.Linear(
-            nets.bert.config.hidden_size, model_config.inter_dim
-        )
+    # if model_config.plbert.enabled:
+    nets.bert = PLBERT(
+        vocab_size=model_config.text_encoder.n_token,
+        **{
+            k: v
+            for k, v in model_config.plbert.model_dump().items()
+            if k not in ["enabled", "path"]
+        },
+    )
+    nets.bert_encoder = nn.Linear(nets.bert.config.hidden_size, model_config.inter_dim)
 
     return nets  # , kdiffusion
 
