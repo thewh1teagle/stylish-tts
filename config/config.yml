@@ -20,7 +20,7 @@ training_plan:
   alignment:
     epochs: 5
     probe_batch_max: 128
-    lr: 3e-5
+    lr: 1e-5
   pre_acoustic:
     epochs: 1
     probe_batch_max: 2
@@ -36,7 +36,7 @@ training_plan:
   textual:
     epochs: 2
     probe_batch_max: 32
-    lr: 1e-5
+    lr: 1e-4
   joint:
     epochs: 2
     probe_batch_max: 2
