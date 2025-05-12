@@ -294,7 +294,7 @@ class StageContext:
         self, name: str, train, train_time_bins: dict, val_time_bins: dict
     ) -> None:
         self.name: str = name
-        self.max_epoch: int = train.config.training_plan.dict()[name]
+        self.max_epoch: int = train.config.training_plan.get_stage(name).epochs
         self.train_time_bins: dict = train_time_bins
         self.val_time_bins: dict = val_time_bins
 
@@ -311,7 +311,7 @@ class StageContext:
 
     def begin_stage(self, name, train):
         self.name = name
-        self.max_epoch = train.config.training_plan.dict()[name]
+        self.max_epoch = train.config.training_plan.get_stage(name).epochs
         self.train_fn = stages[name].train_fn
         self.validate_fn = stages[name].validate_fn
         self.optimizer.reset_lr(name, train)

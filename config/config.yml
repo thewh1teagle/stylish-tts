@@ -14,17 +14,38 @@ training:
   # Increasing this slows training overall even if
   # epochs go by faster.
   probe_batch_max: 2
-  probe_alignment_batch_max: 128
 
-# Number of epochs to train each stage.
+# Number of epochs, max batch sizes and general learning rate of each stage.
 training_plan:
-  alignment: 5
-  pre_acoustic: 1
-  acoustic: 5
-  pre_textual: 10
-  textual: 2
-  joint: 2
-  sbert: 12
+  alignment: # alignment pretraining
+    epochs: 5
+    probe_batch_max: 128
+    lr: 1e-5
+  pre_acoustic: # pretraining of acoustic models (stage 1)
+    epochs: 1
+    probe_batch_max: 2
+    lr: 1e-4
+  acoustic: # joint training of acoustic models and the vocoder (stage 2)
+    epochs: 5
+    probe_batch_max: 2
+    lr: 1e-4
+  pre_textual: # pretraining of textual models (stage 3)
+    epochs: 10
+    probe_batch_max: 32
+    lr: 1e-4
+  textual: # training of textual models (stage 4)
+    epochs: 2
+    probe_batch_max: 32
+    lr: 1e-4
+  joint: # joint training of textual models (stage 5)
+    epochs: 2
+    probe_batch_max: 2
+    lr: 1e-4
+  sbert: # training of sbert for dynamic embeddings (stage 6)
+    epochs: 12
+    probe_batch_max: 32
+    lr: 1e-4
+
 
 # See README.md for specifications on the dataset and
 # how to generate these files.
@@ -87,8 +108,5 @@ discriminator_loss_weight:
 # Learning rates are pre-tuned. Do not change these unless
 # you know what you are doing
 optimizer:
-  lr: 1e-4 # general learning rate
   bert_lr: 1e-5 # learning rate for PLBERT
   ft_lr: 1e-5 # learning rate for acoustic modules (i.e. decoder, textual_style_encoder and prosody_style_encoder)
-  alignment_lr: 1e-5 # alignment learning rate
-  text_encoder_lr: 1e-5 # text encoder pretraining lr

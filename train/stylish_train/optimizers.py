@@ -139,11 +139,7 @@ def calculate_lr(key, stage_name, *, train):
         or stage_name == "textual"
         or stage_name == "joint"
     )
-    lr = train.config.optimizer.lr
-    if stage_name == "alignment":
-        lr = train.config.optimizer.alignment_lr
-    elif stage_name == "text_encoder":
-        lr = train.config.optimizer.text_encoder_lr
+    lr = train.config.training_plan.get_stage(stage_name).lr
     # elif stage_name == "pre_acoustic":
     #     lr /= 5
     weight_decay = 1e-4
