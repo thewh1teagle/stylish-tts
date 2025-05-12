@@ -61,11 +61,11 @@ class TrainingPlanConfig(BaseModel):
     )
     pre_acoustic: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
-        description="Configuration for the pretraining of acoustic models (first stage).",
+        description="Configuration for the pretraining of acoustic models stage (first stage).",
     )
     acoustic: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
-        description="Configuration for joint training of acoustic models (second stage).",
+        description="Configuration for joint training of acoustic models stage (second stage).",
     )
     pre_textual: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
