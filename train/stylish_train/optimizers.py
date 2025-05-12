@@ -139,7 +139,7 @@ def calculate_lr(key, stage_name, *, train):
         or stage_name == "textual"
         or stage_name == "joint"
     )
-    lr = train.config.optimizer.lr
+    lr = train.config.training_plan.get_stage(stage_name).lr
     if stage_name == "alignment":
         lr = train.config.optimizer.alignment_lr
     elif stage_name == "text_encoder":

@@ -31,47 +31,67 @@ class TrainingConfig(BaseModel):
     )
 
 
-class TrainingPlanConfig(BaseModel):
+class TrainingStageConfig(BaseModel):
     """
-    Training plan configuration that defines the number of epochs for different stages.
+    Training stage configuration that defines the number of epochs, probe batch max and learning rate for one stage.
     """
 
-    text_encoder: int = Field(
-        default=10,
-        description="Number of epochs for pretraining the text encoder model.",
+    epochs: int = Field(default=10, description="Number of epochs of this stage.")
+    probe_batch_max: int = Field(
+        default=32, description="Maximum batch size to attempt during bin probing."
     )
-    alignment: int = Field(
-        default=10,
-        description="Number of epochs for pretraining the text alignment model.",
+    lr: float = Field(default=1e-4, description="General learning rate.")
+
+
+class TrainingPlanConfig(BaseModel):
+    """
+    Training plan configuration for every stage.
+    """
+
+    # text_encoder: TrainingStageConfig = Field(
+    #     default_factory=TrainingStageConfig,
+    #     description="Configuration for pretraining the text encoder model."
+    # )
+    # vocoder: TrainingStageConfig = Field(
+    #     default_factory=TrainingStageConfig,
+    #     description="Configuration for the vocoder pretraining stage."
+    # )
+    text_encoder: TrainingStageConfig = None
+    vocoder: TrainingStageConfig = None
+    alignment: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for pretraining the text alignment model.",
     )
-    vocoder: int = Field(
-        default=10,
-        description="Number of epochs for pretraining the vocoder generator.",
+    pre_acoustic: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for the pretraining of acoustic models (first stage).",
     )
-    pre_acoustic: int = Field(
-        default=10,
-        description="Number of epochs for the pretraining of acoustic models (first stage).",
+    acoustic: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for joint training of acoustic models (second stage).",
     )
-    acoustic: int = Field(
-        default=10,
-        description="Number of epochs for joint training of acoustic models (second stage).",
+    pre_textual: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for the pretraining of textual models stage (third stage).",
     )
-    pre_textual: int = Field(
-        default=10,
-        description="Number of epochs for the pretraining of textual models stage (third stage).",
+    textual: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for training of textual models stage (fourth stage).",
     )
-    textual: int = Field(
-        default=10,
-        description="Number of epochs for training of textual models stage (fourth stage).",
+    joint: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for joint training of textual models stage (fifth stage).",
     )
-    joint: int = Field(
-        default=10,
-        description="Number of epochs for joint training of textual models stage (fifth stage).",
+    sbert: TrainingStageConfig = Field(
+        default_factory=TrainingStageConfig,
+        description="Configuration for training of sbert models stage (sixth stage).",
     )
-    sbert: int = Field(
-        default=10,
-        description="Number of epochs for training of sbert models stage (sixth stage).",
-    )
+
+    def get_stage(self, name: str) -> TrainingStageConfig:
+        try:
+            return getattr(self, name)
+        except AttributeError:
+            raise ValueError(f"Stage '{name}' not found.")
 
 
 class DatasetConfig(BaseModel):
