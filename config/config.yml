@@ -110,5 +110,4 @@ discriminator_loss_weight:
 optimizer:
   bert_lr: 1e-5 # learning rate for PLBERT
   ft_lr: 1e-5 # learning rate for acoustic modules (i.e. decoder, textual_style_encoder and prosody_style_encoder)
-  alignment_lr: 1e-5 # alignment learning rate
   text_encoder_lr: 1e-5 # text encoder pretraining lr
