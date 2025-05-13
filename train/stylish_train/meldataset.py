@@ -17,9 +17,6 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
-sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
-
 mel_window = {}
 
 
@@ -81,6 +78,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         model_config,
         pitch_path,
         alignment_path,
+        sbert,
     ):
         self.pitch = {}
         with safe_open(pitch_path, framework="pt", device="cpu") as f:
@@ -120,6 +118,8 @@ class FilePathDataset(torch.utils.data.Dataset):
             hop_length=model_config.hop_length,
             sample_rate=model_config.sample_rate,
         )
+
+        self.sbert = sbert
 
         # self.min_length = min_length
         # with open(
@@ -341,12 +341,13 @@ class Collater(object):
       adaptive_batch_size (bool): if true, decrease batch size when long data comes.
     """
 
-    def __init__(self, return_wave=False, multispeaker=False):
+    def __init__(self, return_wave=False, multispeaker=False, sbert_output_dim=384):
         self.text_pad_index = 0
         self.min_mel_length = 192
         self.max_mel_length = 192
         self.return_wave = return_wave
         self.multispeaker = multispeaker
+        self.sbert_output_dim = sbert_output_dim
 
     def __call__(self, batch):
         # batch[0] = wave, mel, text, f0, speakerid
@@ -377,7 +378,7 @@ class Collater(object):
             (batch_size, batch[0][7].shape[-1])
         ).float()  # [None for _ in range(batch_size)]
         pitches = torch.zeros((batch_size, max_mel_length)).float()
-        sentence_embeddings = torch.zeros(batch_size, 384).float()
+        sentence_embeddings = torch.zeros(batch_size, self.sbert_output_dim).float()
         voiced = torch.zeros((batch_size, max_text_length)).float()
         align_mels = torch.zeros((batch_size, 80, max_mel_length)).float()
         alignments = torch.zeros((batch_size, max_text_length, max_mel_length // 2))
@@ -455,6 +456,7 @@ def build_dataloader(
     train,
 ):
     collate_config["multispeaker"] = multispeaker
+    collate_config["sbert_output_dim"] = train.sbert.get_sentence_embedding_dimension()
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch_size is not None
     data_loader = torch.utils.data.DataLoader(

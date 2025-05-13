@@ -427,6 +427,12 @@ class SlmConfig(BaseModel):
     )
 
 
+class SbertConfig(BaseModel):
+    model: str = Field(
+        ..., description="Model name on HuggingFace or filepath to a SBERT checkpoint."
+    )
+
+
 class Config(BaseModel):
     """
     Top-level configuration model that encompasses all settings.
@@ -507,7 +513,8 @@ class ModelConfig(BaseModel):
     slm: SlmConfig = Field(
         ..., description="Speech Language Model (SLM) configuration parameters."
     )
-    symbol: SymbolConfig = Field(..., description="Text processing symbols")
+    symbol: SymbolConfig = Field(..., description="Text processing symbols.")
+    sbert: SbertConfig = Field(..., description="SentenceTransformer configuration.")
 
     def state_dict(self) -> dict:
         return self.model_dump()
