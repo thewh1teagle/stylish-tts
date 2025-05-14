@@ -43,7 +43,7 @@ training_plan:
     lr: 1e-4
   sbert: # training of sbert for dynamic embeddings (stage 6)
     epochs: 12
-    probe_batch_max: 32
+    probe_batch_max: 128
     lr: 1e-4
 
 
