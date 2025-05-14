@@ -330,24 +330,26 @@ def freev_loss(log, pred, gt_audio, train):
 # """ https://dl.acm.org/doi/abs/10.1145/3573834.3574506 """
 #
 #
-# def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
-# loss = 0
-# for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-# tau = 0.04
-# m_DG = torch.median((dr - dg))
-# L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
-# loss += tau - F.relu(tau - L_rel)
-# return loss
-#
-#
-# def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
-# loss = 0
-# for dg, dr in zip(disc_real_outputs, disc_generated_outputs):
-# tau = 0.04
-# m_DG = torch.median((dr - dg))
-# L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
-# loss += tau - F.relu(tau - L_rel)
-# return loss
+def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
+    loss = 0
+    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+        tau = 0.04
+        m_DG = torch.median((dr - dg))
+        L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
+        loss += tau - F.relu(tau - L_rel)
+    return loss
+
+
+def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
+    loss = 0
+    for dg, dr in zip(disc_real_outputs, disc_generated_outputs):
+        tau = 0.04
+        m_DG = torch.median((dr - dg))
+        L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
+        loss += tau - F.relu(tau - L_rel)
+    return loss
+
+
 #
 #
 # class GeneratorLoss(torch.nn.Module):
@@ -554,6 +556,7 @@ class DiscriminatorLossHelper(torch.nn.Module):
             disc_real_outputs=real_score, disc_generated_outputs=gen_score
         )
         loss /= len(loss_real)
+        loss += discriminator_TPRLS_loss(real_score, gen_score)
         self.last_loss = self.last_loss * 0.95 + loss.item() * 0.05
         return loss * self.weight
 
@@ -610,9 +613,10 @@ class GeneratorLossHelper(torch.nn.Module):
         return loss
 
     def forward(self, audio_gt, audio):
-        _, gen_score, fmap_rs, fmap_gs = self.model(y=audio_gt, y_hat=audio)
+        real_score, gen_score, fmap_rs, fmap_gs = self.model(y=audio_gt, y_hat=audio)
         loss_gen, list_loss_gen = self.generator_loss(disc_outputs=gen_score)
         loss_gen = loss_gen / len(list_loss_gen)
+        loss_gen += generator_TPRLS_loss(real_score, gen_score)
         loss_fm = self.feature_matching_loss(fmap_r=fmap_rs, fmap_g=fmap_gs)
         loss_fm = loss_fm / len(fmap_rs)
         return (loss_gen + loss_fm) * self.weight
