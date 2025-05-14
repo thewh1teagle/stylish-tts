@@ -511,10 +511,10 @@ class DiscriminatorLossHelper(torch.nn.Module):
         x_min = 0.05
         x = abs(self.last_loss - ideal_loss)
         result = 1.0
-        if self.last_loss > ideal_loss:
-            result = min(math.pow(f_max, x / x_max), f_max)
-        else:
-            result = max(math.pow(h_min, x / x_min), h_min)
+        # if self.last_loss > ideal_loss:
+        #     result = min(math.pow(f_max, x / x_max), f_max)
+        # else:
+        #     result = max(math.pow(h_min, x / x_min), h_min)
         return result
 
     def discriminator_loss(
