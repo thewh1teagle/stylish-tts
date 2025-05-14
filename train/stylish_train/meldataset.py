@@ -266,7 +266,7 @@ class FilePathDataset(torch.utils.data.Dataset):
                 dtype=torch.float32,  # Match Collater's target dtype
             )
         sentence_embedding = torch.from_numpy(
-            sbert.encode([self.sentences[idx]], show_progress_bar=False)
+            self.sbert.encode([self.sentences[idx]], show_progress_bar=False)
         ).float()
 
         return (

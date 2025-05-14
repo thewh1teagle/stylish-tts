@@ -504,7 +504,7 @@ class DiscriminatorLossHelper(torch.nn.Module):
         self.last_loss = 0.5
 
     def get_disc_lr_multiplier(self):
-        ideal_loss = 2.0
+        ideal_loss = 0.5
         f_max = 4.0
         h_min = 0.1
         x_max = 0.05
@@ -538,8 +538,10 @@ class DiscriminatorLossHelper(torch.nn.Module):
         r_losses = []
         g_losses = []
         for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-            r_loss = torch.mean(torch.clamp(1 - dr, min=0))
-            g_loss = torch.mean(torch.clamp(1 + dg, min=0))
+            r_loss = torch.mean((1 - dr) ** 2)
+            g_loss = torch.mean(dg**2)
+            # r_loss = torch.mean(torch.clamp(1 - dr, min=0))
+            # g_loss = torch.mean(torch.clamp(1 + dg, min=0))
             loss += r_loss + g_loss
             r_losses.append(r_loss)
             g_losses.append(g_loss)
@@ -582,7 +584,8 @@ class GeneratorLossHelper(torch.nn.Module):
         )
         gen_losses = []
         for dg in disc_outputs:
-            item = torch.mean(torch.clamp(1 - dg, min=0))
+            item = torch.mean((1 - dg) ** 2)
+            # item = torch.mean(torch.clamp(1 - dg, min=0))
             gen_losses.append(item)
             loss += item
 
