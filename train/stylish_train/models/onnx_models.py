@@ -209,10 +209,10 @@ class CustomSTFT(nn.Module):
 
 
 class Stylish(nn.Module):
-    def __init__(self, model_config, device):
+    def __init__(self, model, device):
         super(Stylish, self).__init__()
         self.device = device
-        self.model = build_model(model_config)
+        self.model = model
         for key in self.model:
             self.model[key].to(device).eval()
             for p in self.model[key].parameters():
