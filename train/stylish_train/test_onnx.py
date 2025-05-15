@@ -32,21 +32,27 @@ import click
 @click.option("--dir", type=str)
 @click.option("--checkpoint", default="", type=str)
 def main(model_config_path, dir, checkpoint):
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+
     model_config = load_model_config_yaml(model_config_path)
     text_cleaner = TextCleaner(model_config.symbol)
-    model = Stylish(model_config, "cuda").eval()
-    model.model.generator.stft = CustomSTFT(
-        filter_length=model.model.generator.gen_istft_n_fft,
-        hop_length=model.model.generator.gen_istft_hop_size,
-        win_length=model.model.generator.gen_istft_n_fft,
-    )
-    model.model.generator.stft.cuda().eval()
-    gen = Generator(model.model.generator)
+    # model = Stylish(model_config, "cuda").eval()
+    # model.model.generator.stft = CustomSTFT(
+    #     filter_length=model.model.generator.gen_istft_n_fft,
+    #     hop_length=model.model.generator.gen_istft_hop_size,
+    #     win_length=model.model.generator.gen_istft_n_fft,
+    # )
+    # model.model.generator.stft.cuda().eval()
+    # gen = Generator(model.model.generator)
     sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
 
-    texts = torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).cuda()
-    text_lengths = torch.zeros([1], dtype=int).cuda()
-    text_lengths[0] = texts.shape[1]
+    tokens = torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).cuda()
+    texts = torch.zeros([1, 512], dtype=int).to(device)
+    texts[0][1 : tokens.shape[1] + 1] = tokens
+    text_lengths = torch.zeros([1], dtype=int).to(device)
+    text_lengths[0] = tokens.shape[1] + 2
     text_mask = torch.ones(1, texts.shape[1], dtype=bool).cuda()
     sentence_embedding = (
         torch.from_numpy(
@@ -76,7 +82,7 @@ def main(model_config_path, dir, checkpoint):
         },
     )
     print("after")
-    print(outputs)
+    print(outputs[0].shape)
 
     # print("Using RingFormer in PyTorch...")
     # torch_outputs = [torch.from_numpy(out).cuda() for out in outputs]

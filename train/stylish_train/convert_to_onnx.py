@@ -16,35 +16,15 @@ from stylish_lib.config_loader import load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
 from sentence_transformers import SentenceTransformer
 from models.onnx_models import Stylish, Generator, CustomSTFT
-import click
 
 from attr import attr
 import numpy as np
 
 
-@click.command()
-@click.option("-cp", "--model_config_path", default="config/model.config.yml", type=str)
-@click.option("--out_dir", type=str)
-@click.option("--checkpoint", default="", type=str)
-def main(model_config_path, out_dir, checkpoint):
-    device = "cpu"
-    if torch.cuda.is_available():
-        device = "cuda"
-
-    if osp.exists(model_config_path):
-        model_config = load_model_config_yaml(model_config_path)
-    else:
-        exit(f"Model configuration not found: {model_config_path}")
-    if out_dir is None:
-        exit(f"No out_dir was specified.")
-    if not osp.exists(out_dir):
-        os.makedirs(out_dir, exist_ok=True)
-    if not osp.exists(out_dir):
-        exit(f"Failed to create or find out_dir at {out_dir}.")
-
+def convert_to_onnx(model_config, out_dir, model_in, device):
     text_cleaner = TextCleaner(model_config.symbol)
     sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
-    model = Stylish(model_config, device).eval()
+    model = Stylish(model_in, device).eval()
     stft = CustomSTFT(
         filter_length=model.model.generator.gen_istft_n_fft,
         hop_length=model.model.generator.gen_istft_hop_size,
@@ -53,12 +33,15 @@ def main(model_config_path, out_dir, checkpoint):
     model.model.generator.stft = stft.to(device).eval()
     generator = Generator(model.model.generator)
 
-    texts = (
+    tokens = (
         torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).to(device)
     )
+    texts = torch.zeros([1, 512], dtype=int).to(device)
+    texts[0][1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)
-    text_lengths[0] = texts.shape[1]
-    text_mask = torch.ones(1, texts.shape[1], dtype=bool).to(device)
+    text_lengths[0] = tokens.shape[1] + 2
+    text_mask = torch.zeros(1, texts.shape[1], dtype=bool).to(device)
+    text_mask[:, : text_lengths[0]] = 1
     sentence_embedding = (
         torch.from_numpy(
             sbert.encode(
@@ -72,13 +55,14 @@ def main(model_config_path, out_dir, checkpoint):
         .to(device)
     )
 
+    filename = f"{out_dir}/stylish.onnx"
     inputs = (texts, text_lengths, text_mask, sentence_embedding)
     with torch.no_grad():
         torch.onnx.export(
             model,
             inputs,
             opset_version=14,
-            f=f"{out_dir}/stylish.onnx",
+            f=filename,
             input_names=["texts", "text_lengths", "text_mask", "sentence_embedding"],
             output_names=["waveform"],
             dynamic_axes={
@@ -88,6 +72,7 @@ def main(model_config_path, out_dir, checkpoint):
             },
         )
 
+    return filename
     # input_shapes = (
     #     torch.Size([1, 512, 1150]),
     #     torch.Size([1, 128]),
@@ -120,7 +105,3 @@ def main(model_config_path, out_dir, checkpoint):
     #             }
     #         ),
     #     )
-
-
-if __name__ == "__main__":
-    main()
