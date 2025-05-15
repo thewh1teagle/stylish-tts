@@ -99,24 +99,6 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from einops import rearrange
-from einops import (
-    einsum as einops_einsum,
-)  # Using einops.einsum as in the original snippet
-
-
-# Helper functions (if not defined elsewhere)
-def exists(val):
-    return val is not None
-
-
-def default(val, d):
-    return val if exists(val) else d() if callable(d) else d
-
-
 class Attention(nn.Module):
     def __init__(self, dim, heads=8, dim_head=64, dropout=0.0, use_sdpa=True):
         super().__init__()
