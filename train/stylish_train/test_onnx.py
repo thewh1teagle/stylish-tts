@@ -48,7 +48,11 @@ def main(model_config_path, dir, checkpoint):
     # gen = Generator(model.model.generator)
     sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
 
-    tokens = torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).cuda()
+    tokens = (
+        torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ"))
+        .unsqueeze(0)
+        .to(device)
+    )
     texts = torch.zeros([1, 512], dtype=int).to(device)
     texts[0][1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)
