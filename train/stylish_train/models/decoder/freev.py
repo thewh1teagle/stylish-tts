@@ -137,22 +137,22 @@ class FreevGenerator(torch.nn.Module):
         window = torch.hann_window(h.win_size)
         self.register_buffer("window", window, persistent=False)
 
-        self.harmonic = HarmonicGenerator(
-            sample_rate=h.sampling_rate,
-            dim_out=self.dim * 2,
-            win_length=h.win_size,
-            hop_length=h.hop_size,
-            divisor=2,
-        )
+        # self.harmonic = HarmonicGenerator(
+        #     sample_rate=h.sampling_rate,
+        #     dim_out=self.dim * 2,
+        #     win_length=h.win_size,
+        #     hop_length=h.hop_size,
+        #     divisor=2,
+        # )
 
-        self.ASP_harmonic_conv = torch.nn.Linear(
-            self.dim,
-            h.ASP_channel,
-            bias=False,
-            # h.ASP_input_conv_kernel_size,
-            # 1,
-            # padding=get_padding(h.ASP_input_conv_kernel_size, 1),
-        )
+        # self.ASP_harmonic_conv = torch.nn.Linear(
+        #     self.dim,
+        #     h.ASP_channel,
+        #     bias=False,
+        #     # h.ASP_input_conv_kernel_size,
+        #     # 1,
+        #     # padding=get_padding(h.ASP_input_conv_kernel_size, 1),
+        # )
 
         self.ASP_input_conv = Conv1d(
             h.num_mels,
@@ -239,10 +239,10 @@ class FreevGenerator(torch.nn.Module):
             nn.init.constant_(m.bias, 0)
 
     def forward(self, *, mel, style, pitch, energy):
-        har_spec, har_phase = self.harmonic(pitch, energy)
-        har_spec = har_spec.transpose(1, 2)
-        har_spec = self.ASP_harmonic_conv(har_spec)
-        har_spec = har_spec.transpose(1, 2)
+        # har_spec, har_phase = self.harmonic(pitch, energy)
+        # har_spec = har_spec.transpose(1, 2)
+        # har_spec = self.ASP_harmonic_conv(har_spec)
+        # har_spec = har_spec.transpose(1, 2)
         # inv_amp = self.inverse_mel.execute(mel).abs().clamp_min(1e-5)
         # logamp = inv_amp.log()
 
@@ -250,7 +250,7 @@ class FreevGenerator(torch.nn.Module):
         logamp = self.amp_norm(logamp.transpose(1, 2))
         logamp = logamp.transpose(1, 2)
         for conv_block in self.amp_convnext:
-            logamp = conv_block(logamp, style, har_spec)
+            logamp = conv_block(logamp, style)
         logamp = self.amp_final_layer_norm(logamp.transpose(1, 2))
         logamp = logamp.transpose(1, 2)
         logamp = self.ASP_output_conv(logamp)
@@ -259,7 +259,7 @@ class FreevGenerator(torch.nn.Module):
         pha = self.phase_norm(pha.transpose(1, 2))
         pha = pha.transpose(1, 2)
         for conv_block in self.phase_convnext:
-            pha = conv_block(pha, style, har_phase)
+            pha = conv_block(pha, style)
         pha = self.phase_final_layer_norm(pha.transpose(1, 2))
         pha = pha.transpose(1, 2)
         R = self.PSP_output_R_conv(pha)
