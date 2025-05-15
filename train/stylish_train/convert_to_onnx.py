@@ -15,7 +15,7 @@ from models.models import build_model
 from stylish_lib.config_loader import load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
 from sentence_transformers import SentenceTransformer
-from models.onnx_models import Stylish, Generator, CustomSTFT
+from models.onnx_models import Stylish, CustomSTFT
 
 from attr import attr
 import numpy as np
@@ -23,15 +23,14 @@ import numpy as np
 
 def convert_to_onnx(model_config, out_dir, model_in, device):
     text_cleaner = TextCleaner(model_config.symbol)
-    sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
-    model = Stylish(model_in, device).eval()
+    sbert = SentenceTransformer(model_config.sbert.model).cpu()
+    model = Stylish(**model_in, device=device).eval()
     stft = CustomSTFT(
-        filter_length=model.model.generator.gen_istft_n_fft,
-        hop_length=model.model.generator.gen_istft_hop_size,
-        win_length=model.model.generator.gen_istft_n_fft,
+        filter_length=model.generator.gen_istft_n_fft,
+        hop_length=model.generator.gen_istft_hop_size,
+        win_length=model.generator.gen_istft_n_fft,
     )
-    model.model.generator.stft = stft.to(device).eval()
-    generator = Generator(model.model.generator)
+    model.generator.stft = stft.to(device).eval()
 
     tokens = (
         torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).to(device)
@@ -74,35 +73,3 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
         )
 
     return filename
-    # input_shapes = (
-    #     torch.Size([1, 512, 1150]),
-    #     torch.Size([1, 128]),
-    #     torch.Size([1, 1150]),
-    #     torch.Size([1, 1150]),
-    # )
-    # input_dtypes = torch.float32, torch.float32, torch.float32, torch.float32
-    # input_names = "mel, style, pitch, energy".split(", ")
-    # with torch.no_grad():
-    #     torch.onnx.export(
-    #         generator,
-    #         tuple(
-    #             [
-    #                 torch.ones(input_shape, dtype=dtype).to(device)
-    #                 for input_shape, dtype in zip(input_shapes, input_dtypes)
-    #             ]
-    #         ),
-    #         opset_version=19,
-    #         f=f"{out_dir}/ringformer.onnx",
-    #         input_names=input_names,
-    #         output_names=["waveform"],
-    #         dynamic_axes=dict(
-    #             {
-    #                 k: {
-    #                     i: f"dim_{i}"
-    #                     for i, d in enumerate(v)
-    #                     if d > 1 and d != 512 and d != 640
-    #                 }
-    #                 for k, v in zip(input_names, input_shapes)
-    #             }
-    #         ),
-    #     )
