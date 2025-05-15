@@ -209,47 +209,14 @@ class CustomSTFT(nn.Module):
 
 
 class Stylish(nn.Module):
-    def __init__(
-        self,
-        text_encoder,
-        textual_style_encoder,
-        textual_prosody_encoder,
-        bert,
-        bert_encoder,
-        duration_predictor,
-        pitch_energy_predictor,
-        decoder,
-        generator,
-        device="cuda",
-        **kwargs
-    ):
+    def __init__(self, model, device):
         super(Stylish, self).__init__()
-
-        for model in [
-            text_encoder,
-            textual_style_encoder,
-            textual_prosody_encoder,
-            bert,
-            bert_encoder,
-            duration_predictor,
-            pitch_energy_predictor,
-            decoder,
-            generator,
-        ]:
-            model.to(device).eval()
-            for p in model.parameters():
-                p.requires_grad = False
-
         self.device = device
-        self.text_encoder = text_encoder
-        self.textual_style_encoder = textual_style_encoder
-        self.textual_prosody_encoder = textual_prosody_encoder
-        self.bert = bert
-        self.bert_encoder = bert_encoder
-        self.duration_predictor = duration_predictor
-        self.pitch_energy_predictor = pitch_energy_predictor
-        self.decoder = decoder
-        self.generator = generator
+        self.model = model
+        for key in self.model:
+            self.model[key].to(device).eval()
+            for p in self.model[key].parameters():
+                p.requires_grad = False
 
     def decoding_single(
         self,
@@ -260,26 +227,25 @@ class Stylish(nn.Module):
         style,
         probing=False,
     ):
-        # mel = self.decoder(
-        #     text_encoding @ duration, pitch, energy, style, probing=probing
-        # )
-        mel, f0_curve = self.decoder(
+        mel, f0_curve = self.model.decoder(
             text_encoding @ duration, pitch, energy, style, probing=probing
         )
-        prediction = self.generator(mel=mel, style=style, pitch=f0_curve, energy=energy)
-        # prediction = self.decoder(
+        prediction = self.model.generator(
+            mel=mel, style=style, pitch=f0_curve, energy=energy
+        )
+        # prediction = self.model.decoder(
         #     text_encoding @ duration, pitch, energy, style, probing=probing
         # )
         return prediction
 
-    def duration_predict(
+    def duration_predictor(
         self, duration_encoding, prosody_embedding, text_lengths, text_mask
     ):
-        d = self.duration_predictor.text_encoder(
+        d = self.model.duration_predictor.text_encoder(
             duration_encoding, prosody_embedding, text_lengths, text_mask
         )
-        x, _ = self.duration_predictor.lstm(d)
-        duration = self.duration_predictor.duration_proj(x)
+        x, _ = self.model.duration_predictor.lstm(d)
+        duration = self.model.duration_predictor.duration_proj(x)
         duration = torch.sigmoid(duration).sum(axis=-1)
 
         pred_dur = torch.round(duration).clamp(min=1).long().squeeze()
@@ -296,22 +262,38 @@ class Stylish(nn.Module):
         return pred_aln_trg, prosody
 
     def forward(self, texts, text_lengths, text_mask, sentence_embedding):
-        text_encoding = self.text_encoder(texts, text_lengths, text_mask)
-        style_embedding = self.textual_style_encoder(sentence_embedding)
-        prosody_embedding = self.textual_prosody_encoder(sentence_embedding)
-        plbert_embedding = self.bert(texts, attention_mask=(~text_mask).int())
-        duration_encoding = self.bert_encoder(plbert_embedding).permute(0, 2, 1)
-        duration_prediction, prosody = self.duration_predict(
+        text_encoding = self.model.text_encoder(texts, text_lengths, text_mask)
+        style_embedding = self.model.textual_style_encoder(sentence_embedding)
+        prosody_embedding = self.model.textual_prosody_encoder(sentence_embedding)
+
+        plbert_embedding = self.model.bert(texts, attention_mask=(~text_mask).int())
+        duration_encoding = self.model.bert_encoder(plbert_embedding).permute(0, 2, 1)
+
+        duration_prediction, prosody = self.duration_predictor(
             duration_encoding,
             prosody_embedding,
             text_lengths,
             text_mask,
         )
         # duration_prediction, prosody = self.duration_prediction, self.prosody
-        pitch_prediction, energy_prediction = self.pitch_energy_predictor(
+        pitch_prediction, energy_prediction = self.model.pitch_energy_predictor(
             prosody, prosody_embedding
         )
-
+        # mel, f0_curve = self.model.decoder(
+        #     text_encoding @ duration_prediction,
+        #     pitch_prediction,
+        #     energy_prediction,
+        #     style_embedding,
+        #     probing=False,
+        # )
+        # return mel, style_embedding, f0_curve, energy_prediction
+        """return (
+            text_encoding,
+            duration_prediction,
+            pitch_prediction,
+            energy_prediction,
+            style_embedding,
+        )"""
         prediction = self.decoding_single(
             text_encoding,
             duration_prediction,
@@ -319,4 +301,15 @@ class Stylish(nn.Module):
             energy_prediction,
             style_embedding,
         )
-        return prediction.audio.squeeze()
+        return prediction.audio.squeeze(0)
+
+
+class Generator(torch.nn.Module):
+    def __init__(self, generator):
+        super(Generator, self).__init__()
+        self.generator = generator
+
+    def forward(self, mel, style, pitch, energy):
+        return self.generator(
+            mel=mel, style=style, pitch=pitch, energy=energy
+        ).audio.squeeze()

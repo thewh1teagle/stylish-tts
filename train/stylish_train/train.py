@@ -19,6 +19,7 @@ from models.models import build_model, load_defaults
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss
 from utils import get_data_path_list, save_git_diff
 from loss_log import combine_logs
+from convert_to_onnx import convert_to_onnx
 import tqdm
 
 import os.path as osp
@@ -73,7 +74,10 @@ class LoggerManager:
 @click.option("--stage", default="first_tma", type=str)
 @click.option("--checkpoint", default="", type=str)
 @click.option("--reset_stage", default=False, type=bool)
-def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage):
+@click.option("--convert", default=False, type=bool)
+def main(
+    config_path, model_config_path, out_dir, stage, checkpoint, reset_stage, convert
+):
     np.random.seed(1)
     random.seed(1)
     if osp.exists(config_path):
@@ -239,6 +243,16 @@ def main(config_path, model_config_path, out_dir, stage, checkpoint, reset_stage
         load_defaults(train, train.model)
 
     train.manifest.stage = stage
+
+    if convert:
+        filename = convert_to_onnx(
+            train.model_config,
+            train.base_output_dir,
+            train.model,
+            train.config.training.device,
+        )
+        logger.info(f"Export to ONNX file {filename} complete")
+        exit(0)
 
     done = False
     while not done:
