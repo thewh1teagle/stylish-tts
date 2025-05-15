@@ -46,7 +46,7 @@ def main(model_config_path, dir, checkpoint):
     # )
     # model.model.generator.stft.cuda().eval()
     # gen = Generator(model.model.generator)
-    sbert = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").cpu()
+    sbert = SentenceTransformer(model_config.sbert.model).cpu()
 
     tokens = (
         torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ"))
