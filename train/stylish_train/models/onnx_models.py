@@ -260,16 +260,10 @@ class Stylish(nn.Module):
         style,
         probing=False,
     ):
-        # mel = self.decoder(
-        #     text_encoding @ duration, pitch, energy, style, probing=probing
-        # )
         mel, f0_curve = self.decoder(
             text_encoding @ duration, pitch, energy, style, probing=probing
         )
         prediction = self.generator(mel=mel, style=style, pitch=f0_curve, energy=energy)
-        # prediction = self.decoder(
-        #     text_encoding @ duration, pitch, energy, style, probing=probing
-        # )
         return prediction
 
     def duration_predict(
@@ -307,7 +301,6 @@ class Stylish(nn.Module):
             text_lengths,
             text_mask,
         )
-        # duration_prediction, prosody = self.duration_prediction, self.prosody
         pitch_prediction, energy_prediction = self.pitch_energy_predictor(
             prosody, prosody_embedding
         )

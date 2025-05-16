@@ -6,7 +6,6 @@ from einops.layers.torch import Rearrange
 from einops import rearrange
 from torch import nn, einsum
 
-# from .ring_attention_pytorch import RingAttention
 import logging
 
 logger = logging.getLogger(__name__)

@@ -1,13 +1,9 @@
-# Dep:
-# pip install ring_attention_pytorch
-# pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
-# from torchaudio.models.conformer import Conformer
 from .conformer import Conformer
 from ..common import init_weights, get_padding
 
@@ -386,16 +382,12 @@ class RingformerGenerator(torch.nn.Module):
         gen_istft_n_fft,
         gen_istft_hop_size,
         sample_rate,
-        # gin_channels=0,
     ):
         super(RingformerGenerator, self).__init__()
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
         self.gen_istft_n_fft = gen_istft_n_fft
         self.gen_istft_hop_size = gen_istft_hop_size
-        # self.conv_pre = Conv1d(
-        #    initial_channel, upsample_initial_channel, 7, 1, padding=3
-        # )
         resblock = AdaINResBlock1
 
         self.m_source = SourceModuleHnNSF(
@@ -460,16 +452,6 @@ class RingformerGenerator(torch.nn.Module):
         for i in range(len(self.ups)):
             ch = upsample_initial_channel // (2**i)
             self.conformers.append(
-                # Conformer(
-                #     input_dim=ch,
-                #     num_heads=8,
-                #     ffn_dim=ch * 4,
-                #     num_layers=2,
-                #     depthwise_conv_kernel_size=31,
-                #     dropout=0.1,
-                #     use_group_norm=True,
-                #     convolution_first=False,
-                # )
                 Conformer(
                     dim=ch,
                     depth=2,
@@ -494,12 +476,8 @@ class RingformerGenerator(torch.nn.Module):
             win_length=self.gen_istft_n_fft,
         )
 
-        # if gin_channels != 0:
-        #    self.cond = nn.Conv1d(gin_channels, upsample_initial_channel, 1)
-
     def forward(self, mel, style, pitch, energy):
         # x: [b,d,t]
-        # x = self.conv_pre(x)
         x = mel
         f0 = pitch
         s = style
@@ -535,7 +513,6 @@ class RingformerGenerator(torch.nn.Module):
             x = xs / self.num_kernels
 
         x = x + (1 / self.alphas[i + 1]) * (torch.sin(self.alphas[i + 1] * x) ** 2)
-        # x = self.reflection_pad(x)
         x = self.conv_post(x)
 
         spec = torch.exp(x[:, : self.post_n_fft // 2 + 1, :])

@@ -11,15 +11,11 @@ from scipy.signal import get_window
 
 import math
 
-# import torch
-# from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 from utils import DecoderPrediction
 from .harmonics import HarmonicGenerator
 from ..conv_next import ConvNeXtBlock, BasicConvNeXtBlock
 from ..common import get_padding
-
-# import torch.nn.functional as F
 
 
 class InverseMel:
