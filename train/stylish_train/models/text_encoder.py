@@ -72,6 +72,19 @@ class TextEncoder(nn.Module):
 
         return x
 
+    def infer(self, x):
+        x = self.embedding(x)  # [B, T, emb]
+        x = x.transpose(1, 2)  # [B, emb, T]
+
+        for c in self.cnn:
+            x = c(x)
+
+        x = rearrange(x, "1 c t -> t c")
+        self.lstm.flatten_parameters()
+        x, _ = self.lstm(x)
+        x = rearrange(x, "t c -> 1 c t")
+        return x
+
 
 class LayerNorm(torch.nn.Module):
     def __init__(self, channels, eps=1e-5):

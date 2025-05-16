@@ -269,8 +269,8 @@ class Stylish(nn.Module):
     def duration_predict(
         self, duration_encoding, prosody_embedding, text_lengths, text_mask
     ):
-        d = self.duration_predictor.text_encoder(
-            duration_encoding, prosody_embedding, text_lengths, text_mask
+        d = self.duration_predictor.text_encoder.infer(
+            duration_encoding, prosody_embedding
         )
         x, _ = self.duration_predictor.lstm(d)
         duration = self.duration_predictor.duration_proj(x)
@@ -290,7 +290,7 @@ class Stylish(nn.Module):
         return pred_aln_trg, prosody
 
     def forward(self, texts, text_lengths, text_mask, sentence_embedding):
-        text_encoding = self.text_encoder(texts, text_lengths, text_mask)
+        text_encoding = self.text_encoder.infer(texts)
         style_embedding = self.textual_style_encoder(sentence_embedding)
         prosody_embedding = self.textual_prosody_encoder(sentence_embedding)
         plbert_embedding = self.bert(texts, attention_mask=(~text_mask).int())

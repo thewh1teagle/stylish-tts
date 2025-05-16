@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 from .common import LinearNorm
 
 
@@ -100,6 +101,30 @@ class DurationEncoder(nn.Module):
                 x = x_pad.to(x.device)
 
         return x.transpose(-1, -2)
+
+    def infer(self, x, style):
+        """
+        x: (batch, channels, tokens)
+        style: (batch, embedding)
+        """
+        s = rearrange(style, "b e -> b e 1")
+        s = s.expand(-1, -1, x.shape[2])  # batch embedding tokens
+        x = torch.cat([x, s], dim=1)
+
+        for block in self.lstms:
+            if isinstance(block, AdaLayerNorm):
+                x = rearrange(x, "b c t -> b t c")
+                x = block(x, style)
+                x = rearrange(x, "b t c -> b c t")
+                x = torch.cat([x, s], dim=1)
+            else:
+                x = rearrange(x, "1 c t -> t c")
+                block.flatten_parameters()
+                x, _ = block(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+                x = rearrange(x, "t c -> 1 c t")
+
+        return rearrange(x, "b c t -> b t c")
 
 
 class AdaLayerNorm(nn.Module):

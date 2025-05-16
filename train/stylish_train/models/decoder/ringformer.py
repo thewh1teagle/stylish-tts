@@ -428,7 +428,7 @@ class SineGen(torch.nn.Module):
             #             cumsum_shift = torch.zeros_like(rad_values)
             #             cumsum_shift[:, 1:, :] = tmp_over_one_idx * -1.0
 
-            phase = torch.cumsum(rad_values, dim=1) * 2 * math.pi
+            phase = torch.cumsum(rad_values, dim=1) * 2 * torch.pi
             phase = torch.nn.functional.interpolate(
                 phase.transpose(1, 2) * self.upsample_scale,
                 scale_factor=self.upsample_scale,
@@ -463,7 +463,7 @@ class SineGen(torch.nn.Module):
             i_phase = torch.cumsum(rad_values - tmp_cumsum, dim=1)
 
             # get the sines
-            sines = torch.cos(i_phase * 2 * math.pi)
+            sines = torch.cos(i_phase * 2 * torch.pi)
         return sines
 
     def forward(self, f0):
