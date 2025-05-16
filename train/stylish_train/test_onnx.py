@@ -13,7 +13,7 @@ from models.models import build_model
 from stylish_lib.config_loader import load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
 from sentence_transformers import SentenceTransformer
-from models.onnx_models import Stylish, Generator, CustomSTFT
+from models.onnx_models import Stylish, CustomSTFT
 import torch
 import torch.nn as nn
 
@@ -53,7 +53,7 @@ def main(model_config_path, dir, checkpoint):
         .unsqueeze(0)
         .to(device)
     )
-    texts = torch.zeros([1, 512], dtype=int).to(device)
+    texts = torch.zeros([1, tokens.shape[1] + 2], dtype=int).to(device)
     texts[0][1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = tokens.shape[1] + 2

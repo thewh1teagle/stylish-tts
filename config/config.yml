@@ -98,8 +98,10 @@ loss_weight:
   amplitude: 1
   phase: 2
   stft_reconstruction: 0.5
-  mel_rec: 2
-  text_gen: 1
+  sbert_style_loss: 1
+  sbert_prosody_loss: 1
+  confidence: 1
+  align_loss: 1
 
 # Discriminator weights are pre-tuned. Do not change these unless you
 # know what you are doing.

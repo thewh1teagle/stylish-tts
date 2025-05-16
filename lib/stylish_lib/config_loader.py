@@ -134,8 +134,12 @@ class LossWeightConfig(BaseModel):
     stft_reconstruction: float = Field(
         ..., description="Weight for STFT reconstruction loss"
     )
-    mel_rec: float = Field(..., description="Weight for text mel reconstruction")
-    text_gen: float = Field(..., description="Weight for text mel generator model")
+    sbert_style_loss: float = Field(..., description="Weight for sbert style encoder")
+    sbert_prosody_loss: float = Field(
+        ..., description="Weight for sbert prosody encoder"
+    )
+    confidence: float = Field(..., description="Weight for alignment confidence")
+    align_loss: float = Field(..., description="Weight for alignment loss")
 
 
 class DiscriminatorLossWeightConfig(BaseModel):
