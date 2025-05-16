@@ -11,55 +11,12 @@ from utils import length_to_mask
 
 
 @torch.no_grad()
-def validate_text_encoder(batch, train):
-    log = build_loss_log(train)
-
-    submask = torch.ones(
-        [batch.mel.shape[0], batch.mel.shape[2]], dtype=bool, device=batch.mel.device
-    )
-    for i in range(batch.mel.shape[2] // 100 + 1):
-        substart = random.randrange(batch.mel.shape[2])
-        subend = min(substart + 32, batch.mel.shape[2]) + 1
-        # subend = random.randrange(substart + 4, min(substart + 16, batch.mel.shape[2])) + 1
-        submask[:, substart:subend] = False
-    submask = submask.unsqueeze(1)
-    masked_mel = batch.mel * submask
-    corrupted = train.model.text_mel_generator(masked_mel)
-    corrupted = masked_mel + corrupted * ~submask
-    text_spread = batch.text.unsqueeze(1).float() @ batch.alignment
-    text_spread = F.interpolate(text_spread, scale_factor=2, mode="nearest-exact")
-    text_spread = text_spread.squeeze(1).int()
-    embedding = train.model.text_encoder(text_spread)
-    embedding = rearrange(embedding, "b t c -> b c t")
-    prediction = train.model.text_mel_classifier(corrupted.detach(), embedding)
-
-    log.add_loss("text_gen", F.l1_loss(corrupted * ~submask, batch.mel * ~submask))
-    disc_logits = prediction.squeeze(2)
-    disc_labels = (~submask).float()
-    disc_loss = F.binary_cross_entropy_with_logits(disc_logits, disc_labels)
-    log.add_loss("text_disc", disc_loss)
-
-    return log.detach(), None, None, None
-
-
-@torch.no_grad()
 def validate_alignment(batch, train):
     log = build_loss_log(train)
-    # ctc, reconstruction = train.model.text_aligner(batch.mel)
     mel = rearrange(batch.align_mel, "b f t -> b t f")
-    # ctc, reconstruction = train.model.text_aligner(mel, batch.mel_length)
     ctc, _ = train.model.text_aligner(mel, batch.mel_length)
     train.stage.optimizer.zero_grad()
 
-    # softlog = ctc.log_softmax(dim=2)
-    # softlog = ctc.transpose(0, 1)
-    # loss_ctc = torch.nn.functional.ctc_loss(
-    #     softlog,
-    #     batch.text,
-    #     batch.mel_length,
-    #     batch.text_length,
-    #     blank=train.model_config.text_encoder.n_token,
-    # )
     loss_ctc = train.align_loss(
         ctc, batch.text, batch.mel_length // 2, batch.text_length, step_type="eval"
     )
@@ -80,44 +37,7 @@ def validate_alignment(batch, train):
         confidence_count += scores.shape[-1]
     log.add_loss("confidence", confidence_total / confidence_count)
     log.add_loss("align_loss", loss_ctc)
-    # log.add_loss(
-    #     "align_rec", torch.nn.functional.l1_loss(reconstruction, batch.align_mel)
-    # )
     return log, None, None, None
-
-
-#     blank = train.text_cleaner("ǁ")[0]
-#     mask = length_to_mask(batch.mel_length // 2).to(train.config.training.device)
-#     ppgs, s2s_pred, s2s_attn = train.model.text_aligner(
-#         batch.mel, src_key_padding_mask=mask, text_input=batch.text
-#     )
-#     soft = ppgs.log_softmax(dim=2).transpose(0, 1)
-#     loss_ctc = torch.nn.functional.ctc_loss(
-#         soft,
-#         batch.text,
-#         batch.mel_length // 2,
-#         batch.text_length,
-#         blank=blank,
-#     )
-#     log.add_loss("ctc", loss_ctc)
-#
-#     loss_s2s = 0
-#     for pred_align, text, length in zip(s2s_pred, batch.text, batch.text_length):
-#         loss_s2s += torch.nn.functional.cross_entropy(
-#             pred_align[:length], text[:length], ignore_index=-1
-#         )
-#     loss_s2s /= batch.text.size(0)
-#     log.add_loss("s2s", loss_s2s)
-#     return log, s2s_attn[0], None, None
-
-
-@torch.no_grad()
-def validate_vocoder(batch, train):
-    state = BatchContext(train=train, model=train.model, text_length=batch.text_length)
-    pred, gt = state.audio_reconstruction(batch)
-    log = build_loss_log(train)
-    train.stft_loss(pred.audio.squeeze(1), gt, log)
-    return log, None, pred.audio, gt
 
 
 @torch.no_grad()

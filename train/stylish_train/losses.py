@@ -24,9 +24,6 @@ class SpectralConvergenceLoss(torch.nn.Module):
         Returns:
             Tensor: Spectral convergence loss value.
         """
-        # num = torch.linalg.matrix_norm(y_mag - x_mag)
-        # denom = torch.linalg.matrix_norm(y_mag)
-        # return (num / denom).mean()
         return torch.norm(y_mag - x_mag, p=1) / torch.norm(y_mag, p=1)
 
 
@@ -68,16 +65,6 @@ class STFTLoss(torch.nn.Module):
             Tensor: Spectral convergence loss value.
             Tensor: Log STFT magnitude loss value.
         """
-        # x_mag = self.to_mel(x)
-        # x_norm = torch.log(torch.norm(x_mag, dim=2))
-        # x_log = torch.log(1 + x_mag)
-
-        # y_mag = self.to_mel(y)
-        # y_norm = torch.log(torch.norm(y_mag, dim=2))
-        # y_log = torch.log(1 + y_mag)
-
-        # sc_loss = F.mse_loss(x_log, y_log) * 2
-        # return sc_loss
         x_mag = self.to_mel(x)
         mean, std = -4, 4
         x_mag = (torch.log(1e-5 + x_mag) - mean) / std
@@ -117,13 +104,9 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
     def __init__(
         self,
         *,
-        # fft_sizes=[1024, 2048, 512],
-        # hop_sizes=[120, 240, 50],
-        # win_lengths=[600, 1200, 240],
         resolution_list=resolutions,
         window=torch.hann_window,
         sample_rate,
-        # n_mels,
     ):
         """Initialize Multi resolution STFT loss module.
         Args:
@@ -713,8 +696,6 @@ class CTCLossWithLabelPriors(nn.Module):
             token_ids, modified=False, device=log_probs.device
         )
 
-        # TODO: graph compiler for multiple pronunciations
-
         # Accumulate label priors for this epoch
         log_probs = log_probs.permute(1, 0, 2)  # (T, N, C) -> (N, T, C)
         if step_type == "train":
@@ -794,11 +775,3 @@ class CTCLossWithLabelPriors(nn.Module):
             self.log_priors = new_log_prior
             self.log_priors_sum = None
             self.num_samples = 0
-            # print(self.log_priors)
-
-            # if pl_module.global_rank == 0:
-            #     exp_dir = pathlib.Path(trainer.default_root_dir)
-            #     checkpoint_dir = exp_dir / "checkpoints"
-            #     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-            #     label_priors_path = checkpoint_dir / f"log_priors_epoch_{pl_module.current_epoch}.pt"
-            #     torch.save(new_log_prior, label_priors_path)

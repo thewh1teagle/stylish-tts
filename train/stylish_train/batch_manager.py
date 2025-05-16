@@ -65,9 +65,6 @@ class BatchManager:
         self.last_oom: int = -1
         self.skip_forward: bool = False
 
-    # def get_step_count(self) -> int:
-    #     return self.epoch_step_count // self.process_count
-
     def probe_loop(self, train) -> None:
         if self.process_count > 1:
             exit(
@@ -101,10 +98,6 @@ class BatchManager:
                         train.stage.set_batch_size(key, 0)
                     elif batch_size > 0:
                         iterator.set_postfix({"batch_size": str(batch_size)})
-                        # logger.info(
-                        #     "Attempting %d/%d @ %d"
-                        #     % (frame_count, max_frame_size, batch_size)
-                        # )
                         loader = build_dataloader(
                             self.dataset,
                             self.time_bins,
@@ -129,7 +122,6 @@ class BatchManager:
                             f"TRAIN_BATCH OOM ({last_bin}) @ batch_size {batch_size}: audio_len {audio_length} total_audio_len {audio_length * batch_size}"
                         )
                         iterator.display()
-                        # logger.info("Probe saw OOM -- backing off")
                         import gc
 
                         train.stage.optimizer.zero_grad()
@@ -163,9 +155,6 @@ class BatchManager:
             self.loader = train.accelerator.skip_first_batches(
                 self.loader, train.manifest.current_step
             )
-        # if not self.batch_dict:
-        #     self.probe_loop(train)
-        #     self.resume_loader = None
         self.last_oom = -1
         self.skip_forward = False
 
@@ -204,7 +193,6 @@ class BatchManager:
                     progress_bar.display() if progress_bar is not None else None
                     if attempt >= max_attempts:
                         self.skip_forward = True
-                    # train.logger.info(e)
                     train.stage.optimizer.zero_grad()
                     if self.last_oom != last_bin:
                         self.last_oom = last_bin

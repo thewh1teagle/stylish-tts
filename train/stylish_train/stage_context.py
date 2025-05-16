@@ -11,10 +11,7 @@ import matplotlib.pyplot as plt
 
 from loss_log import combine_logs
 from stage_train import (
-    train_text_encoder,
     train_alignment,
-    train_vocoder,
-    train_pre_acoustic,
     train_acoustic,
     train_pre_textual,
     train_textual,
@@ -23,9 +20,7 @@ from stage_train import (
 )
 
 from stage_validate import (
-    validate_text_encoder,
     validate_alignment,
-    validate_vocoder,
     validate_acoustic,
     validate_textual,
     validate_sbert,
@@ -59,20 +54,6 @@ class StageConfig:
 
 
 stages = {
-    "text_encoder": StageConfig(
-        next_stage="pre_acoustic",
-        train_fn=train_text_encoder,
-        validate_fn=validate_text_encoder,
-        train_models=["text_encoder", "text_mel_classifier"],
-        eval_models=["text_mel_generator"],
-        adversarial=False,
-        inputs=[
-            "text",
-            "alignment",
-            "mel",
-            "mel_length",
-        ],
-    ),
     "alignment": StageConfig(
         next_stage=None,
         train_fn=train_alignment,
@@ -85,41 +66,6 @@ stages = {
             "text_length",
             "align_mel",
             "mel_length",
-        ],
-    ),
-    "vocoder": StageConfig(
-        next_stage="pre_acoustic",
-        train_fn=train_vocoder,
-        validate_fn=validate_vocoder,
-        train_models=["acoustic_style_encoder", "generator"],
-        eval_models=[],
-        adversarial=False,
-        inputs=[
-            "text",
-            "text_length",
-            "mel",
-            "audio_gt",
-            "pitch",
-        ],
-    ),
-    "pre_acoustic": StageConfig(
-        next_stage="acoustic",
-        train_fn=train_pre_acoustic,
-        validate_fn=validate_acoustic,
-        train_models=["text_encoder", "decoder", "acoustic_style_encoder", "generator"],
-        eval_models=[],
-        adversarial=False,
-        inputs=[
-            "text",
-            "text_length",
-            "mel",
-            "mel_length",
-            "audio_gt",
-            "pitch",
-            "sentence_embedding",
-            "voiced",
-            "align_mel",
-            "alignment",
         ],
     ),
     "acoustic": StageConfig(
@@ -365,8 +311,6 @@ class StageContext:
             total_batch = self.get_batch_size(key)
             if total_batch > 0:
                 total += len(val) // total_batch + 1
-                # if not self.drop_last and len(val) % total_batch != 0:
-                #     total += 1
         return total
 
     def train_batch(self, inputs, train, probing=False):
@@ -386,9 +330,6 @@ class StageContext:
             audio_gt = batch.audio_gt.unsqueeze(1)
             audio = audio.detach()
             train.stage.optimizer.zero_grad()
-            d_index = 0
-            # if not probing:
-            # d_index = train.manifest.current_total_step % 4
             d_loss = train.discriminator_loss(audio_gt, audio)
             train.accelerator.backward(d_loss * math.sqrt(batch.text.shape[0]))
             optimizer_step(self.optimizer, train.model_config.discriminators)

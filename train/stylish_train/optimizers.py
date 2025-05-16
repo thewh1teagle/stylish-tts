@@ -132,16 +132,8 @@ def build_optimizer(stage_name: str, *, train):
 
 
 def calculate_lr(key, stage_name, *, train):
-    is_second = (
-        stage_name == "second"
-        or stage_name == "second_style"
-        or stage_name == "second_joint"
-        or stage_name == "textual"
-        or stage_name == "joint"
-    )
+    is_second = stage_name == "textual" or stage_name == "joint"
     lr = train.config.training_plan.get_stage(stage_name).lr
-    # elif stage_name == "pre_acoustic":
-    #     lr /= 5
     weight_decay = 1e-4
     betas = (0.85, 0.99)
     if is_second:

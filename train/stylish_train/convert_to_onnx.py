@@ -35,7 +35,6 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
     tokens = (
         torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).to(device)
     )
-    # texts = torch.zeros([1, 512], dtype=int).to(device)
     texts = torch.zeros([1, tokens.shape[1] + 2], dtype=int).to(device)
     texts[0][1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)

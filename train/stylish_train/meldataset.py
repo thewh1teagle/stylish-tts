@@ -17,55 +17,6 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-mel_window = {}
-
-
-def param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device):
-    return f"{sampling_rate}-{n_fft}-{num_mels}-{fmin}-{fmax}-{win_size}-{device}"
-
-
-def mel_spectrogram(
-    y,
-    n_fft,
-    num_mels,
-    sampling_rate,
-    hop_size,
-    win_size,
-    fmin,
-    fmax,
-    center=True,
-    in_dataset=False,
-):
-    global mel_window
-    # device = torch.device("cpu") if in_dataset else y.device
-    device = "cpu"
-    ps = param_string(sampling_rate, n_fft, num_mels, fmin, fmax, win_size, device)
-    if ps in mel_window:
-        mel_basis, hann_window = mel_window[ps]
-        # print(mel_basis, hann_window)
-        # mel_basis, hann_window = mel_basis.to(y.device), hann_window.to(y.device)
-    else:
-        mel = librosa_mel_fn(
-            sr=sampling_rate, n_fft=n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax
-        )
-        mel_basis = torch.from_numpy(mel).float().to(device)
-        hann_window = torch.hann_window(win_size).to(device)
-        mel_window[ps] = (mel_basis.clone(), hann_window.clone())
-
-    spec = torch.stft(
-        y.to(device),
-        n_fft,
-        hop_length=hop_size,
-        win_length=win_size,
-        window=hann_window.to(device),
-        center=True,
-        return_complex=True,
-    )
-
-    spec = mel_basis.to(device) @ spec.abs()
-    # spec = spectral_normalize_torch(spec)
-
-    return spec  # [batch_size,n_fft/2+1,frames]
 
 
 class FilePathDataset(torch.utils.data.Dataset):
@@ -120,41 +71,13 @@ class FilePathDataset(torch.utils.data.Dataset):
         )
 
         self.sbert = sbert
-
-        # self.min_length = min_length
-        # with open(
-        #     hf_hub_download(
-        #         repo_id="stylish-tts/train-ood-texts",
-        #         repo_type="dataset",
-        #         filename="OOD_texts.txt",
-        #     ),
-        #     "r",
-        #     encoding="utf-8",
-        # ) as f:
-        #     tl = f.readlines()
-        # idx = 1 if ".wav" in tl[0].split("|")[0] else 0
-        # self.ptexts = [t.split("|")[idx] for t in tl]
-
         self.root_path = root_path
         self.multispeaker = model_config.multispeaker
         self.sample_rate = model_config.sample_rate
         self.hop_length = model_config.hop_length
 
-    # def to_mel(self, wave_tensor):
-    #     return mel_spectrogram(
-    #         y=wave_tensor,
-    #         n_fft=self.model_config.n_fft,
-    #         num_mels=self.model_config.n_mels,
-    #         sampling_rate=self.model_config.sample_rate,
-    #         hop_size=self.model_config.hop_length,
-    #         win_size=self.model_config.win_length,
-    #         fmin=50,
-    #         fmax=550,
-    #     )
-
     def preprocess(self, wave, align=False):
         mean, std = -4, 4
-        # wave_tensor = torch.from_numpy(wave).float()
         wave_tensor = wave
         if align:
             mel_tensor = self.to_align_mel(wave_tensor)
@@ -240,17 +163,7 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         # get OOD text
 
-        # ps = ""
         ref_text = torch.LongTensor()
-        # while len(ps) < self.min_length:
-        #     rand_idx = np.random.randint(0, len(self.ptexts) - 1)
-        #     ps = self.ptexts[rand_idx]
-
-        #     text = self.text_cleaner(ps)
-        #     text.insert(0, 0)
-        #     text.append(0)
-
-        #     ref_text = torch.LongTensor(text)
 
         pitch = None
         if path in self.pitch:
@@ -258,7 +171,6 @@ class FilePathDataset(torch.utils.data.Dataset):
         alignment = None
         if path in self.alignment:
             alignment = self.alignment[path]
-            # alignment = torch.nn.functional.interpolate(alignment, scale_factor=2, mode="nearest")
             alignment = alignment.detach()
         else:
             alignment = torch.zeros(
@@ -350,7 +262,6 @@ class Collater(object):
         self.sbert_output_dim = sbert_output_dim
 
     def __call__(self, batch):
-        # batch[0] = wave, mel, text, f0, speakerid
         batch_size = len(batch)
 
         # sort by mel length
@@ -374,9 +285,7 @@ class Collater(object):
         ref_mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
         ref_labels = torch.zeros((batch_size)).long()
         paths = ["" for _ in range(batch_size)]
-        waves = torch.zeros(
-            (batch_size, batch[0][7].shape[-1])
-        ).float()  # [None for _ in range(batch_size)]
+        waves = torch.zeros((batch_size, batch[0][7].shape[-1])).float()
         pitches = torch.zeros((batch_size, max_mel_length)).float()
         sentence_embeddings = torch.zeros(batch_size, self.sbert_output_dim).float()
         voiced = torch.zeros((batch_size, max_text_length)).float()
@@ -472,7 +381,7 @@ def build_dataloader(
             train=train,
         ),
         collate_fn=collate_fn,
-        pin_memory=False,  # (device != "cpu"),
+        pin_memory=False,
     )
 
     return data_loader
@@ -507,7 +416,6 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         self.train = train
 
     def __iter__(self):
-        # provided_steps = 0
         samples = {}
         g = torch.Generator()
         g.manual_seed(self.seed + self.epoch)
