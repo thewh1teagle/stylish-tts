@@ -23,8 +23,7 @@ from .discriminators.multi_stft import MultiScaleSTFTDiscriminator
 from .duration_predictor import DurationPredictor
 from .pitch_energy_predictor import PitchEnergyPredictor
 
-# from .text_encoder import TextEncoder
-from .text_encoder import TextMelGenerator, TextMelClassifier, TextEncoder
+from .text_encoder import TextEncoder
 from .style_encoder import StyleEncoder
 from .decoder.mel_decoder import MelDecoder
 from .decoder.freev import FreevGenerator
