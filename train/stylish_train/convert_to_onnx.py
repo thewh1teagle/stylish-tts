@@ -55,14 +55,14 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
     )
 
     filename = f"{out_dir}/stylish.onnx"
-    inputs = (texts, text_lengths, text_mask, sentence_embedding)
+    inputs = (texts, text_mask, sentence_embedding)
     with torch.no_grad():
         torch.onnx.export(
             model,
             inputs,
             opset_version=14,
             f=filename,
-            input_names=["texts", "text_lengths", "text_mask", "sentence_embedding"],
+            input_names=["texts", "text_mask", "sentence_embedding"],
             output_names=["waveform"],
             dynamic_axes={
                 "texts": {1: "num_token"},

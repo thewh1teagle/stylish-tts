@@ -266,9 +266,7 @@ class Stylish(nn.Module):
         prediction = self.generator(mel=mel, style=style, pitch=f0_curve, energy=energy)
         return prediction
 
-    def duration_predict(
-        self, duration_encoding, prosody_embedding, text_lengths, text_mask
-    ):
+    def duration_predict(self, duration_encoding, prosody_embedding):
         d = self.duration_predictor.text_encoder.infer(
             duration_encoding, prosody_embedding
         )
@@ -289,7 +287,7 @@ class Stylish(nn.Module):
         prosody = d.permute(0, 2, 1) @ pred_aln_trg
         return pred_aln_trg, prosody
 
-    def forward(self, texts, text_lengths, text_mask, sentence_embedding):
+    def forward(self, texts, text_mask, sentence_embedding):
         text_encoding = self.text_encoder.infer(texts)
         style_embedding = self.textual_style_encoder(sentence_embedding)
         prosody_embedding = self.textual_prosody_encoder(sentence_embedding)
@@ -298,8 +296,6 @@ class Stylish(nn.Module):
         duration_prediction, prosody = self.duration_predict(
             duration_encoding,
             prosody_embedding,
-            text_lengths,
-            text_mask,
         )
         pitch_prediction, energy_prediction = self.pitch_energy_predictor(
             prosody, prosody_embedding

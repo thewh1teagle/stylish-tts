@@ -80,7 +80,6 @@ def main(model_config_path, dir, checkpoint):
         None,
         {
             "texts": texts.cpu().numpy(),
-            "text_lengths": text_lengths.cpu().numpy(),
             "text_mask": text_mask.cpu().numpy(),
             "sentence_embedding": sentence_embedding.cpu().numpy(),
         },
