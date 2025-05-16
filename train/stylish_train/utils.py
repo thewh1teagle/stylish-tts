@@ -139,6 +139,7 @@ def plot_mel_signed_difference_to_figure(
     dpi=150,
     cmap="vanimo",
     max_abs_diff_clip=None,  # Optional: Clip the color range e.g., 3.0
+    static_max_abs=None,  # Optional: Static max abs value for consistent color range
 ):
     """Plots the signed difference between two mel spectrograms using a diverging colormap."""
     plt.switch_backend("agg")
@@ -156,13 +157,20 @@ def plot_mel_signed_difference_to_figure(
 
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-    # Determine symmetric color limits centered at 0
-    max_abs_val = np.max(np.abs(diff)) + 1e-9  # Add epsilon for stability
-    if max_abs_diff_clip is not None:
-        max_abs_val = min(max_abs_val, max_abs_diff_clip)  # Apply clipping if specified
+    if static_max_abs is not None:
+        # Use static max abs value for color limits
+        vmin = -static_max_abs
+        vmax = static_max_abs
+    else:
+        # Determine symmetric color limits centered at 0
+        max_abs_val = np.max(np.abs(diff)) + 1e-9  # Add epsilon for stability
+        if max_abs_diff_clip is not None:
+            max_abs_val = min(
+                max_abs_val, max_abs_diff_clip
+            )  # Apply clipping if specified
 
-    vmin = -max_abs_val
-    vmax = max_abs_val
+        vmin = -max_abs_val
+        vmax = max_abs_val
 
     im = ax.imshow(
         diff,

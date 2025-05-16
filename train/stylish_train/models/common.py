@@ -24,8 +24,10 @@ class LinearNorm(torch.nn.Module):
     def forward(self, x):
         return self.linear_layer(x)
 
+
 class InstanceNorm1d(torch.nn.Module):
     """An implementation of InstanceNorm1d compatible with ONNX"""
+
     def __init__(self, num_features, eps=1e-5, affine=True):
         super().__init__()
         self.eps = eps
@@ -34,8 +36,8 @@ class InstanceNorm1d(torch.nn.Module):
             self.weight = torch.nn.Parameter(torch.ones(num_features))
             self.bias = torch.nn.Parameter(torch.zeros(num_features))
         else:
-            self.register_parameter('weight', None)
-            self.register_parameter('bias', None)
+            self.register_parameter("weight", None)
+            self.register_parameter("bias", None)
 
     def forward(self, x):
         # x shape: (N, C, L)
@@ -48,6 +50,7 @@ class InstanceNorm1d(torch.nn.Module):
             bias = self.bias.view(1, -1, 1)
             x_normalized = x_normalized * weight + bias
         return x_normalized
+
 
 class ClampedInstanceNorm1d(torch.nn.Module):
     def __init__(self, *args, **kwargs):

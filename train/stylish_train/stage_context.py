@@ -525,6 +525,7 @@ class StageContext:
                                     dataset_mean,  # Pass normalization mean
                                     dataset_std,  # Pass normalization std
                                     title=f"Signed Mel Log Diff (GT - Pred) (Step {steps})",
+                                    static_max_abs=2.5,
                                     # Optionally add clipping: max_abs_diff_clip=3.0
                                 )
                                 train.writer.add_figure(
