@@ -57,7 +57,7 @@ class DurationEncoder(nn.Module):
                     num_layers=1,
                     batch_first=True,
                     bidirectional=True,
-                    dropout=dropout,
+                    dropout=0,
                 )
             )
             self.lstms.append(AdaLayerNorm(sty_dim, d_model))
