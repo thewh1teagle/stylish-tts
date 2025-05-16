@@ -134,6 +134,8 @@ The pre-trained plbert model is based on a phonemization of the English language
 
 # Citations
 
+Most code taken from other sources is MIT-licensed and all original code in this repository is MIT-licensed. A BSD license is included as a comment before the few pieces of code which were BSD-licensed.
+
 - The foundation of this work is StyleTTS and StyleTTS 2 
   - "StyleTTS: A Style-Based Generative Model for Natural and Diverse Text-to-Speech Synthesis" by Yinghao Aaron Li, Cong Han, Nima Mesgarani [Paper](https://arxiv.org/abs/2205.15439) [Code](https://github.com/yl4579/StyleTTS)
   - "StyleTTS 2: Towards Human-Level Text-to-Speech through Style Diffusion and Adversarial Training with Large Speech Language Models" by Yinghao Aaron Li, Cong Han, Vinay S. Raghavan, Gavin Mischler, Nima Mesgarani [Paper](https://arxiv.org/abs/2306.07691) [Code](https://github.com/yl4579/StyleTTS2)
