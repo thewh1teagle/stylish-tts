@@ -17,7 +17,6 @@ from einops import rearrange
 
 import math
 import random
-import numpy as np
 from scipy.signal import get_window
 from utils import DecoderPrediction, clamped_exp, leaky_clamp
 from ..common import InstanceNorm1d
@@ -235,7 +234,7 @@ class SineGen(torch.nn.Module):
             #             cumsum_shift = torch.zeros_like(rad_values)
             #             cumsum_shift[:, 1:, :] = tmp_over_one_idx * -1.0
 
-            phase = torch.cumsum(rad_values, dim=1) * 2 * np.pi
+            phase = torch.cumsum(rad_values, dim=1) * 2 * math.pi
             phase = torch.nn.functional.interpolate(
                 phase.transpose(1, 2) * self.upsample_scale,
                 scale_factor=self.upsample_scale,
@@ -270,7 +269,7 @@ class SineGen(torch.nn.Module):
             i_phase = torch.cumsum(rad_values - tmp_cumsum, dim=1)
 
             # get the sines
-            sines = torch.cos(i_phase * 2 * np.pi)
+            sines = torch.cos(i_phase * 2 * math.pi)
         return sines
 
     def forward(self, f0):
@@ -401,12 +400,12 @@ class RingformerGenerator(torch.nn.Module):
 
         self.m_source = SourceModuleHnNSF(
             sampling_rate=sample_rate,
-            upsample_scale=np.prod(upsample_rates) * gen_istft_hop_size,
+            upsample_scale=math.prod(upsample_rates) * gen_istft_hop_size,
             harmonic_num=8,
             voiced_threshod=10,
         )
         self.f0_upsamp = torch.nn.Upsample(
-            scale_factor=np.prod(upsample_rates) * gen_istft_hop_size
+            scale_factor=math.prod(upsample_rates) * gen_istft_hop_size
         )
         self.noise_convs = nn.ModuleList()
         self.noise_res = nn.ModuleList()
@@ -438,7 +437,7 @@ class RingformerGenerator(torch.nn.Module):
             c_cur = upsample_initial_channel // (2 ** (i + 1))
 
             if i + 1 < len(upsample_rates):  #
-                stride_f0 = np.prod(upsample_rates[i + 1 :])
+                stride_f0 = math.prod(upsample_rates[i + 1 :])
                 self.noise_convs.append(
                     Conv1d(
                         gen_istft_n_fft + 2,
