@@ -51,15 +51,48 @@ https://github.com/Stylish-TTS/stylish-dataset
 
 calculate-pitch.py is a single-process version while all-pitch.py calculates them in parallel using multi-processing. Pitch is calculated using Harvest which is CPU-only and so it will take some time.
 
+### Alignment Data
+
+Alignment data is also pre-cached and you will need to train an alignment model first to generate the pre-cached data. This is a multi-step process but only needs to be done once for your dataset after which you can just use the cached results similar to pitch data.
+
+First, you run train.py using the special alignment stage. For a description of the other parameters, see below. During training you will see both a confidence and a loss value during each validation. Generally confidence should go up and loss should go down. A special term is updated once per epoch to improve training and you will likely see a sudden change in loss between epochs. This is normal.
+
+```
+cd stylish-tts/train
+uv run stylish_train/train.py \
+    --model_config_path ../config/model.yml \
+    --config_path /path/to/your/config.yml \
+    --stage alignment \
+    --out_dir /path/to/your/output
+```
+
+Once the alignment stage completes, it will provide a trained model at `/path/to/your/output/alignment_model.safetensors`. It is important to realize that this is a MODEL, not the alignments themselves. We will use this model to generate the alignments.
+
+```
+cd stylish-tts/train
+PYTHONPATH=. uv run stylish_train/dataprep/align_text.py \
+    --model_config_path ../config/model.yml \
+    --config_path /path/to/your/config.yml \
+    --model /path/to/your/alignment_model.safetensors \    
+    --out /path/to/alignment.safetensors
+```
+
+This generates the actual cached alignments for all the segments for both training and validation data as configured in your config.yml. You should now add the resulting alignment.safetensors path to your config.yml.
+
+#### OPTIONAL: Culling Bad Alignments
+
+Running align_text.py generates a score file for every segment it processes. This is a confidence value. Confidence is not a guarantee of accuracy. The model might be confidently wrong of course. But it is a safe bet that the segments it is least confident about either have a problem (perhaps the text doesn't match the audio) or are just a bad fit for the model's heuristics. Culling the segments with the least confidence will make your model converge faster, though it also means it will see less training data. I have found that culling the 10% with the lowest confidence scores is a good balance.
+
 ## Running train.py
 
 Here is a typical command to start off a new training run using a single machine.
 
 ```
-uv run stylish-tts/train.py \
-    --model_config_path config/model.yml \
+cd stylish-tts/train
+uv run stylish_train/train.py \
+    --model_config_path ../config/model.yml \
     --config_path /path/to/your/config.yml \
-    --stage alignment \
+    --stage acoustic \
     --out_dir /path/to/your/output
 ```
 
@@ -78,7 +111,8 @@ Stages advance automatically and a checkpoint is created at the end of every sta
 ## Loading a checkpoint
 
 ```
-uv run stylish-tts/train.py \
+cd stylish-tts/train
+uv run stylish_train/train.py \
     --model_config_path config/model.yml \
     --config_path /path/to/your/config.yml \
     --stage <stage>
@@ -94,5 +128,8 @@ Note that Stylish TTS checkpoints are not compatible with StyleTTS 2 checkpoints
 
 ## Phonemization
 
+## model.yml Changes
+
+The pre-trained plbert model is based on a phonemization of the English language part of Wikipedia. If you are using a different phonemization or are training some other language, it is not suitable. There are two options. First, you can train your own plbert by cloning the plbert repository and tracking down a dataset and phonemizing it. Second, you can bypass plbert entirely which loses its benefit but does not require additional setup. Both of these changes mean creating your own modified model.yml. See the comments in that file for specifics.
 
 
