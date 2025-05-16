@@ -7,7 +7,7 @@ import torchaudio
 from einops import rearrange, reduce
 
 # import train_context
-from utils import length_to_mask, log_norm, maximum_path
+from utils import length_to_mask, log_norm
 from models.models import build_model
 import torch
 import torch.nn as nn

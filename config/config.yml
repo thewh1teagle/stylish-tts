@@ -17,38 +17,42 @@ training:
 
 # Number of epochs, max batch sizes and general learning rate of each stage.
 training_plan:
-  alignment: # alignment pretraining
+  alignment:
+    # alignment pretraining
     epochs: 5
     probe_batch_max: 128
     lr: 1e-5
-  pre_acoustic: # pretraining of acoustic models (stage 1)
+  pre_acoustic:
+    # pretraining of acoustic models (stage 1)
     epochs: 1
     probe_batch_max: 2
     lr: 1e-4
-  acoustic: # joint training of acoustic models and the vocoder (stage 2)
+  acoustic:
+    # joint training of acoustic models and the vocoder (stage 2)
     epochs: 5
     probe_batch_max: 2
     lr: 1e-4
-  pre_textual: # pretraining of textual models (stage 3)
+  pre_textual:
+    # pretraining of textual models (stage 3)
     epochs: 10
     probe_batch_max: 32
     lr: 1e-4
-  textual: # training of textual models (stage 4)
+  textual:
+    # training of textual models (stage 4)
     epochs: 2
     probe_batch_max: 32
     lr: 1e-4
-  joint: # joint training of textual models (stage 5)
+  joint:
+    # joint training of textual models (stage 5)
     epochs: 2
     probe_batch_max: 2
     lr: 1e-4
-  sbert: # training of sbert for dynamic embeddings (stage 6)
+  sbert:
+    # training of sbert for dynamic embeddings (stage 6)
     epochs: 12
     probe_batch_max: 128
     lr: 1e-4
 
-
-# See README.md for specifications on the dataset and
-# how to generate these files.
 dataset:
   train_data: "path/to/your/train-list.txt"
   val_data: "path/to/your/val-list.txt"

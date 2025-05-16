@@ -93,9 +93,7 @@ class UpSample1d(nn.Module):
         if self.layer_type == "none":
             return x
         else:
-            return torch.nn.functional.interpolate(
-                x, scale_factor=2, mode="nearest"
-            )
+            return torch.nn.functional.interpolate(x, scale_factor=2, mode="nearest")
 
 
 class MelDecoder(nn.Module):
