@@ -32,7 +32,7 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
         hop_length=model.generator.gen_istft_hop_size,
         win_length=model.generator.gen_istft_n_fft,
     )
-    # model.generator.stft = stft.to(device).eval()
+    model.generator.stft = stft.to(device).eval()
 
     tokens = (
         torch.tensor(
@@ -44,7 +44,7 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
         .to(device)
     )
     texts = torch.zeros([1, tokens.shape[1] + 2], dtype=int).to(device)
-    texts[0][1 : tokens.shape[1] + 1] = tokens
+    texts[0, 1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = tokens.shape[1] + 2
     text_mask = length_to_mask(text_lengths)
@@ -52,7 +52,9 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
         torch.from_numpy(
             sbert.encode(
                 [
-                    "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
+                    # "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
+                    "Toto, of course, slept beside his little mistress."
+                    # "Once upon a time, a princess lived in a castle."
                 ],
                 show_progress_bar=False,
             )
@@ -63,25 +65,26 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
 
     filename = f"{out_dir}/stylish.onnx"
     inputs = (texts, text_mask, sentence_embedding)
-    # with torch.no_grad():
-    #     torch.onnx.export(
-    #         model,
-    #         inputs,
-    #         opset_version=14,
-    #         f=filename,
-    #         input_names=["texts", "text_mask", "sentence_embedding"],
-    #         output_names=["waveform"],
-    #         dynamic_axes={
-    #             "texts": {1: "num_token"},
-    #             "text_mask": {1: "num_token"},
-    #             "waveform": {0: "num_samples"},
-    #         },
-    #     )
+    with torch.no_grad():
+        torch.onnx.export(
+            model,
+            inputs,
+            opset_version=14,
+            f=filename,
+            input_names=["texts", "text_mask", "sentence_embedding"],
+            output_names=["waveform"],
+            dynamic_axes={
+                "texts": {1: "num_token"},
+                "text_mask": {1: "num_token"},
+                "waveform": {0: "num_samples"},
+            },
+        )
 
-    audio = model.forward(texts, text_lengths, text_mask, sentence_embedding)
-    outfile = f"{out_dir}/sample-torch.wav"
-    print("Saving to:", outfile)
-    combined = np.multiply(audio.cpu().numpy(), 32768)
-    write(outfile, 24000, combined.astype(np.int16))
+    # audio = model.forward(texts, text_lengths, text_mask, sentence_embedding)
+    # train.writer.add_audio("onnx/sample", audio, 0, sample_rate=24000)
+    # outfile = f"{out_dir}/sample-torch.wav"
+    # print("Saving to:", outfile)
+    # combined = np.multiply(audio.cpu().numpy(), 32768)
+    # write(outfile, 24000, combined.astype(np.int16))
 
     return filename

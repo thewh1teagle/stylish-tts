@@ -39,14 +39,6 @@ def main(model_config_path, dir, checkpoint):
 
     model_config = load_model_config_yaml(model_config_path)
     text_cleaner = TextCleaner(model_config.symbol)
-    # model = Stylish(model_config, "cuda").eval()
-    # model.model.generator.stft = CustomSTFT(
-    #     filter_length=model.model.generator.gen_istft_n_fft,
-    #     hop_length=model.model.generator.gen_istft_hop_size,
-    #     win_length=model.model.generator.gen_istft_n_fft,
-    # )
-    # model.model.generator.stft.cuda().eval()
-    # gen = Generator(model.model.generator)
     sbert = SentenceTransformer(model_config.sbert.model).cpu()
 
     tokens = (
@@ -62,32 +54,33 @@ def main(model_config_path, dir, checkpoint):
     texts[0][1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = tokens.shape[1] + 2
-    text_mask = torch.ones(1, texts.shape[1], dtype=bool).cuda()
+    text_mask = torch.zeros(1, texts.shape[1], dtype=bool).to(device)
     sentence_embedding = (
         torch.from_numpy(
             sbert.encode(
                 [
-                    "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
+                    # "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
+                    "Toto, of course, slept beside his little mistress."
                 ],
                 show_progress_bar=False,
             )
         )
         .float()
-        .cuda()
+        .to(device)
     )
     # Load ONNX model
-    # session = ort.InferenceSession(
-    #     f"{dir}/stylish.onnx",
-    #     providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-    # )
-    # outputs = session.run(
-    #     None,
-    #     {
-    #         "texts": texts.cpu().numpy(),
-    #         "text_mask": text_mask.cpu().numpy(),
-    #         "sentence_embedding": sentence_embedding.cpu().numpy(),
-    #     },
-    # )
+    session = ort.InferenceSession(
+        f"{dir}/stylish.onnx",
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    outputs = session.run(
+        None,
+        {
+            "texts": texts.cpu().numpy(),
+            "text_mask": text_mask.cpu().numpy(),
+            "sentence_embedding": sentence_embedding.cpu().numpy(),
+        },
+    )
     outfile = f"{dir}/sample.wav"
     print("Saving to:", outfile)
     combined = np.multiply(outputs[0], 32768)

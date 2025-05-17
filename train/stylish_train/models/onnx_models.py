@@ -286,8 +286,8 @@ class Stylish(nn.Module):
         prosody = d.permute(0, 2, 1) @ pred_aln_trg
         return pred_aln_trg, prosody
 
-    def forward(self, texts, text_length, text_mask, sentence_embedding):
-        text_encoding = self.text_encoder(texts, text_length, text_mask)
+    def forward(self, texts, text_mask, sentence_embedding):
+        text_encoding = self.text_encoder.infer(texts)
         style_embedding = self.textual_style_encoder(sentence_embedding)
         prosody_embedding = self.textual_prosody_encoder(sentence_embedding)
         plbert_embedding = self.bert(texts, attention_mask=(~text_mask).int())
