@@ -91,9 +91,11 @@ class BatchContext:
         probing=False,
     ):
         mel, f0_curve = self.model.decoder(
-            text_encoding @ duration, pitch, energy, style, probing=probing
+            text_encoding @ duration, pitch, energy, style @ duration, probing=probing
         )
-        return self.model.generator(mel=mel, style=style, pitch=f0_curve, energy=energy)
+        return self.model.generator(
+            mel=mel, style=style @ duration, pitch=f0_curve, energy=energy
+        )
 
     def acoustic_prediction_single(self, batch, use_random_mono=True):
         text_encoding = self.text_encoding(batch.text, batch.text_length)
@@ -101,7 +103,8 @@ class BatchContext:
             batch,
         )
         energy = self.acoustic_energy(batch.mel)
-        style_embedding = self.acoustic_style_embedding(batch.mel)
+        # style_embedding = self.acoustic_style_embedding(batch.mel)
+        style_embedding = self.textual_style_embedding(text_encoding)
         pitch = self.calculate_pitch(batch).detach()
         prediction = self.decoding_single(
             text_encoding,
@@ -117,8 +120,10 @@ class BatchContext:
         duration = self.acoustic_duration(
             batch,
         )
-        style_embedding = self.acoustic_style_embedding(batch.mel)
-        prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
+        # style_embedding = self.acoustic_style_embedding(batch.mel)
+        # prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
+        style_embedding = self.textual_style_embedding(text_encoding)
+        prosody_embedding = self.textual_prosody_embedding(text_encoding)
         if self.plbert_enabled:
             plbert_embedding = self.model.bert(
                 batch.text, attention_mask=(~self.text_mask).int()
@@ -135,6 +140,7 @@ class BatchContext:
             self.duration_results[1],
             self.text_mask,
         )
+        prosody_embedding = prosody_embedding @ duration
         self.pitch_prediction, self.energy_prediction = (
             self.model.pitch_energy_predictor(prosody, prosody_embedding)
         )
@@ -144,7 +150,7 @@ class BatchContext:
             duration,
             pitch,
             self.energy_prediction,
-            style_embedding,
+            style_embedding @ duration,
         )
         return prediction
 

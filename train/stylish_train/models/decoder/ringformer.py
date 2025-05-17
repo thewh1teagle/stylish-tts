@@ -149,13 +149,14 @@ class RingformerGenerator(torch.nn.Module):
             x = self.conformers[i](x)
             x = rearrange(x, "b t f -> b f t")
 
+            x = self.ups[i](x)
+            if i == self.num_upsamples - 1:
+                x = self.reflection_pad(x)
+
+            s = torch.nn.functional.interpolate(s, size=x.shape[2], mode="nearest")
             x_source = self.noise_convs[i](har)
             x_source = self.noise_res[i](x_source, s)
 
-            x = self.ups[i](x)
-
-            if i == self.num_upsamples - 1:
-                x = self.reflection_pad(x)
             x = x + x_source
 
             xs = None
@@ -188,11 +189,16 @@ class AdaIN1d(nn.Module):
         super().__init__()
         self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
+        self.num_features = num_features
 
     def forward(self, x, s):
+        s = rearrange(s, "b s t -> b t s")
         h = self.fc(s)
-        h = h.view(h.size(0), h.size(1), 1)
-        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        h = rearrange(h, "b t s -> b s t")
+        # h = h.view(h.size(0), h.size(1), 1)
+        # gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        gamma = h[:, : self.num_features, :]
+        beta = h[:, self.num_features :, :]
         return (1 + gamma) * self.norm(x) + beta
 
 

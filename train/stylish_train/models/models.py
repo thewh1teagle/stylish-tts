@@ -25,6 +25,7 @@ from .pitch_energy_predictor import PitchEnergyPredictor
 
 from .text_encoder import TextEncoder
 from .style_encoder import StyleEncoder
+from .fine_style_encoder import FineStyleEncoder
 from .decoder.mel_decoder import MelDecoder
 from .decoder.freev import FreevGenerator
 from .decoder.ringformer import RingformerGenerator
@@ -132,14 +133,20 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         decoder=decoder,
         generator=generator,
         text_encoder=text_encoder,
-        textual_prosody_encoder=TextualStyleEncoder(
-            sbert_output_dim,  # model_config.embedding_encoder.dim_in,
-            model_config.style_dim,
+        textual_prosody_encoder=FineStyleEncoder(
+            model_config.inter_dim, model_config.style_dim, 4
         ),
-        textual_style_encoder=TextualStyleEncoder(
-            sbert_output_dim,  # model_config.embedding_encoder.dim_in,
-            model_config.style_dim,
+        textual_style_encoder=FineStyleEncoder(
+            model_config.inter_dim, model_config.style_dim, 4
         ),
+        # textual_prosody_encoder=TextualStyleEncoder(
+        #     sbert_output_dim,  # model_config.embedding_encoder.dim_in,
+        #     model_config.style_dim,
+        # ),
+        # textual_style_encoder=TextualStyleEncoder(
+        #     sbert_output_dim,  # model_config.embedding_encoder.dim_in,
+        #     model_config.style_dim,
+        # ),
         acoustic_prosody_encoder=predictor_encoder,
         acoustic_style_encoder=style_encoder,
         text_aligner=text_aligner,
