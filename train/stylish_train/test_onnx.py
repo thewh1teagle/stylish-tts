@@ -25,6 +25,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import onnxruntime as ort
 import click
+from scipy.io.wavfile import write
 
 
 @click.command()
@@ -49,7 +50,11 @@ def main(model_config_path, dir, checkpoint):
     sbert = SentenceTransformer(model_config.sbert.model).cpu()
 
     tokens = (
-        torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ"))
+        torch.tensor(
+            text_cleaner(
+                "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn , bˈʌt ˈɔlsoʊ bɪkˈɔz , ˈæz ɪn sˈoʊ mˈɛniː ˈʌðɚ ˈɛɹiːəz , ðə dɪsˈɪʒənz tˈeɪkən bˈaɪ kˈɑːnstəntˌiːn ( ˈɔːɹ ɪn hˈɪz nˈeɪm ) wˈɜː tˈuː hˈæv ɡɹˈeɪt səɡnˈɪfɪkəns fˈɔːɹ sˈɛntʃɚiːz tˈuː kˈʌm ."
+            )
+        )
         .unsqueeze(0)
         .to(device)
     )
@@ -62,7 +67,7 @@ def main(model_config_path, dir, checkpoint):
         torch.from_numpy(
             sbert.encode(
                 [
-                    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+                    "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
                 ],
                 show_progress_bar=False,
             )
@@ -71,21 +76,22 @@ def main(model_config_path, dir, checkpoint):
         .cuda()
     )
     # Load ONNX model
-    session = ort.InferenceSession(
-        f"{dir}/stylish.onnx",
-        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-    )
-    print("before")
-    outputs = session.run(
-        None,
-        {
-            "texts": texts.cpu().numpy(),
-            "text_mask": text_mask.cpu().numpy(),
-            "sentence_embedding": sentence_embedding.cpu().numpy(),
-        },
-    )
-    print("after")
-    print(outputs[0].shape)
+    # session = ort.InferenceSession(
+    #     f"{dir}/stylish.onnx",
+    #     providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    # )
+    # outputs = session.run(
+    #     None,
+    #     {
+    #         "texts": texts.cpu().numpy(),
+    #         "text_mask": text_mask.cpu().numpy(),
+    #         "sentence_embedding": sentence_embedding.cpu().numpy(),
+    #     },
+    # )
+    outfile = f"{dir}/sample.wav"
+    print("Saving to:", outfile)
+    combined = np.multiply(outputs[0], 32768)
+    write(outfile, 24000, combined.astype(np.int16))
 
     # print("Using RingFormer in PyTorch...")
     # torch_outputs = [torch.from_numpy(out).cuda() for out in outputs]

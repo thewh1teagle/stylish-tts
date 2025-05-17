@@ -19,6 +19,8 @@ from models.onnx_models import Stylish, CustomSTFT
 
 from attr import attr
 import numpy as np
+from scipy.io.wavfile import write
+from utils import length_to_mask
 
 
 def convert_to_onnx(model_config, out_dir, model_in, device):
@@ -30,22 +32,27 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
         hop_length=model.generator.gen_istft_hop_size,
         win_length=model.generator.gen_istft_n_fft,
     )
-    model.generator.stft = stft.to(device).eval()
+    # model.generator.stft = stft.to(device).eval()
 
     tokens = (
-        torch.tensor(text_cleaner("ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠ")).unsqueeze(0).to(device)
+        torch.tensor(
+            text_cleaner(
+                "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn , bˈʌt ˈɔlsoʊ bɪkˈɔz , ˈæz ɪn sˈoʊ mˈɛniː ˈʌðɚ ˈɛɹiːəz , ðə dɪsˈɪʒənz tˈeɪkən bˈaɪ kˈɑːnstəntˌiːn ( ˈɔːɹ ɪn hˈɪz nˈeɪm ) wˈɜː tˈuː hˈæv ɡɹˈeɪt səɡnˈɪfɪkəns fˈɔːɹ sˈɛntʃɚiːz tˈuː kˈʌm ."
+            )
+        )
+        .unsqueeze(0)
+        .to(device)
     )
     texts = torch.zeros([1, tokens.shape[1] + 2], dtype=int).to(device)
     texts[0][1 : tokens.shape[1] + 1] = tokens
     text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = tokens.shape[1] + 2
-    text_mask = torch.zeros(1, texts.shape[1], dtype=bool).to(device)
-    text_mask[:, : text_lengths[0]] = 1
+    text_mask = length_to_mask(text_lengths)
     sentence_embedding = (
         torch.from_numpy(
             sbert.encode(
                 [
-                    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+                    "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
                 ],
                 show_progress_bar=False,
             )
@@ -56,19 +63,25 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
 
     filename = f"{out_dir}/stylish.onnx"
     inputs = (texts, text_mask, sentence_embedding)
-    with torch.no_grad():
-        torch.onnx.export(
-            model,
-            inputs,
-            opset_version=14,
-            f=filename,
-            input_names=["texts", "text_mask", "sentence_embedding"],
-            output_names=["waveform"],
-            dynamic_axes={
-                "texts": {1: "num_token"},
-                "text_mask": {1: "num_token"},
-                "waveform": {0: "num_samples"},
-            },
-        )
+    # with torch.no_grad():
+    #     torch.onnx.export(
+    #         model,
+    #         inputs,
+    #         opset_version=14,
+    #         f=filename,
+    #         input_names=["texts", "text_mask", "sentence_embedding"],
+    #         output_names=["waveform"],
+    #         dynamic_axes={
+    #             "texts": {1: "num_token"},
+    #             "text_mask": {1: "num_token"},
+    #             "waveform": {0: "num_samples"},
+    #         },
+    #     )
+
+    audio = model.forward(texts, text_lengths, text_mask, sentence_embedding)
+    outfile = f"{out_dir}/sample-torch.wav"
+    print("Saving to:", outfile)
+    combined = np.multiply(audio.cpu().numpy(), 32768)
+    write(outfile, 24000, combined.astype(np.int16))
 
     return filename
