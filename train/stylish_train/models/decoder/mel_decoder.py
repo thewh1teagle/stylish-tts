@@ -20,8 +20,6 @@ class AdaIN1d(nn.Module):
         s = rearrange(s, "b s t -> b t s")
         h = self.fc(s)
         h = rearrange(h, "b t s -> b s t")
-        # h = h.view(h.size(0), h.size(1), 1)
-        # gamma, beta = torch.chunk(h, chunks=2, dim=1)
         gamma = h[:, : self.num_features, :]
         beta = h[:, self.num_features :, :]
         return (1 + gamma) * self.norm(x) + beta

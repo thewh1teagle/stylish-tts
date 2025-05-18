@@ -70,9 +70,8 @@ class DurationEncoder(nn.Module):
     def forward(self, x, style, text_lengths, m):
         masks = m.to(text_lengths.device)
 
+        x = torch.cat([x, style], dim=1)
         x = x.permute(2, 0, 1)
-        s = style.expand(x.shape[0], x.shape[1], -1)
-        x = torch.cat([x, s], dim=-1)
         x.masked_fill_(masks.unsqueeze(-1).transpose(0, 1), 0.0)
 
         x = x.transpose(0, 1)
@@ -82,7 +81,7 @@ class DurationEncoder(nn.Module):
         for block in self.lstms:
             if isinstance(block, AdaLayerNorm):
                 x = block(x.transpose(-1, -2), style).transpose(-1, -2)
-                x = torch.cat([x, s.permute(1, 2, 0)], dim=1)
+                x = torch.cat([x, style], dim=1)
                 x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
             else:
                 x = x.transpose(-1, -2)
@@ -139,11 +138,11 @@ class AdaLayerNorm(nn.Module):
         x = x.transpose(-1, -2)
         x = x.transpose(1, -1)
 
+        s = rearrange(s, "b s t -> b t s")
         h = self.fc(s)
-        h = h.view(h.size(0), h.size(1), 1)
-        gamma, beta = torch.chunk(h, chunks=2, dim=1)
-        gamma, beta = gamma.transpose(1, -1), beta.transpose(1, -1)
+        gamma = h[:, :, : self.channels]
+        beta = h[:, :, self.channels :]
 
         x = F.layer_norm(x, (self.channels,), eps=self.eps)
         x = (1 + gamma) * x + beta
-        return x.transpose(1, -1).transpose(-1, -2)
+        return x

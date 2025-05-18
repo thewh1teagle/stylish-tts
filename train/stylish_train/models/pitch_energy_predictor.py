@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm
+from einops import rearrange
 from .common import InstanceNorm1d
 
 
@@ -39,17 +40,24 @@ class PitchEnergyPredictor(torch.nn.Module):
         self.N_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
 
     def forward(self, prosody, style):
+        upstyle = torch.nn.functional.interpolate(style, scale_factor=2, mode="nearest")
         x = prosody
         x, _ = self.shared(x.transpose(-1, -2))
 
+        s = style
         F0 = x.transpose(-1, -2)
         for block in self.F0:
-            F0 = block(F0, style)
+            F0 = block(F0, s)
+            if block.upsample_type == True:
+                s = upstyle
         F0 = self.F0_proj(F0)
 
+        s = style
         N = x.transpose(-1, -2)
         for block in self.N:
-            N = block(N, style)
+            N = block(N, s)
+            if block.upsample_type == True:
+                s = upstyle
         N = self.N_proj(N)
 
         return F0.squeeze(1), N.squeeze(1)
@@ -106,6 +114,8 @@ class AdainResBlk1d(nn.Module):
         x = self.norm1(x, s)
         x = self.actv(x)
         x = self.pool(x)
+        if self.upsample_type == True:
+            s = torch.nn.functional.interpolate(s, scale_factor=2, mode="nearest")
         x = self.conv1(self.dropout(x))
         x = self.norm2(x, s)
         x = self.actv(x)
@@ -135,9 +145,12 @@ class AdaIN1d(nn.Module):
         super().__init__()
         self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
+        self.num_features = num_features
 
     def forward(self, x, s):
+        s = rearrange(s, "b s t -> b t s")
         h = self.fc(s)
-        h = h.view(h.size(0), h.size(1), 1)
-        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        h = rearrange(h, "b t s -> b s t")
+        gamma = h[:, : self.num_features, :]
+        beta = h[:, self.num_features :, :]
         return (1 + gamma) * self.norm(x) + beta
