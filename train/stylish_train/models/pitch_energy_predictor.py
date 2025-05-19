@@ -41,7 +41,7 @@ class PitchEnergyPredictor(torch.nn.Module):
 
     def forward(self, prosody, style):
         upstyle = torch.nn.functional.interpolate(style, scale_factor=2, mode="nearest")
-        x = prosody
+        x = torch.cat([prosody, style], dim=1)
         x, _ = self.shared(x.transpose(-1, -2))
 
         s = style

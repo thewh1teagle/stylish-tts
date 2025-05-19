@@ -7,7 +7,7 @@ import torchaudio
 from einops import rearrange, reduce
 
 # import train_context
-from utils import length_to_mask, log_norm
+from utils import length_to_mask, sequence_mask
 from models.models import build_model
 import torch
 import torch.nn as nn
@@ -311,3 +311,29 @@ class Stylish(nn.Module):
             style_embedding,
         )
         return prediction.audio.squeeze()
+
+
+def generate_path(duration, mask):
+    device = duration.device
+
+    b, t_x, t_y = mask.shape
+    cum_duration = torch.cumsum(duration, 1)
+    path = torch.zeros(b, t_x, t_y, dtype=mask.dtype).to(device=device)
+
+    cum_duration_flat = cum_duration.view(b * t_x)
+    path = sequence_mask(cum_duration_flat, t_y).to(mask.dtype)
+    path = path.view(b, t_x, t_y)
+    path = (
+        path
+        - torch.nn.functional.pad(path, convert_pad_shape([[0, 0], [1, 0], [0, 0]]))[
+            :, :-1
+        ]
+    )
+    path = path * mask
+    return path
+
+
+def convert_pad_shape(pad_shape):
+    inverted_shape = pad_shape[::-1]
+    pad_shape = [item for sublist in inverted_shape for item in sublist]
+    return pad_shape

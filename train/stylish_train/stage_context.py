@@ -69,12 +69,15 @@ stages = {
         ],
     ),
     "acoustic": StageConfig(
-        next_stage="pre_textual",
+        next_stage=None,
         train_fn=train_acoustic,
         validate_fn=validate_acoustic,
         train_models=[
             "text_encoder",
             "textual_style_encoder",
+            "textual_prosody_encoder",
+            "duration_predictor",
+            "pitch_energy_predictor",
             "decoder",
             "generator",
         ],

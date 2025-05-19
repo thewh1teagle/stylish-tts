@@ -643,6 +643,17 @@ def compute_duration_ce_loss(
     return loss_ce / n, loss_dur / n
 
 
+def duration_loss(*, pred, gt_attn, lengths, mask):
+    pred = pred.squeeze(1)
+    gt = torch.log(1e-8 + gt_attn.sum(dim=2)) * ~mask
+    loss = 0
+    for pred_item, gt_item, length_item in zip(pred, gt, lengths):
+        loss += torch.sum(
+            (gt_item[1 : length_item - 1] - pred_item[1 : length_item - 1]) ** 2
+        ) / (length_item - 2)
+    return loss / lengths.shape[0]
+
+
 # The following code was adapated from: https://github.com/huangruizhe/audio/blob/aligner_label_priors/examples/asr/librispeech_alignment/loss.py
 
 # BSD 2-Clause License

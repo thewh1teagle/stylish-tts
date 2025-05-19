@@ -6,7 +6,7 @@ from einops import rearrange
 
 from batch_context import BatchContext
 from loss_log import build_loss_log
-from losses import compute_duration_ce_loss
+from losses import compute_duration_ce_loss, duration_loss
 from utils import length_to_mask
 
 
@@ -46,6 +46,15 @@ def validate_acoustic(batch, train):
     pred = state.acoustic_prediction_single(batch)
     log = build_loss_log(train)
     train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
+    # log.add_loss(
+    #     "pitch",
+    #     torch.nn.functional.smooth_l1_loss(state.calculate_pitch(batch), state.pitch_prediction),
+    # )
+    # log.add_loss(
+    #     "energy",
+    #     torch.nn.functional.smooth_l1_loss(state.acoustic_energy(batch.mel), state.energy_prediction),
+    # )
+    # log.add_loss("duration", duration_loss(pred=state.duration_prediction, gt_attn=state.duration_results[1], lengths=batch.text_length, mask=state.text_mask))
     return log, state.get_attention(), pred.audio, batch.audio_gt
 
 
@@ -63,13 +72,22 @@ def validate_textual(batch, train):
     log.add_loss(
         "energy", torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction)
     )
-    loss_ce, loss_dur = compute_duration_ce_loss(
-        state.duration_prediction,
-        state.duration_results[1].sum(dim=-1),
-        batch.text_length,
+    log.add_loss(
+        "duration",
+        duration_loss(
+            pred=state.duration_prediction,
+            gt_attn=state.duration_results[1],
+            lengths=batch.text_length,
+            mask=state.text_mask,
+        ),
     )
-    log.add_loss("duration_ce", loss_ce)
-    log.add_loss("duration", loss_dur)
+    # loss_ce, loss_dur = compute_duration_ce_loss(
+    #     state.duration_prediction,
+    #     state.duration_results[1].sum(dim=-1),
+    #     batch.text_length,
+    # )
+    # log.add_loss("duration_ce", loss_ce)
+    # log.add_loss("duration", loss_dur)
     return log, state.get_attention(), pred.audio, batch.audio_gt
 
 

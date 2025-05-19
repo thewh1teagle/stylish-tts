@@ -91,18 +91,35 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         decoder = MelDecoder()
         generator = FreevGenerator()
 
+    # text_encoder = TextEncoder(
+    #     channels=model_config.inter_dim,
+    #     kernel_size=model_config.text_encoder.kernel_size,
+    #     depth=model_config.text_encoder.n_layer,
+    #     n_symbols=model_config.text_encoder.n_token,
+    # )
     text_encoder = TextEncoder(
-        channels=model_config.inter_dim,
-        kernel_size=model_config.text_encoder.kernel_size,
-        depth=model_config.text_encoder.n_layer,
-        n_symbols=model_config.text_encoder.n_token,
+        n_vocab=model_config.text_encoder.n_token,
+        inter_dim=model_config.inter_dim,
+        hidden_dim=192,
+        filter_channels=768,
+        heads=2,
+        layers=6,
+        kernel_size=3,
+        dropout=0.1,
     )
 
+    # duration_predictor = DurationPredictor(
+    #     style_dim=model_config.style_dim,
+    #     d_hid=model_config.inter_dim,
+    #     nlayers=model_config.duration_predictor.n_layer,
+    #     max_dur=model_config.duration_predictor.max_dur,
+    #     dropout=model_config.duration_predictor.dropout,
+    # )
     duration_predictor = DurationPredictor(
         style_dim=model_config.style_dim,
-        d_hid=model_config.inter_dim,
-        nlayers=model_config.duration_predictor.n_layer,
-        max_dur=model_config.duration_predictor.max_dur,
+        in_channels=192,
+        filter_channels=256,
+        kernel_size=3,
         dropout=model_config.duration_predictor.dropout,
     )
 

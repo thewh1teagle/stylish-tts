@@ -98,7 +98,7 @@ class BatchContext:
         )
 
     def acoustic_prediction_single(self, batch, use_random_mono=True):
-        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        text_encoding, _, _ = self.text_encoding(batch.text, batch.text_length)
         duration = self.acoustic_duration(
             batch,
         )
@@ -116,7 +116,9 @@ class BatchContext:
         return prediction
 
     def textual_prediction_single(self, batch):
-        text_encoding = self.text_encoding(batch.text, batch.text_length)
+        text_encoding, duration_encoding, x_mask = self.text_encoding(
+            batch.text, batch.text_length
+        )
         duration = self.acoustic_duration(
             batch,
         )
@@ -124,22 +126,19 @@ class BatchContext:
         # prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
         style_embedding = self.textual_style_embedding(text_encoding)
         prosody_embedding = self.textual_prosody_embedding(text_encoding)
-        if self.plbert_enabled:
-            plbert_embedding = self.model.bert(
-                batch.text, attention_mask=(~self.text_mask).int()
-            )
-            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
-                -1, -2
-            )
-        else:
-            duration_encoding = text_encoding
-        self.duration_prediction, prosody = self.model.duration_predictor(
-            duration_encoding,
-            prosody_embedding,
-            batch.text_length,
-            self.duration_results[1],
-            self.text_mask,
+        # if self.plbert_enabled:
+        #     plbert_embedding = self.model.bert(
+        #         batch.text, attention_mask=(~self.text_mask).int()
+        #     )
+        #     duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
+        #         -1, -2
+        #     )
+        # else:
+        #     duration_encoding = text_encoding
+        self.duration_prediction = self.model.duration_predictor(
+            duration_encoding, prosody_embedding, x_mask
         )
+        prosody = text_encoding @ duration
         prosody_embedding = prosody_embedding @ duration
         self.pitch_prediction, self.energy_prediction = (
             self.model.pitch_energy_predictor(prosody, prosody_embedding)

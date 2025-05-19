@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
-from losses import magphase_loss, compute_duration_ce_loss, freev_loss
+from losses import magphase_loss, compute_duration_ce_loss, freev_loss, duration_loss
 from utils import length_to_mask
 
 
@@ -57,6 +57,15 @@ def train_acoustic(
             )
 
         freev_loss(log, pred, batch.audio_gt, train)
+        # log.add_loss(
+        #     "pitch",
+        #     torch.nn.functional.smooth_l1_loss(state.calculate_pitch(batch), state.pitch_prediction),
+        # )
+        # log.add_loss(
+        #     "energy",
+        #     torch.nn.functional.smooth_l1_loss(state.acoustic_energy(batch.mel), state.energy_prediction),
+        # )
+        # log.add_loss("duration", duration_loss(pred=state.duration_prediction, gt_attn=state.duration_results[1], lengths=batch.text_length, mask=state.text_mask))
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
@@ -82,13 +91,22 @@ def train_pre_textual(
             "energy",
             torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
         )
-        loss_ce, loss_dur = compute_duration_ce_loss(
-            state.duration_prediction,
-            state.duration_results[1].sum(dim=-1),
-            batch.text_length,
+        log.add_loss(
+            "duration",
+            duration_loss(
+                pred=state.duration_prediction,
+                gt_attn=state.duration_results[1],
+                lengths=batch.text_length,
+                mask=state.text_mask,
+            ),
         )
-        log.add_loss("duration_ce", loss_ce)
-        log.add_loss("duration", loss_dur)
+        # loss_ce, loss_dur = compute_duration_ce_loss(
+        #     state.duration_prediction,
+        #     state.duration_results[1].sum(dim=-1),
+        #     batch.text_length,
+        # )
+        # log.add_loss("duration_ce", loss_ce)
+        # log.add_loss("duration", loss_dur)
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
@@ -124,13 +142,22 @@ def train_textual(
             "energy",
             torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
         )
-        loss_ce, loss_dur = compute_duration_ce_loss(
-            state.duration_prediction,
-            state.duration_results[1].sum(dim=-1),
-            batch.text_length,
+        log.add_loss(
+            "duration",
+            duration_loss(
+                pred=state.duration_prediction,
+                gt_attn=state.duration_results[1],
+                lengths=batch.text_length,
+                mask=state.text_mask,
+            ),
         )
-        log.add_loss("duration_ce", loss_ce)
-        log.add_loss("duration", loss_dur)
+        # loss_ce, loss_dur = compute_duration_ce_loss(
+        #     state.duration_prediction,
+        #     state.duration_results[1].sum(dim=-1),
+        #     batch.text_length,
+        # )
+        # log.add_loss("duration_ce", loss_ce)
+        # log.add_loss("duration", loss_dur)
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
