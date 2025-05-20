@@ -419,7 +419,7 @@ class TextEncoder(nn.Module):
         x = self.encoder(x, x_mask)
         mu = self.proj_m(x) * x_mask
 
-        return mu, torch.detach(x), x_mask
+        return mu, x, x_mask
 
 
 # class TextEncoder(nn.Module):
