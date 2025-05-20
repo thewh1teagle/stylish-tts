@@ -79,18 +79,18 @@ def train_pre_textual(
     state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
         state.textual_bootstrap_prediction(batch)
-        energy = state.acoustic_energy(batch.mel)
-        pitch = state.calculate_pitch(batch)
+        # energy = state.acoustic_energy(batch.mel)
+        # pitch = state.calculate_pitch(batch)
         train.stage.optimizer.zero_grad()
         log = build_loss_log(train)
-        log.add_loss(
-            "pitch",
-            torch.nn.functional.smooth_l1_loss(pitch, state.pitch_prediction),
-        )
-        log.add_loss(
-            "energy",
-            torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
-        )
+        # log.add_loss(
+        #     "pitch",
+        #     torch.nn.functional.smooth_l1_loss(pitch, state.pitch_prediction),
+        # )
+        # log.add_loss(
+        #     "energy",
+        #     torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
+        # )
         log.add_loss(
             "duration",
             duration_loss(

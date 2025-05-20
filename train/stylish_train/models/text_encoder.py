@@ -390,7 +390,7 @@ class TextEncoder(nn.Module):
             self.n_channels + (spk_emb_dim if n_spks > 1 else 0), self.n_feats, 1
         )
 
-    def forward(self, x, x_lengths, style, spks=None):
+    def forward(self, x, x_lengths, spks=None):
         """Run forward pass to the transformer based encoder and duration predictor
 
         Args:

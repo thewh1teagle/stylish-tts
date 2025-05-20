@@ -288,24 +288,58 @@ class Stylish(nn.Module):
         prosody = d.permute(0, 2, 1) @ pred_aln_trg
         return pred_aln_trg, prosody
 
-    def forward(self, texts, text_mask):
-        text_encoding = self.text_encoder.infer(texts)
+    def make_duration_attention(self, duration_prediction, x_mask):
+        # pred_dur = torch.ceil(torch.exp(duration_prediction)).long()
+        # pred_dur = rearrange(pred_dur, "1 1 t -> t")
+        # indices = torch.repeat_interleave(
+        #     torch.arange(pred_dur.shape[0], device=self.device), pred_dur
+        # )
+        # pred_aln_trg = torch.zeros(
+        #     (pred_dur.shape[0], indices.shape[0]), device=self.device
+        # )
+        # pred_aln_trg[indices, torch.arange(indices.shape[0])] = 1
+        # pred_aln_trg = pred_aln_trg.unsqueeze(0).to(self.device)
+        # return pred_aln_trg
+
+        length_scale = 1
+        w = torch.exp(duration_prediction) * x_mask
+        w_ceil = torch.ceil(w) * length_scale
+        y_lengths = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
+        y_max_length = y_lengths.max()
+        # y_max_length_ = fix_len_compatibility(y_max_length)
+        y_max_length_ = y_max_length
+
+        # Using obtained durations `w` construct alignment map `attn`
+        y_mask = sequence_mask(y_lengths, y_max_length_).unsqueeze(1).to(x_mask.dtype)
+        attn_mask = x_mask.unsqueeze(-1) * y_mask.unsqueeze(2)
+        attn = generate_path(w_ceil.squeeze(1), attn_mask.squeeze(1))
+        return attn
+
+    def forward(self, texts, text_lengths):
+        text_encoding, duration_encoding, x_mask = self.text_encoder(
+            texts, text_lengths
+        )
         style_embedding = self.textual_style_encoder(text_encoding)
         prosody_embedding = self.textual_prosody_encoder(text_encoding)
-        plbert_embedding = self.bert(texts, attention_mask=(~text_mask).int())
-        duration_encoding = self.bert_encoder(plbert_embedding).permute(0, 2, 1)
-        duration_prediction, prosody = self.duration_predict(
-            duration_encoding,
-            prosody_embedding,
+        # plbert_embedding = self.bert(texts, attention_mask=(~text_mask).int())
+        # duration_encoding = self.bert_encoder(plbert_embedding).permute(0, 2, 1)
+        # duration_prediction, prosody = self.duration_predict(
+        #     duration_encoding,
+        #     prosody_embedding,
+        # )
+        duration_prediction = self.duration_predictor(
+            duration_encoding, prosody_embedding, x_mask
         )
-        prosody_embedding = prosody_embedding @ duration_prediction
+        duration_attention = self.make_duration_attention(duration_prediction, x_mask)
+        prosody = text_encoding @ duration_attention
+        prosody_embedding = prosody_embedding @ duration_attention
         pitch_prediction, energy_prediction = self.pitch_energy_predictor(
             prosody, prosody_embedding
         )
 
         prediction = self.decoding_single(
             text_encoding,
-            duration_prediction,
+            duration_attention,
             pitch_prediction,
             energy_prediction,
             style_embedding,

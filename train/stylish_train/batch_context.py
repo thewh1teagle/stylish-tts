@@ -33,7 +33,7 @@ class BatchContext:
         self.plbert_enabled = train.model_config.plbert.enabled
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
-        return self.model.text_encoder(texts, text_lengths, self.text_mask)
+        return self.model.text_encoder(texts, text_lengths)
 
     def bert_encoding(self, texts: torch.Tensor):
         mask = (~self.text_mask).int()
@@ -208,8 +208,8 @@ class BatchContext:
         self.duration_prediction = self.model.duration_predictor(
             duration_encoding, prosody_embedding, x_mask
         )
-        prosody = text_encoding @ duration
-        prosody_embedding = prosody_embedding @ duration
-        self.pitch_prediction, self.energy_prediction = (
-            self.model.pitch_energy_predictor(prosody, prosody_embedding)
-        )
+        # prosody = text_encoding @ duration
+        # prosody_embedding = prosody_embedding @ duration
+        # self.pitch_prediction, self.energy_prediction = (
+        #     self.model.pitch_energy_predictor(prosody, prosody_embedding)
+        # )
