@@ -107,21 +107,31 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         kernel_size=3,
         dropout=0.1,
     )
+    text_duration_encoder = TextEncoder(
+        n_vocab=model_config.text_encoder.n_token,
+        inter_dim=model_config.inter_dim,
+        hidden_dim=192,
+        filter_channels=768,
+        heads=2,
+        layers=6,
+        kernel_size=3,
+        dropout=0.1,
+    )
 
-    # duration_predictor = DurationPredictor(
-    #     style_dim=model_config.style_dim,
-    #     d_hid=model_config.inter_dim,
-    #     nlayers=model_config.duration_predictor.n_layer,
-    #     max_dur=model_config.duration_predictor.max_dur,
-    #     dropout=model_config.duration_predictor.dropout,
-    # )
     duration_predictor = DurationPredictor(
         style_dim=model_config.style_dim,
-        in_channels=192,
-        filter_channels=256,
-        kernel_size=3,
+        d_hid=model_config.inter_dim,
+        nlayers=model_config.duration_predictor.n_layer,
+        max_dur=model_config.duration_predictor.max_dur,
         dropout=model_config.duration_predictor.dropout,
     )
+    # duration_predictor = DurationPredictor(
+    #     style_dim=model_config.style_dim,
+    #     in_channels=192,
+    #     filter_channels=256,
+    #     kernel_size=3,
+    #     dropout=model_config.duration_predictor.dropout,
+    # )
 
     pitch_energy_predictor = PitchEnergyPredictor(
         style_dim=model_config.style_dim,
@@ -150,6 +160,7 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         decoder=decoder,
         generator=generator,
         text_encoder=text_encoder,
+        text_duration_encoder=text_duration_encoder,
         textual_prosody_encoder=FineStyleEncoder(
             model_config.inter_dim, model_config.style_dim, 4
         ),

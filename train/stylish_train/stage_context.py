@@ -133,18 +133,19 @@ stages = {
         train_fn=train_textual,
         validate_fn=validate_textual,
         train_models=[
+            "text_duration_encoder",
             "textual_prosody_encoder",
             "duration_predictor",
             "pitch_energy_predictor",
             # "bert",
             # "bert_encoder",
-            "text_encoder",
-            "textual_style_encoder",
         ],
         eval_models=[
             "decoder",
             "generator",
             # "text_aligner",
+            "text_encoder",
+            "textual_style_encoder",
         ],
         adversarial=False,
         inputs=[

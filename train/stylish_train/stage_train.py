@@ -142,22 +142,22 @@ def train_textual(
             "energy",
             torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction),
         )
-        log.add_loss(
-            "duration",
-            duration_loss(
-                pred=state.duration_prediction,
-                gt_attn=state.duration_results[1],
-                lengths=batch.text_length,
-                mask=state.text_mask,
-            ),
-        )
-        # loss_ce, loss_dur = compute_duration_ce_loss(
-        #     state.duration_prediction,
-        #     state.duration_results[1].sum(dim=-1),
-        #     batch.text_length,
+        # log.add_loss(
+        #     "duration",
+        #     duration_loss(
+        #         pred=state.duration_prediction,
+        #         gt_attn=state.duration_results[1],
+        #         lengths=batch.text_length,
+        #         mask=state.text_mask,
+        #     ),
         # )
-        # log.add_loss("duration_ce", loss_ce)
-        # log.add_loss("duration", loss_dur)
+        loss_ce, loss_dur = compute_duration_ce_loss(
+            state.duration_prediction,
+            state.duration_results[1].sum(dim=-1),
+            batch.text_length,
+        )
+        log.add_loss("duration_ce", loss_ce)
+        log.add_loss("duration", loss_dur)
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
