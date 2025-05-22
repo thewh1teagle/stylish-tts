@@ -37,7 +37,7 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
     tokens = (
         torch.tensor(
             text_cleaner(
-                "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn , bˈʌt ˈɔlsoʊ bɪkˈɔz , ˈæz ɪn sˈoʊ mˈɛniː ˈʌðɚ ˈɛɹiːəz , ðə dɪsˈɪʒənz tˈeɪkən bˈaɪ kˈɑːnstəntˌiːn ( ˈɔːɹ ɪn hˈɪz nˈeɪm ) wˈɜː tˈuː hˈæv ɡɹˈeɪt səɡnˈɪfɪkəns fˈɔːɹ sˈɛntʃɚiːz tˈuː kˈʌm ."
+                "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn ,"
             )
         )
         .unsqueeze(0)
@@ -51,11 +51,7 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
     sentence_embedding = (
         torch.from_numpy(
             sbert.encode(
-                [
-                    # "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
-                    "Toto, of course, slept beside his little mistress."
-                    # "Once upon a time, a princess lived in a castle."
-                ],
+                ["Toto, of course, slept beside his little mistress."],
                 show_progress_bar=False,
             )
         )
@@ -75,7 +71,6 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
             output_names=["waveform"],
             dynamic_axes={
                 "texts": {1: "num_token"},
-                "text_mask": {1: "num_token"},
                 "waveform": {0: "num_samples"},
             },
         )
