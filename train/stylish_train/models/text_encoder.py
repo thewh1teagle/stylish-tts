@@ -184,6 +184,7 @@ class MultiHeadAttention(nn.Module):
         p_dropout=0.0,
         proximal_bias=False,
         proximal_init=False,
+        use_sdpa=True,
     ):
         super().__init__()
         assert channels % n_heads == 0
@@ -214,6 +215,7 @@ class MultiHeadAttention(nn.Module):
             self.conv_k.weight.data.copy_(self.conv_q.weight.data)
             self.conv_k.bias.data.copy_(self.conv_q.bias.data)
         torch.nn.init.xavier_uniform_(self.conv_v.weight)
+        self.use_sdpa = use_sdpa
 
     def forward(self, x, c, attn_mask=None):
         q = self.conv_q(x)
@@ -234,20 +236,58 @@ class MultiHeadAttention(nn.Module):
         query = self.query_rotary_pe(query)
         key = self.key_rotary_pe(key)
 
-        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.k_channels)
+        if self.use_sdpa:
+            final_attn_mask = None
+            if self.proximal_bias:
+                assert t_s == t_t, "Proximal bias is only available for self-attention."
+                bias_val = self._attention_bias_proximal(t_s).to(
+                    device=query.device, dtype=query.dtype
+                )
+                final_attn_mask = bias_val
 
-        if self.proximal_bias:
-            assert t_s == t_t, "Proximal bias is only available for self-attention."
-            scores = scores + self._attention_bias_proximal(t_s).to(
-                device=scores.device, dtype=scores.dtype
+            if mask is not None:
+                expanded_bool_mask = mask
+                additive_external_mask = torch.zeros_like(
+                    expanded_bool_mask, dtype=query.dtype
+                )
+                additive_external_mask.masked_fill_(
+                    expanded_bool_mask == False, -float("inf")
+                )
+
+                if final_attn_mask is not None:
+                    final_attn_mask = final_attn_mask + additive_external_mask
+                else:
+                    final_attn_mask = additive_external_mask
+
+            output = F.scaled_dot_product_attention(
+                query,
+                key,
+                value,
+                attn_mask=final_attn_mask,
+                dropout_p=self.p_dropout if self.training else 0.0,
+                is_causal=False,
             )
-        if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e4)
-        p_attn = torch.nn.functional.softmax(scores, dim=-1)
-        p_attn = self.drop(p_attn)
-        output = torch.matmul(p_attn, value)
-        output = output.transpose(2, 3).contiguous().view(b, d, t_t)
-        return output, p_attn
+
+            output = output.transpose(1, 2).contiguous().view(b, d, t_t)
+            # p_attn is not necessary in practise
+            return output, None
+        else:
+            scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(
+                self.k_channels
+            )
+
+            if self.proximal_bias:
+                assert t_s == t_t, "Proximal bias is only available for self-attention."
+                scores = scores + self._attention_bias_proximal(t_s).to(
+                    device=scores.device, dtype=scores.dtype
+                )
+            if mask is not None:
+                scores = scores.masked_fill(mask == 0, -1e4)
+            p_attn = torch.nn.functional.softmax(scores, dim=-1)
+            p_attn = self.drop(p_attn)
+            output = torch.matmul(p_attn, value)
+            output = output.transpose(2, 3).contiguous().view(b, d, t_t)
+            return output, p_attn
 
     @staticmethod
     def _attention_bias_proximal(length):
