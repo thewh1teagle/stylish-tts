@@ -15,7 +15,7 @@ from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
 from stage_context import StageContext, is_valid_stage, valid_stage_list
 
-from models.models import build_model, load_defaults
+from models.models import build_model
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss
 from utils import get_data_path_list, save_git_diff
 from loss_log import combine_logs
@@ -227,8 +227,6 @@ def main(
             train.manifest.current_step = 0
             train.stage.begin_stage(stage, train)
         logger.info(f"Loaded last checkpoint at {checkpoint} ...")
-    else:
-        load_defaults(train, train.model)
 
     train.manifest.stage = stage
 

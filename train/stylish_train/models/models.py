@@ -13,18 +13,15 @@ from stylish_lib.config_loader import ModelConfig
 
 
 from .text_aligner import tdnn_blstm_ctc_model_base
-from .plbert import PLBERT
 
 from .discriminators.multi_period import MultiPeriodDiscriminator
 from .discriminators.multi_resolution import MultiResolutionDiscriminator
 from .discriminators.multi_subband import MultiScaleSubbandCQTDiscriminator
-from .discriminators.multi_stft import MultiScaleSTFTDiscriminator
 
 from .duration_predictor import DurationPredictor
 from .pitch_energy_predictor import PitchEnergyPredictor
 
 from .text_encoder import TextEncoder
-from .style_encoder import StyleEncoder
 from .fine_style_encoder import FineStyleEncoder
 from .decoder.mel_decoder import MelDecoder
 from .decoder.freev import FreevGenerator
@@ -56,15 +53,6 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
     text_aligner = tdnn_blstm_ctc_model_base(
         model_config.n_mels, model_config.text_encoder.n_token
     )
-    bert = PLBERT(
-        vocab_size=model_config.text_encoder.n_token,
-        **{
-            k: v
-            for k, v in model_config.plbert.model_dump().items()
-            if k not in ["enabled", "path"]
-        },
-    )
-
     assert model_config.decoder.type in [
         "ringformer",
         "freev",
@@ -91,12 +79,6 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         decoder = MelDecoder()
         generator = FreevGenerator()
 
-    # text_encoder = TextEncoder(
-    #     channels=model_config.inter_dim,
-    #     kernel_size=model_config.text_encoder.kernel_size,
-    #     depth=model_config.text_encoder.n_layer,
-    #     n_symbols=model_config.text_encoder.n_token,
-    # )
     text_encoder = TextEncoder(
         n_vocab=model_config.text_encoder.n_token,
         inter_dim=model_config.inter_dim,
@@ -125,36 +107,13 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         max_dur=model_config.duration_predictor.max_dur,
         dropout=model_config.duration_predictor.dropout,
     )
-    # duration_predictor = DurationPredictor(
-    #     style_dim=model_config.style_dim,
-    #     in_channels=192,
-    #     filter_channels=256,
-    #     kernel_size=3,
-    #     dropout=model_config.duration_predictor.dropout,
-    # )
 
     pitch_energy_predictor = PitchEnergyPredictor(
         style_dim=model_config.style_dim,
         d_hid=model_config.inter_dim,
         dropout=model_config.pitch_energy_predictor.dropout,
     )
-
-    style_encoder = StyleEncoder(
-        dim_in=model_config.style_encoder.dim_in,
-        style_dim=model_config.style_dim,
-        max_conv_dim=model_config.style_encoder.hidden_dim,
-        skip_downsamples=model_config.style_encoder.skip_downsamples,
-    )
-    predictor_encoder = StyleEncoder(
-        dim_in=model_config.style_encoder.dim_in,
-        style_dim=model_config.style_dim,
-        max_conv_dim=model_config.style_encoder.hidden_dim,
-        skip_downsamples=model_config.style_encoder.skip_downsamples,
-    )
-
     nets = Munch(
-        bert=bert,
-        bert_encoder=nn.Linear(bert.config.hidden_size, model_config.inter_dim),
         duration_predictor=duration_predictor,
         pitch_energy_predictor=pitch_energy_predictor,
         decoder=decoder,
@@ -167,34 +126,10 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         textual_style_encoder=FineStyleEncoder(
             model_config.inter_dim, model_config.style_dim, 4
         ),
-        # textual_prosody_encoder=TextualStyleEncoder(
-        #     sbert_output_dim,  # model_config.embedding_encoder.dim_in,
-        #     model_config.style_dim,
-        # ),
-        # textual_style_encoder=TextualStyleEncoder(
-        #     sbert_output_dim,  # model_config.embedding_encoder.dim_in,
-        #     model_config.style_dim,
-        # ),
-        acoustic_prosody_encoder=predictor_encoder,
-        acoustic_style_encoder=style_encoder,
         text_aligner=text_aligner,
         mpd=MultiPeriodDiscriminator(),
         msbd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),
         mrd=MultiResolutionDiscriminator(),
-        mstftd=MultiScaleSTFTDiscriminator(),
     )
 
-    return nets  # , kdiffusion
-
-
-def load_defaults(train, model):
-    with train.accelerator.main_process_first():
-        # Load pretrained PLBERT
-        if train.model_config.plbert.enabled:
-            path = train.model_config.plbert.path
-            if path is None:
-                path = hf_hub_download(
-                    repo_id="stylish-tts/plbert", filename="plbert.safetensors"
-                )
-            params = safetensors.torch.load_file(path)
-            model.bert.load_state_dict(params, strict=False)
+    return nets

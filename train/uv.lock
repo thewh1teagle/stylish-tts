@@ -1789,6 +1789,12 @@ wheels = [
 ]
 
 [[package]]
+name = "nvidia-ml-py3"
+version = "7.352.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/64/cce82bddb80c0b0f5c703bbdafa94bfb69a1c5ad7a79cff00b482468f0d3/nvidia-ml-py3-7.352.0.tar.gz", hash = "sha256:390f02919ee9d73fe63a98c73101061a6b37fa694a793abf56673320f1f51277", size = 19494 }
+
+[[package]]
 name = "nvidia-nccl-cu12"
 version = "2.21.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2797,6 +2803,7 @@ dependencies = [
     { name = "nnaudio" },
     { name = "numba" },
     { name = "numpy" },
+    { name = "nvidia-ml-py3" },
     { name = "onnx" },
     { name = "onnxruntime-gpu" },
     { name = "pandas" },
@@ -2838,6 +2845,7 @@ requires-dist = [
     { name = "nnaudio", specifier = ">=0.3.3" },
     { name = "numba", specifier = ">=0.60.0" },
     { name = "numpy", specifier = ">=2.0.2" },
+    { name = "nvidia-ml-py3", specifier = ">=7.352.0" },
     { name = "onnx", specifier = ">=1.17.0" },
     { name = "onnxruntime-gpu", specifier = ">=1.22.0" },
     { name = "pandas", specifier = ">=2.2.3" },

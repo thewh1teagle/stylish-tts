@@ -7,7 +7,7 @@ from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
 from losses import magphase_loss, compute_duration_ce_loss, freev_loss, duration_loss
-from utils import length_to_mask
+from utils import length_to_mask, print_gpu_vram
 
 
 def train_alignment(
@@ -34,40 +34,38 @@ def train_acoustic(
 ) -> Tuple[LossLog, Optional[torch.Tensor]]:
     state = BatchContext(train=train, model=model, text_length=batch.text_length)
     with train.accelerator.autocast():
+        print_gpu_vram("init")
         pred = state.acoustic_prediction_single(batch)
+        print_gpu_vram("predicted")
         train.stage.optimizer.zero_grad()
 
         log = build_loss_log(train)
         train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
+        print_gpu_vram("stft_loss")
         log.add_loss(
             "generator",
             train.generator_loss(
                 batch.audio_gt.detach().unsqueeze(1).float(), pred.audio, ["mpd", "mrd"]
             ).mean(),
         )
+        print_gpu_vram("generator_loss")
         log.add_loss(
             "slm",
             train.wavlm_loss(batch.audio_gt.detach(), pred.audio),
         )
+        print_gpu_vram("slm_loss")
         if pred.magnitude is not None and pred.phase is not None:
             log.add_loss(
                 "magphase",
                 magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
+        print_gpu_vram("magphase_loss")
 
         freev_loss(log, pred, batch.audio_gt, train)
-        # log.add_loss(
-        #     "pitch",
-        #     torch.nn.functional.smooth_l1_loss(state.calculate_pitch(batch), state.pitch_prediction),
-        # )
-        # log.add_loss(
-        #     "energy",
-        #     torch.nn.functional.smooth_l1_loss(state.acoustic_energy(batch.mel), state.energy_prediction),
-        # )
-        # log.add_loss("duration", duration_loss(pred=state.duration_prediction, gt_attn=state.duration_results[1], lengths=batch.text_length, mask=state.text_mask))
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )
+        print_gpu_vram("backward")
 
     return log.detach(), pred.audio.detach()
 

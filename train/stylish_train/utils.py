@@ -4,6 +4,20 @@ import matplotlib.pyplot as plt
 from munch import Munch
 import os
 import subprocess
+from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
+
+nv_init = False
+
+
+def print_gpu_vram(tag):
+    if False:
+        global nv_init
+        if not nv_init:
+            nvmlInit()
+            nv_init = True
+        handle = nvmlDeviceGetHandleByIndex(0)
+        info = nvmlDeviceGetMemoryInfo(handle)
+        print(f"{tag} - GPU memory occupied: {info.used//1024**2} MB.")
 
 
 def maximum_path(neg_cent, mask):

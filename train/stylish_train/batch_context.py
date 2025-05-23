@@ -7,7 +7,7 @@ import torchaudio
 from einops import rearrange, reduce
 import train_context
 from stylish_lib.config_loader import Config
-from utils import length_to_mask, log_norm, maximum_path
+from utils import length_to_mask, log_norm, maximum_path, print_gpu_vram
 
 
 class BatchContext:
@@ -96,18 +96,23 @@ class BatchContext:
         mel, f0_curve = self.model.decoder(
             text_encoding @ duration, pitch, energy, style @ duration, probing=probing
         )
-        return self.model.generator(
+        print_gpu_vram("mel_decoder")
+        result = self.model.generator(
             mel=mel, style=style @ duration, pitch=f0_curve, energy=energy
         )
+        print_gpu_vram("generator")
+        return result
 
     def acoustic_prediction_single(self, batch, use_random_mono=True):
         text_encoding, _, _ = self.text_encoding(batch.text, batch.text_length)
+        print_gpu_vram("text encoder")
         duration = self.acoustic_duration(
             batch,
         )
         energy = self.acoustic_energy(batch.mel)
         # style_embedding = self.acoustic_style_embedding(batch.mel)
         style_embedding = self.textual_style_embedding(text_encoding)
+        print_gpu_vram("style")
         pitch = self.calculate_pitch(batch).detach()
         prediction = self.decoding_single(
             text_encoding,

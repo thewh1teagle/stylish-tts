@@ -87,7 +87,11 @@ class BatchManager:
             leave=False,
             dynamic_ncols=True,
         )
+        test = 0
         for key in iterator:
+            if test < 50:
+                test += 1
+                continue
             frame_count = get_frame_count(key)
             iterator.update(n=(frame_count - iterator.n))
             last_bin = key
