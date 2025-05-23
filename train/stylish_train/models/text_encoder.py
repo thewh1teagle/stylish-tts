@@ -250,9 +250,7 @@ class MultiHeadAttention(nn.Module):
                 additive_external_mask = torch.zeros_like(
                     expanded_bool_mask, dtype=query.dtype
                 )
-                additive_external_mask.masked_fill_(
-                    expanded_bool_mask == False, -float("inf")
-                )
+                additive_external_mask.masked_fill_(expanded_bool_mask == False, -1e4)
 
                 if final_attn_mask is not None:
                     final_attn_mask = final_attn_mask + additive_external_mask
@@ -268,7 +266,7 @@ class MultiHeadAttention(nn.Module):
                 is_causal=False,
             )
 
-            output = output.transpose(1, 2).contiguous().view(b, d, t_t)
+            output = output.transpose(2, 3).contiguous().view(b, d, t_t)
             # p_attn is not necessary in practise
             return output, None
         else:
