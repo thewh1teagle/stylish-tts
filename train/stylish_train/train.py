@@ -187,17 +187,11 @@ def main(
         mpd=train.model.mpd,
         mrd=train.model.mrd,
         msbd=train.model.msbd,
-        mstftd=train.model.mstftd,
-        discriminators=train.model_config.discriminators,
-        loss_weights=train.config.discriminator_loss_weight,
     ).to(train.config.training.device)
     train.discriminator_loss = DiscriminatorLoss(
         mpd=train.model.mpd,
         mrd=train.model.mrd,
         msbd=train.model.msbd,
-        mstftd=train.model.mstftd,
-        discriminators=train.model_config.discriminators,
-        loss_weights=train.config.discriminator_loss_weight,
     ).to(train.config.training.device)
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,

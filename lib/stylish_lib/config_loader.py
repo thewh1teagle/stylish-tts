@@ -142,15 +142,6 @@ class LossWeightConfig(BaseModel):
     align_loss: float = Field(..., description="Weight for alignment loss")
 
 
-class DiscriminatorLossWeightConfig(BaseModel):
-    mpd: float = Field(..., description="Weight for Multi-Period discriminator.")
-    mrd: float = Field(..., description="Weight for Multi-Resolution discriminator.")
-    msbd: float = Field(
-        ..., description="Weight for Multi-Scale Sub-Band CQT discriminator."
-    )
-    mstftd: float = Field(..., description="Weight for Multi-Scale STFT discriminator.")
-
-
 class OptimizerConfig(BaseModel):
     """
     Optimizer configuration parameters.
@@ -455,9 +446,6 @@ class Config(BaseModel):
     loss_weight: LossWeightConfig = Field(
         ..., description="Loss weight configuration for various loss components."
     )
-    discriminator_loss_weight: DiscriminatorLossWeightConfig = Field(
-        ..., description="Loss weight configuration for discriminators."
-    )
     optimizer: OptimizerConfig = Field(
         ..., description="Optimizer configuration parameters."
     )
@@ -483,9 +471,6 @@ class ModelConfig(BaseModel):
     style_dim: int = Field(..., description="Dimension of the style vector.")
     inter_dim: int = Field(
         ..., description="Dimension of the embedding used between models."
-    )
-    discriminators: List[str] = Field(
-        ..., description="List of discriminators to use (can be mpd, mrd, msbd, mstftd)"
     )
 
     text_aligner: TextAlignerConfig = Field(

@@ -56,7 +56,8 @@ class MultiOptimizer:
         if isinstance(gen_lr, torch.Tensor):
             gen_lr = gen_lr.item()
         for key in discriminators:
-            multiplier = self.discriminator_loss.get_disc_lr_multiplier(key)
+            # multiplier = self.discriminator_loss.get_disc_lr_multiplier(key)
+            multiplier = 1.0
             lr = gen_lr * multiplier
             for param_group in self.optimizers[key].param_groups:
                 if isinstance(param_group["lr"], torch.Tensor):

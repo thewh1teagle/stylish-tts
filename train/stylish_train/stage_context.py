@@ -41,7 +41,7 @@ class StageConfig:
         validate_fn: Callable,
         train_models: List[str],
         eval_models: List[str],
-        adversarial: bool,
+        discriminators: List[str],
         inputs: List[str],
     ):
         self.next_stage: Optional[str] = next_stage
@@ -49,7 +49,7 @@ class StageConfig:
         self.validate_fn: Callable = validate_fn
         self.train_models: List[str] = train_models
         self.eval_models: List[str] = eval_models
-        self.adversarial = adversarial
+        self.discriminators = discriminators
         self.inputs: List[str] = inputs
 
 
@@ -60,7 +60,7 @@ stages = {
         validate_fn=validate_alignment,
         train_models=["text_aligner"],
         eval_models=[],
-        adversarial=False,
+        discriminators=[],
         inputs=[
             "text",
             "text_length",
@@ -82,7 +82,7 @@ stages = {
             "generator",
         ],
         eval_models=[],
-        adversarial=True,
+        discriminators=["mpd", "mrd"],
         inputs=[
             "text",
             "text_length",
@@ -114,7 +114,7 @@ stages = {
             "generator",
             # "text_aligner",
         ],
-        adversarial=False,
+        discriminators=[],
         inputs=[
             "text",
             "text_length",
@@ -147,7 +147,7 @@ stages = {
             "text_encoder",
             "textual_style_encoder",
         ],
-        adversarial=False,
+        discriminators=["msbd"],
         inputs=[
             "text",
             "text_length",
@@ -179,7 +179,7 @@ stages = {
             "acoustic_style_encoder",
             # "text_aligner",
         ],
-        adversarial=True,
+        discriminators=["mpd", "mrd", "msbd"],
         inputs=[
             "text",
             "text_length",
@@ -215,7 +215,7 @@ stages = {
             "generator",
             # "text_aligner",
         ],
-        adversarial=False,
+        discriminators=[],
         inputs=[
             "text",
             "text_length",
@@ -325,18 +325,18 @@ class StageContext:
             train.config.training.device,
             config.train_models,
             config.eval_models,
-            config.adversarial,
+            config.discriminators,
             train,
         )
         result, audio = self.train_fn(batch, model, train, probing)
         optimizer_step(self.optimizer, config.train_models)
-        if config.adversarial:
+        if len(config.discriminators) > 0:
             audio_gt = batch.audio_gt.unsqueeze(1)
             audio = audio.detach()
             train.stage.optimizer.zero_grad()
-            d_loss = train.discriminator_loss(audio_gt, audio)
+            d_loss = train.discriminator_loss(audio_gt, audio, config.discriminators)
             train.accelerator.backward(d_loss * math.sqrt(batch.text.shape[0]))
-            optimizer_step(self.optimizer, train.model_config.discriminators)
+            optimizer_step(self.optimizer, config.discriminators)
             train.stage.optimizer.zero_grad()
             result.add_loss("discriminator", d_loss)
         return result.detach()
@@ -544,16 +544,15 @@ def prepare_batch(
     return Munch(**prepared)
 
 
-def prepare_model(model, device, training_set, eval_set, adversarial, train) -> Munch:
+def prepare_model(
+    model, device, training_set, eval_set, discriminators, train
+) -> Munch:
     """
     Prepares models for training or evaluation, attaches them to the cpu memory if unused, returns an object which contains only the models that will be used.
     """
-    disc_set = []
-    if adversarial:
-        disc_set = train.model_config.discriminators
     result = {}
     for key in model:
-        if key in training_set or key in eval_set or key in disc_set:
+        if key in training_set or key in eval_set or key in discriminators:
             result[key] = model[key]
             result[key].to(device)
         else:

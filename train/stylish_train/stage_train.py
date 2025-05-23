@@ -42,8 +42,7 @@ def train_acoustic(
         log.add_loss(
             "generator",
             train.generator_loss(
-                batch.audio_gt.detach().unsqueeze(1).float(),
-                pred.audio,
+                batch.audio_gt.detach().unsqueeze(1).float(), pred.audio, ["mpd", "mrd"]
             ).mean(),
         )
         log.add_loss(
@@ -126,6 +125,12 @@ def train_textual(
         log = build_loss_log(train)
         train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
         log.add_loss(
+            "generator",
+            train.generator_loss(
+                batch.audio_gt.detach().unsqueeze(1).float(), pred.audio, ["msbd"]
+            ).mean(),
+        )
+        log.add_loss(
             "slm",
             train.wavlm_loss(batch.audio_gt.detach(), pred.audio),
         )
@@ -176,7 +181,9 @@ def train_joint(batch, model, train, probing) -> Tuple[LossLog, Optional[torch.T
         log.add_loss(
             "generator",
             train.generator_loss(
-                batch.audio_gt.detach().unsqueeze(1).float(), pred.audio
+                batch.audio_gt.detach().unsqueeze(1).float(),
+                pred.audio,
+                ["mpd", "mrd", "msbd"],
             ).mean(),
         )
         log.add_loss(
