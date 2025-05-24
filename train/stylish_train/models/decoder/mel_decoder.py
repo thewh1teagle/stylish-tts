@@ -105,22 +105,33 @@ class UpSample1d(nn.Module):
 class MelDecoder(nn.Module):
     def __init__(
         self,
-        dim_in=512,
-        style_dim=128,
-        dim_out=512,
-        intermediate_dim=1536,
+        *,
+        dim_in,
+        style_dim,
+        dim_out,
+        hidden_dim,
+        residual_dim,
     ):
         super().__init__()
 
-        # TODO Use arguments instead of hardcoding
         self.decode = nn.ModuleList()
 
-        self.encode = AdainResBlk1d(dim_in + 2, 1024, style_dim)
+        self.encode = AdainResBlk1d(dim_in + 2, hidden_dim, style_dim)
 
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True))
+        self.decode.append(
+            AdainResBlk1d(hidden_dim + 2 + residual_dim, hidden_dim, style_dim)
+        )
+        self.decode.append(
+            AdainResBlk1d(hidden_dim + 2 + residual_dim, hidden_dim, style_dim)
+        )
+        self.decode.append(
+            AdainResBlk1d(hidden_dim + 2 + residual_dim, hidden_dim, style_dim)
+        )
+        self.decode.append(
+            AdainResBlk1d(
+                hidden_dim + 2 + residual_dim, dim_out, style_dim, upsample=True
+            )
+        )
 
         self.F0_conv = weight_norm(
             nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
@@ -131,14 +142,10 @@ class MelDecoder(nn.Module):
         )
 
         self.asr_res = nn.Sequential(
-            weight_norm(nn.Conv1d(512, 64, kernel_size=1)),
+            weight_norm(nn.Conv1d(dim_in, residual_dim, kernel_size=1)),
         )
 
     def forward(self, asr, F0_curve, N, s, probing=False):
-        # downlist = [0, 3, 7]
-        # F0_down = downlist[random.randint(0, 2)]
-        # downlist = [0, 3, 7, 15]
-        # N_down = downlist[random.randint(0, 3)]
         F0_down = 3
         N_down = 3
         if F0_down:

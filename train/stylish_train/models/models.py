@@ -53,51 +53,46 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
     text_aligner = tdnn_blstm_ctc_model_base(
         model_config.n_mels, model_config.text_encoder.n_token
     )
-    assert model_config.decoder.type in [
+    assert model_config.generator.type in [
         "ringformer",
-        "freev",
     ], "Decoder type unknown"
 
-    if model_config.decoder.type == "ringformer":
+    if model_config.generator.type == "ringformer":
         decoder = MelDecoder(
             dim_in=model_config.inter_dim,
             style_dim=model_config.style_dim,
-            dim_out=model_config.inter_dim,
+            dim_out=model_config.generator.upsample_initial_channel,
+            hidden_dim=model_config.decoder.hidden_dim,
+            residual_dim=model_config.decoder.residual_dim,
         )
         generator = RingformerGenerator(
             style_dim=model_config.style_dim,
-            resblock_kernel_sizes=model_config.decoder.resblock_kernel_sizes,
-            upsample_rates=model_config.decoder.upsample_rates,
-            upsample_initial_channel=model_config.decoder.upsample_initial_channel,
-            resblock_dilation_sizes=model_config.decoder.resblock_dilation_sizes,
-            upsample_kernel_sizes=model_config.decoder.upsample_kernel_sizes,
-            gen_istft_n_fft=model_config.decoder.gen_istft_n_fft,
-            gen_istft_hop_size=model_config.decoder.gen_istft_hop_size,
+            resblock_kernel_sizes=model_config.generator.resblock_kernel_sizes,
+            upsample_rates=model_config.generator.upsample_rates,
+            upsample_initial_channel=model_config.generator.upsample_initial_channel,
+            resblock_dilation_sizes=model_config.generator.resblock_dilation_sizes,
+            upsample_kernel_sizes=model_config.generator.upsample_kernel_sizes,
+            gen_istft_n_fft=model_config.generator.gen_istft_n_fft,
+            gen_istft_hop_size=model_config.generator.gen_istft_hop_size,
             sample_rate=model_config.sample_rate,
         )
-    else:
-        decoder = MelDecoder()
-        generator = FreevGenerator()
 
     text_encoder = TextEncoder(
-        n_vocab=model_config.text_encoder.n_token,
-        inter_dim=model_config.inter_dim,
-        hidden_dim=192,
-        filter_channels=768,
-        heads=2,
-        layers=6,
-        kernel_size=3,
-        dropout=0.1,
+        inter_dim=model_config.inter_dim, config=model_config.text_encoder
     )
     text_duration_encoder = TextEncoder(
-        n_vocab=model_config.text_encoder.n_token,
-        inter_dim=model_config.inter_dim,
-        hidden_dim=192,
-        filter_channels=768,
-        heads=2,
-        layers=6,
-        kernel_size=3,
-        dropout=0.1,
+        inter_dim=model_config.inter_dim, config=model_config.text_encoder
+    )
+
+    textual_prosody_encoder = FineStyleEncoder(
+        model_config.inter_dim,
+        model_config.style_dim,
+        model_config.style_encoder.layers,
+    )
+    textual_style_encoder = FineStyleEncoder(
+        model_config.inter_dim,
+        model_config.style_dim,
+        model_config.style_encoder.layers,
     )
 
     duration_predictor = DurationPredictor(
@@ -120,12 +115,8 @@ def build_model(model_config: ModelConfig, sbert_output_dim):
         generator=generator,
         text_encoder=text_encoder,
         text_duration_encoder=text_duration_encoder,
-        textual_prosody_encoder=FineStyleEncoder(
-            model_config.inter_dim, model_config.style_dim, 4
-        ),
-        textual_style_encoder=FineStyleEncoder(
-            model_config.inter_dim, model_config.style_dim, 4
-        ),
+        textual_prosody_encoder=textual_prosody_encoder,
+        textual_style_encoder=textual_style_encoder,
         text_aligner=text_aligner,
         mpd=MultiPeriodDiscriminator(),
         msbd=MultiScaleSubbandCQTDiscriminator(sample_rate=model_config.sample_rate),

@@ -5,12 +5,6 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 from einops import rearrange
-from xlstm import (
-    xLSTMBlockStack,
-    xLSTMBlockStackConfig,
-    mLSTMBlockConfig,
-    mLSTMLayerConfig,
-)
 from .common import LinearNorm, get_padding
 from .conv_next import BasicConvNeXtBlock
 from utils import sequence_mask
@@ -381,27 +375,15 @@ class TextEncoder(nn.Module):
     def __init__(
         self,
         *,
-        n_vocab,
-        # n_spks=1,
-        # spk_emb_dim=128,
         inter_dim,
-        hidden_dim,
-        filter_channels,
-        heads,
-        layers,
-        kernel_size,
-        dropout,
+        config,
     ):
         super().__init__()
-        n_spks = 1
         spk_emb_dim = 128
-        self.n_vocab = n_vocab
-        self.n_feats = inter_dim
-        self.n_channels = hidden_dim
-        self.spk_emb_dim = spk_emb_dim
-        self.n_spks = n_spks
+        self.n_spks = 1
+        self.n_channels = config.hidden_dim
 
-        self.emb = torch.nn.Embedding(n_vocab, self.n_channels)
+        self.emb = torch.nn.Embedding(config.tokens, self.n_channels)
         torch.nn.init.normal_(self.emb.weight, 0.0, self.n_channels**-0.5)
 
         self.prenet = ConvReluNorm(
@@ -415,15 +397,15 @@ class TextEncoder(nn.Module):
 
         self.encoder = Encoder(
             self.n_channels + (spk_emb_dim if n_spks > 1 else 0),
-            filter_channels,
-            heads,
-            layers,
-            kernel_size,
-            dropout,
+            config.filter_channels,
+            config.heads,
+            config.layers,
+            config.kernel_size,
+            config.dropout,
         )
 
         self.proj_m = torch.nn.Conv1d(
-            self.n_channels + (spk_emb_dim if n_spks > 1 else 0), self.n_feats, 1
+            self.n_channels + (spk_emb_dim if n_spks > 1 else 0), config.inter_dim, 1
         )
 
     def forward(self, x, x_lengths, spks=None):

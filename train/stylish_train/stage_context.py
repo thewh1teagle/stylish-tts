@@ -408,7 +408,6 @@ batch_names = [
     "path",
     "pitch",
     "sentence_embedding",
-    "voiced",
     "align_mel",
     "alignment",
 ]

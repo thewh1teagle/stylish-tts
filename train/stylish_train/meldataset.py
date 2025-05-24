@@ -142,9 +142,7 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         data = self.data_list[idx]
         path = data[0]
-        wave, text_tensor, speaker_id, mel_tensor, voiced_tensor, align_mel = (
-            self._load_tensor(data)
-        )
+        wave, text_tensor, speaker_id, mel_tensor, align_mel = self._load_tensor(data)
 
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
@@ -192,7 +190,6 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave,
             pitch,
             sentence_embedding,
-            voiced_tensor,
             align_mel,
             alignment,
         )
@@ -220,20 +217,15 @@ class FilePathDataset(torch.utils.data.Dataset):
         wave = torch.from_numpy(wave).float()
 
         text = self.text_cleaner(text)
-        voiced = self.text_cleaner.is_voiced(text)
 
         text.insert(0, 0)
         text.append(0)
         text = torch.LongTensor(text)
 
-        voiced.insert(0, 0)
-        voiced.append(0)
-        voiced = torch.tensor(voiced, dtype=torch.float32)
-
         mel_tensor = self.preprocess(wave, align=False).squeeze()
         align_mel = self.preprocess(wave, align=True).squeeze()
 
-        return (wave, text, speaker_id, mel_tensor, voiced, align_mel)
+        return (wave, text, speaker_id, mel_tensor, align_mel)
 
     def _load_data(self, data):
         max_mel_length = 192
@@ -288,7 +280,6 @@ class Collater(object):
         waves = torch.zeros((batch_size, batch[0][7].shape[-1])).float()
         pitches = torch.zeros((batch_size, max_mel_length)).float()
         sentence_embeddings = torch.zeros(batch_size, self.sbert_output_dim).float()
-        voiced = torch.zeros((batch_size, max_text_length)).float()
         align_mels = torch.zeros((batch_size, 80, max_mel_length)).float()
         alignments = torch.zeros((batch_size, max_text_length, max_mel_length // 2))
 
@@ -303,7 +294,6 @@ class Collater(object):
             wave,
             pitch,
             sentence,
-            voiced_one,
             align_mel,
             alignment,
         ) in enumerate(batch):
@@ -326,7 +316,6 @@ class Collater(object):
             if pitch is not None:
                 pitches[bid] = pitch
             sentence_embeddings[bid] = sentence
-            voiced[bid, :text_size] = voiced_one
             align_mels[bid, :, :mel_size] = align_mel
             alignments[bid, :text_size, : mel_size // 2] = alignment
 
@@ -342,7 +331,6 @@ class Collater(object):
             paths,
             pitches,
             sentence_embeddings,
-            voiced,
             align_mels,
             alignments,
         )
