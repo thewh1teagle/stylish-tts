@@ -407,7 +407,6 @@ batch_names = [
     "ref_mel",
     "path",
     "pitch",
-    "sentence_embedding",
     "align_mel",
     "alignment",
 ]

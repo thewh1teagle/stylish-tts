@@ -244,13 +244,14 @@ class MultiHeadAttention(nn.Module):
                 additive_external_mask = torch.zeros_like(
                     expanded_bool_mask, dtype=query.dtype
                 )
-                additive_external_mask.masked_fill_(expanded_bool_mask == False, -1e4)
+                additive_external_mask.masked_fill_(
+                    ~(expanded_bool_mask.to(bool)), -1e4
+                )
 
                 if final_attn_mask is not None:
                     final_attn_mask = final_attn_mask + additive_external_mask
                 else:
                     final_attn_mask = additive_external_mask
-
             output = F.scaled_dot_product_attention(
                 query,
                 key,
@@ -396,7 +397,7 @@ class TextEncoder(nn.Module):
         )
 
         self.encoder = Encoder(
-            self.n_channels + (spk_emb_dim if n_spks > 1 else 0),
+            self.n_channels + (spk_emb_dim if self.n_spks > 1 else 0),
             config.filter_channels,
             config.heads,
             config.layers,
@@ -405,7 +406,7 @@ class TextEncoder(nn.Module):
         )
 
         self.proj_m = torch.nn.Conv1d(
-            self.n_channels + (spk_emb_dim if n_spks > 1 else 0), config.inter_dim, 1
+            self.n_channels + (spk_emb_dim if self.n_spks > 1 else 0), inter_dim, 1
         )
 
     def forward(self, x, x_lengths, spks=None):

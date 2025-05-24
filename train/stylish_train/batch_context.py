@@ -30,7 +30,6 @@ class BatchContext:
         self.pitch_prediction = None
         self.energy_prediction = None
         self.duration_prediction = None
-        self.plbert_enabled = train.model_config.plbert.enabled
 
     def text_encoding(self, texts: torch.Tensor, text_lengths: torch.Tensor):
         return self.model.text_encoder(texts, text_lengths)

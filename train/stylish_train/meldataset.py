@@ -10,7 +10,6 @@ import torch
 import torchaudio
 import torch.utils.data
 from safetensors import safe_open
-from sentence_transformers import SentenceTransformer
 
 import logging
 import pandas as pd
@@ -29,7 +28,6 @@ class FilePathDataset(torch.utils.data.Dataset):
         model_config,
         pitch_path,
         alignment_path,
-        sbert,
     ):
         self.pitch = {}
         with safe_open(pitch_path, framework="pt", device="cpu") as f:
@@ -70,7 +68,6 @@ class FilePathDataset(torch.utils.data.Dataset):
             sample_rate=model_config.sample_rate,
         )
 
-        self.sbert = sbert
         self.root_path = root_path
         self.multispeaker = model_config.multispeaker
         self.sample_rate = model_config.sample_rate
@@ -175,9 +172,6 @@ class FilePathDataset(torch.utils.data.Dataset):
                 (text_tensor.shape[0], align_mel.shape[1] // 2),
                 dtype=torch.float32,  # Match Collater's target dtype
             )
-        sentence_embedding = torch.from_numpy(
-            self.sbert.encode([self.sentences[idx]], show_progress_bar=False)
-        ).float()
 
         return (
             speaker_id,
@@ -189,7 +183,6 @@ class FilePathDataset(torch.utils.data.Dataset):
             path,
             wave,
             pitch,
-            sentence_embedding,
             align_mel,
             alignment,
         )
@@ -245,13 +238,12 @@ class Collater(object):
       adaptive_batch_size (bool): if true, decrease batch size when long data comes.
     """
 
-    def __init__(self, return_wave=False, multispeaker=False, sbert_output_dim=384):
+    def __init__(self, return_wave=False, multispeaker=False):
         self.text_pad_index = 0
         self.min_mel_length = 192
         self.max_mel_length = 192
         self.return_wave = return_wave
         self.multispeaker = multispeaker
-        self.sbert_output_dim = sbert_output_dim
 
     def __call__(self, batch):
         batch_size = len(batch)
@@ -279,7 +271,6 @@ class Collater(object):
         paths = ["" for _ in range(batch_size)]
         waves = torch.zeros((batch_size, batch[0][7].shape[-1])).float()
         pitches = torch.zeros((batch_size, max_mel_length)).float()
-        sentence_embeddings = torch.zeros(batch_size, self.sbert_output_dim).float()
         align_mels = torch.zeros((batch_size, 80, max_mel_length)).float()
         alignments = torch.zeros((batch_size, max_text_length, max_mel_length // 2))
 
@@ -293,7 +284,6 @@ class Collater(object):
             path,
             wave,
             pitch,
-            sentence,
             align_mel,
             alignment,
         ) in enumerate(batch):
@@ -315,7 +305,6 @@ class Collater(object):
             waves[bid] = wave
             if pitch is not None:
                 pitches[bid] = pitch
-            sentence_embeddings[bid] = sentence
             align_mels[bid, :, :mel_size] = align_mel
             alignments[bid, :text_size, : mel_size // 2] = alignment
 
@@ -330,7 +319,6 @@ class Collater(object):
             ref_mels,
             paths,
             pitches,
-            sentence_embeddings,
             align_mels,
             alignments,
         )
@@ -353,7 +341,6 @@ def build_dataloader(
     train,
 ):
     collate_config["multispeaker"] = multispeaker
-    collate_config["sbert_output_dim"] = train.sbert.get_sentence_embedding_dimension()
     collate_fn = Collater(**collate_config)
     drop_last = not validation and probe_batch_size is not None
     data_loader = torch.utils.data.DataLoader(

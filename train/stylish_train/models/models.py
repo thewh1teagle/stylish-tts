@@ -36,22 +36,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class TextualStyleEncoder(nn.Linear):
-    """Linear layer with merciful load_state_dict."""
-
-    def load_state_dict(self, state_dict, strict=True, assign=False):
-        if strict:
-            try:
-                return super().load_state_dict(state_dict, strict, assign)
-            except:
-                logger.warning(
-                    "The state dict from the checkpoint of TextualStyleEncoder is not compatible. Ignore this message if the sbert is intentionally changed."
-                )
-
-
-def build_model(model_config: ModelConfig, sbert_output_dim):
+def build_model(model_config: ModelConfig):
     text_aligner = tdnn_blstm_ctc_model_base(
-        model_config.n_mels, model_config.text_encoder.n_token
+        model_config.n_mels, model_config.text_encoder.tokens
     )
     assert model_config.generator.type in [
         "ringformer",

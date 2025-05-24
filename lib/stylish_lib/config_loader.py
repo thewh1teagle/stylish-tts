@@ -23,9 +23,6 @@ class TrainingConfig(BaseModel):
     val_interval: int = Field(..., description="Interval (in steps) for validation.")
     device: str = Field(..., description="Computational device (e.g., 'cuda').")
     mixed_precision: str = Field(..., description="accelerator use bf16 or fp16 or no")
-    probe_batch_max: int = Field(
-        ..., description="Maximum batch size to attempt during bin probing."
-    )
 
 
 class TrainingStageConfig(BaseModel):
@@ -204,7 +201,7 @@ class TextEncoderConfig(BaseModel):
     heads: int = Field(..., description="Number of attention heads")
     layers: int = Field(..., description="Number of layers in the text encoder.")
     kernel_size: int = Field(..., description="Kernel size for convolution.")
-    dropout: int = Field(..., description="Dropout for internal layers")
+    dropout: float = Field(..., description="Dropout for internal layers")
 
 
 class StyleEncoderConfig(BaseModel):

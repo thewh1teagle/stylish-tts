@@ -216,8 +216,6 @@ class Stylish(nn.Module):
         text_duration_encoder,
         textual_style_encoder,
         textual_prosody_encoder,
-        bert,
-        bert_encoder,
         duration_predictor,
         pitch_energy_predictor,
         decoder,
@@ -232,8 +230,6 @@ class Stylish(nn.Module):
             text_duration_encoder,
             textual_style_encoder,
             textual_prosody_encoder,
-            bert,
-            bert_encoder,
             duration_predictor,
             pitch_energy_predictor,
             decoder,
@@ -248,8 +244,6 @@ class Stylish(nn.Module):
         self.text_duration_encoder = text_duration_encoder
         self.textual_style_encoder = textual_style_encoder
         self.textual_prosody_encoder = textual_prosody_encoder
-        self.bert = bert
-        self.bert_encoder = bert_encoder
         self.duration_predictor = duration_predictor
         self.pitch_energy_predictor = pitch_energy_predictor
         self.decoder = decoder

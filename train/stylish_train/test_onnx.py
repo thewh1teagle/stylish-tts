@@ -12,7 +12,6 @@ from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
 from stylish_lib.config_loader import load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
-from sentence_transformers import SentenceTransformer
 from models.onnx_models import Stylish, CustomSTFT
 import torch
 import torch.nn as nn
@@ -39,7 +38,6 @@ def main(model_config_path, dir, checkpoint):
 
     model_config = load_model_config_yaml(model_config_path)
     text_cleaner = TextCleaner(model_config.symbol)
-    sbert = SentenceTransformer(model_config.sbert.model).cpu()
 
     tokens = (
         torch.tensor(
@@ -55,19 +53,6 @@ def main(model_config_path, dir, checkpoint):
     text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = tokens.shape[1] + 2
     text_mask = torch.zeros(1, texts.shape[1], dtype=bool).to(device)
-    sentence_embedding = (
-        torch.from_numpy(
-            sbert.encode(
-                [
-                    # "These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come."
-                    "Toto, of course, slept beside his little mistress."
-                ],
-                show_progress_bar=False,
-            )
-        )
-        .float()
-        .to(device)
-    )
     # Load ONNX model
     session = ort.InferenceSession(
         f"{dir}/stylish.onnx",

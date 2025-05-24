@@ -97,11 +97,11 @@ class TrainContext:
             sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
         self.align_loss: CTCLossWithLabelPriors = CTCLossWithLabelPriors(
-            prior_scaling_factor=0.3, blank=model_config.text_encoder.n_token
+            prior_scaling_factor=0.3, blank=model_config.text_encoder.tokens
         )
         self.magphase_loss: MagPhaseLoss = MagPhaseLoss(
-            n_fft=self.model_config.decoder.gen_istft_n_fft,
-            hop_length=self.model_config.decoder.gen_istft_hop_size,
+            n_fft=self.model_config.generator.gen_istft_n_fft,
+            hop_length=self.model_config.generator.gen_istft_hop_size,
         ).to(self.config.training.device)
 
         self.text_cleaner = TextCleaner(self.model_config.symbol)
@@ -113,8 +113,6 @@ class TrainContext:
             hop_length=self.model_config.hop_length,
             sample_rate=self.model_config.sample_rate,
         ).to(self.config.training.device)
-
-        self.sbert: SentenceTransformer = None
 
     def reset_out_dir(self, stage_name):
         self.out_dir = osp.join(self.base_output_dir, stage_name)

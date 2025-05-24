@@ -14,7 +14,6 @@ from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
 from stylish_lib.config_loader import load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
-from sentence_transformers import SentenceTransformer
 from models.onnx_models import Stylish, CustomSTFT
 
 from attr import attr
@@ -25,7 +24,6 @@ from utils import length_to_mask
 
 def convert_to_onnx(model_config, out_dir, model_in, device):
     text_cleaner = TextCleaner(model_config.symbol)
-    sbert = SentenceTransformer(model_config.sbert.model).cpu()
     model = Stylish(**model_in, device=device).eval()
     stft = CustomSTFT(
         filter_length=model.generator.gen_istft_n_fft,
@@ -48,16 +46,6 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
     text_lengths = torch.zeros([1], dtype=int).to(device)
     text_lengths[0] = tokens.shape[1] + 2
     text_mask = length_to_mask(text_lengths)
-    sentence_embedding = (
-        torch.from_numpy(
-            sbert.encode(
-                ["Toto, of course, slept beside his little mistress."],
-                show_progress_bar=False,
-            )
-        )
-        .float()
-        .to(device)
-    )
 
     filename = f"{out_dir}/stylish.onnx"
     inputs = (texts, text_lengths)
@@ -74,12 +62,5 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
                 "waveform": {0: "num_samples"},
             },
         )
-
-    # audio = model.forward(texts, text_lengths, text_mask, sentence_embedding)
-    # train.writer.add_audio("onnx/sample", audio, 0, sample_rate=24000)
-    # outfile = f"{out_dir}/sample-torch.wav"
-    # print("Saving to:", outfile)
-    # combined = np.multiply(audio.cpu().numpy(), 32768)
-    # write(outfile, 24000, combined.astype(np.int16))
 
     return filename
