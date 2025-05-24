@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
-from losses import magphase_loss, compute_duration_ce_loss, freev_loss, duration_loss
+from losses import compute_duration_ce_loss, freev_loss, duration_loss
 from utils import length_to_mask, print_gpu_vram
 
 
@@ -57,7 +57,7 @@ def train_acoustic(
         if pred.magnitude is not None and pred.phase is not None:
             log.add_loss(
                 "magphase",
-                magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
+                train.magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
         print_gpu_vram("magphase_loss")
 
@@ -135,7 +135,7 @@ def train_textual(
         if pred.magnitude is not None and pred.phase is not None:
             log.add_loss(
                 "magphase",
-                magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
+                train.magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
         log.add_loss(
             "pitch",
@@ -191,7 +191,7 @@ def train_joint(batch, model, train, probing) -> Tuple[LossLog, Optional[torch.T
         if pred.magnitude is not None and pred.phase is not None:
             log.add_loss(
                 "magphase",
-                magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
+                train.magphase_loss(pred.magnitude, pred.phase, batch.audio_gt),
             )
         log.add_loss(
             "pitch",

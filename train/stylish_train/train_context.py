@@ -12,6 +12,7 @@ from losses import (
     WavLMLoss,
     MultiResolutionSTFTLoss,
     CTCLossWithLabelPriors,
+    MagPhaseLoss,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
 from stylish_lib.text_utils import TextCleaner
@@ -95,9 +96,13 @@ class TrainContext:
         self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss(
             sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
-        self.align_loss: ForwardSumLoss = CTCLossWithLabelPriors(
+        self.align_loss: CTCLossWithLabelPriors = CTCLossWithLabelPriors(
             prior_scaling_factor=0.3, blank=model_config.text_encoder.n_token
         )
+        self.magphase_loss: MagPhaseLoss = MagPhaseLoss(
+            n_fft=self.model_config.decoder.gen_istft_n_fft,
+            hop_length=self.model_config.decoder.gen_istft_hop_size,
+        ).to(self.config.training.device)
 
         self.text_cleaner = TextCleaner(self.model_config.symbol)
 

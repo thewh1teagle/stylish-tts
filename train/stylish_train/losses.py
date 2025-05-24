@@ -148,26 +148,33 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         return sc_loss
 
 
-mp_window = torch.hann_window(20).to("cuda")
+class MagPhaseLoss(torch.nn.Module):
+    """Magnitude/Phase Loss for Ringformer"""
 
+    def __init__(self, *, n_fft, hop_length):
+        super(MagPhaseLoss, self).__init__()
+        window = torch.hann_window(n_fft)
+        self.register_buffer("window", window)
+        self.n_fft = n_fft
+        self.hop_length = hop_length
 
-def magphase_loss(mag, phase, gt):
-    result = 0.0
-    if mag is not None and phase is not None:
-        y_stft = torch.stft(
-            gt,
-            n_fft=20,
-            hop_length=5,
-            win_length=20,
-            return_complex=True,
-            window=mp_window,
-        )
-        target_mag = torch.abs(y_stft)
-        target_phase = torch.angle(y_stft)
-        result = torch.nn.functional.l1_loss(
-            mag, target_mag
-        ) + torch.nn.functional.l1_loss(phase, target_phase)
-    return result
+    def forward(self, mag, phase, gt):
+        result = 0.0
+        if mag is not None and phase is not None:
+            y_stft = torch.stft(
+                gt,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length,
+                win_length=self.n_fft,
+                return_complex=True,
+                window=self.window,
+            )
+            target_mag = torch.abs(y_stft)
+            target_phase = torch.angle(y_stft)
+            mag_loss = torch.nn.functional.l1_loss(mag, target_mag)
+            phase_loss = torch.nn.functional.l1_loss(phase, target_phase)
+            result = mag_loss + phase_loss
+        return result
 
 
 def amplitude_loss(log_amplitude_r, log_amplitude_g):
@@ -281,9 +288,9 @@ class DiscriminatorLoss(torch.nn.Module):
         super(DiscriminatorLoss, self).__init__()
         self.discriminators = torch.nn.ModuleDict(
             {
-                "mpd": DiscriminatorLossHelper(mpd),
-                "mrd": DiscriminatorLossHelper(mrd),
-                "msbd": DiscriminatorLossHelper(msbd),
+                "mpd": DiscriminatorLossHelper(mpd, 5),
+                "mrd": DiscriminatorLossHelper(mrd, 3),
+                "msbd": DiscriminatorLossHelper(msbd, 3),
             }
         )
 
@@ -315,13 +322,24 @@ class DiscriminatorLossHelper(torch.nn.Module):
     Discriminator Loss Helper: Returns discriminator loss for a single discriminator
     """
 
-    def __init__(self, model):
+    def __init__(self, model, sub_count):
         super(DiscriminatorLossHelper, self).__init__()
         self.model = model
-        self.last_loss = 0.5
+        self.last_loss = 0.5 * sub_count
+        self.ideal_loss = 0.5 * sub_count
+        self.f_max = 4.0
+        self.h_min = 0.1
+        self.x_max = 0.05 * sub_count
+        self.x_min = 0.05 * sub_count
 
     def get_disc_lr_multiplier(self):
-        return 1.0
+        x = abs(self.last_loss - self.ideal_loss)
+        result = 1.0
+        if self.last_loss > self.ideal_loss:
+            result = min(math.pow(self.f_max, x / self.x_max), self.f_max)
+        else:
+            result = max(math.pow(self.h_min, x / self.x_min), self.h_min)
+        return result
 
     def discriminator_loss(
         self,
@@ -353,6 +371,7 @@ class DiscriminatorLossHelper(torch.nn.Module):
         real_score, gen_score, _, _ = self.model(audio_gt, audio)
         disc = self.discriminator_loss(real_score, gen_score)
         tprls = self.tprls_loss(real_score, gen_score)
+        self.last_loss = self.last_loss * 0.95 + disc.item() * 0.05
         return disc + tprls
 
 

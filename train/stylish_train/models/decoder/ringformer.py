@@ -150,11 +150,12 @@ class RingformerGenerator(torch.nn.Module):
             x = rearrange(x, "b t f -> b f t")
 
             x = self.ups[i](x)
-            if i == self.num_upsamples - 1:
-                x = self.reflection_pad(x)
+            x_source = self.noise_convs[i](har)
+            # if i == self.num_upsamples - 1:
+            #     x = self.reflection_pad(x)
+            #     x_source = self.reflection_pad(x_source)
 
             s = torch.nn.functional.interpolate(s, size=x.shape[2], mode="nearest")
-            x_source = self.noise_convs[i](har)
             x_source = self.noise_res[i](x_source, s)
 
             x = x + x_source
