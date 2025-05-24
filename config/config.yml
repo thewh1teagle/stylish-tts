@@ -10,47 +10,25 @@ training:
   # Lower precision slows training.
   # "bf16", "fp16", or "no" for no mixed precision
   mixed_precision: "no"
-  # Maximum number of segments per batch.
-  # Increasing this slows training overall even if
-  # epochs go by faster.
-  probe_batch_max: 2
 
 # Number of epochs, max batch sizes and general learning rate of each stage.
 training_plan:
   alignment:
     # alignment pretraining
-    epochs: 5
-    probe_batch_max: 128
-    lr: 1e-5
-  pre_acoustic:
-    # pretraining of acoustic models (stage 1)
-    epochs: 1
-    probe_batch_max: 2
-    lr: 1e-4
-  acoustic:
-    # joint training of acoustic models and the vocoder (stage 2)
-    epochs: 5
-    probe_batch_max: 2
-    lr: 1e-4
-  pre_textual:
-    # pretraining of textual models (stage 3)
     epochs: 10
-    probe_batch_max: 32
+    # Maximum number of segments per batch.
+    probe_batch_max: 128
+    # Learing Rate for this stage
+    lr: 1e-5
+  acoustic:
+    # training of acoustic models and vocoder
+    epochs: 5
+    probe_batch_max: 16
     lr: 1e-4
   textual:
-    # training of textual models (stage 4)
-    epochs: 2
+    # training for duration/pitch/energy from text
+    epochs: 5
     probe_batch_max: 32
-    lr: 1e-4
-  joint:
-    # joint training of textual models (stage 5)
-    epochs: 2
-    probe_batch_max: 2
-    lr: 1e-4
-  sbert:
-    # training of sbert for dynamic embeddings (stage 6)
-    epochs: 12
-    probe_batch_max: 128
     lr: 1e-4
 
 dataset:
@@ -79,10 +57,6 @@ loss_weight:
   generator: 1
   # speech-language model feature matching loss
   slm: 0.2
-  # monotonic alignment loss
-  mono: 0.1
-  # sequence-to-sequence loss
-  s2s: 0.5
   # pitch F0 reconstruction loss
   pitch: 3
   # energy reconstruction loss
@@ -95,24 +69,9 @@ loss_weight:
   style: 1
   # magnitude/phase loss
   magphase: 1
-  amplitude: 1
-  phase: 2
-  stft_reconstruction: 0.5
-  sbert_style_loss: 1
-  sbert_prosody_loss: 1
+  # confidence for alignment (placeholder)
   confidence: 1
+  # alignment loss
   align_loss: 1
-
-# Discriminator weights are pre-tuned. Do not change these unless you
-# know what you are doing.
-discriminator_loss_weight:
-  mpd: 1.0 # multi-period
-  mrd: 0.2 # multi-resolution
-  msbd: 1.0 # multi-subband-cqt
-  mstftd: 1.0 # multi-stft
-
-# Learning rates are pre-tuned. Do not change these unless
-# you know what you are doing
-optimizer:
-  bert_lr: 1e-5 # learning rate for PLBERT
-  ft_lr: 1e-5 # learning rate for acoustic modules (i.e. decoder, textual_style_encoder and prosody_style_encoder)
+  # discriminator loss (placeholder)
+  discriminator: 1

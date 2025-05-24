@@ -110,7 +110,6 @@ class BatchContext:
             batch,
         )
         energy = self.acoustic_energy(batch.mel)
-        # style_embedding = self.acoustic_style_embedding(batch.mel)
         style_embedding = self.textual_style_embedding(text_encoding)
         print_gpu_vram("style")
         pitch = self.calculate_pitch(batch).detach()
@@ -131,19 +130,8 @@ class BatchContext:
         duration = self.acoustic_duration(
             batch,
         )
-        # style_embedding = self.acoustic_style_embedding(batch.mel)
-        # prosody_embedding = self.acoustic_prosody_embedding(batch.mel)
         style_embedding = self.textual_style_embedding(text_encoding)
         prosody_embedding = self.textual_prosody_embedding(duration_encoding)
-        # if self.plbert_enabled:
-        #     plbert_embedding = self.model.bert(
-        #         batch.text, attention_mask=(~self.text_mask).int()
-        #     )
-        #     duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
-        #         -1, -2
-        #     )
-        # else:
-        #     duration_encoding = text_encoding
         self.duration_prediction, prosody = self.model.duration_predictor(
             duration_encoding,
             prosody_embedding,
@@ -164,65 +152,3 @@ class BatchContext:
             style_embedding,
         )
         return prediction
-
-    def sbert_prediction_single(self, batch):
-        text_encoding = self.text_encoding(batch.text, batch.text_length)
-        duration = self.acoustic_duration(
-            batch,
-        )
-        style_embedding = self.textual_style_embedding(batch.sentence_embedding)
-        prosody_embedding = self.textual_prosody_embedding(batch.sentence_embedding)
-        if self.plbert_enabled:
-            plbert_embedding = self.model.bert(
-                batch.text, attention_mask=(~self.text_mask).int()
-            )
-            duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
-                -1, -2
-            )
-        else:
-            duration_encoding = text_encoding
-        self.duration_prediction, prosody = self.model.duration_predictor(
-            duration_encoding,
-            prosody_embedding,
-            batch.text_length,
-            self.duration_results[1],
-            self.text_mask,
-        )
-        self.pitch_prediction, self.energy_prediction = (
-            self.model.pitch_energy_predictor(prosody, prosody_embedding)
-        )
-        prediction = self.decoding_single(
-            text_encoding,
-            duration,
-            self.pitch_prediction,
-            self.energy_prediction,
-            style_embedding,
-        )
-        return prediction
-
-    def textual_bootstrap_prediction(self, batch):
-        text_encoding, _, x_mask = self.text_encoding(batch.text, batch.text_length)
-        duration_encoding, _, x_mask = self.text_duration_encoding(
-            batch.text, batch.text_length
-        )
-        duration = self.acoustic_duration(
-            batch,
-        )
-        prosody_embedding = self.textual_prosody_embedding(text_encoding)
-        # if self.plbert_enabled:
-        #     plbert_embedding = self.model.bert(
-        #         batch.text, attention_mask=(~self.text_mask).int()
-        #     )
-        #     duration_encoding = self.model.bert_encoder(plbert_embedding).transpose(
-        #         -1, -2
-        #     )
-        # else:
-        #     duration_encoding = text_encoding
-        self.duration_prediction, prosody = self.model.duration_predictor(
-            duration_encoding, prosody_embedding, batch.text_length, self.text_mask
-        )
-        # prosody = text_encoding @ duration
-        # prosody_embedding = prosody_embedding @ duration
-        # self.pitch_prediction, self.energy_prediction = (
-        #     self.model.pitch_energy_predictor(prosody, prosody_embedding)
-        # )

@@ -59,29 +59,13 @@ class TrainingPlanConfig(BaseModel):
         default_factory=TrainingStageConfig,
         description="Configuration for pretraining the text alignment model.",
     )
-    pre_acoustic: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for the pretraining of acoustic models stage (first stage).",
-    )
     acoustic: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
         description="Configuration for joint training of acoustic models stage (second stage).",
     )
-    pre_textual: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for the pretraining of textual models stage (third stage).",
-    )
     textual: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
         description="Configuration for training of textual models stage (fourth stage).",
-    )
-    joint: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for joint training of textual models stage (fifth stage).",
-    )
-    sbert: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for training of sbert models stage (sixth stage).",
     )
 
     def get_stage(self, name: str) -> TrainingStageConfig:
@@ -119,8 +103,6 @@ class LossWeightConfig(BaseModel):
     slm: float = Field(
         ..., description="Weight for speech-language model feature matching loss."
     )
-    mono: float = Field(..., description="Weight for monotonic alignment loss.")
-    s2s: float = Field(..., description="Weight for sequence-to-sequence loss.")
     pitch: float = Field(..., description="Weight for F0 pitch reconstruction loss.")
     energy: float = Field(..., description="Weight for energy reconstruction loss.")
     duration: float = Field(..., description="Weight for duration loss.")
@@ -129,26 +111,9 @@ class LossWeightConfig(BaseModel):
     )
     style: float = Field(..., description="Weight for style reconstruction loss.")
     magphase: float = Field(..., description="Weight for magnitude/phase loss.")
-    amplitude: float = Field(..., description="Weight for log amplitude loss.")
-    phase: float = Field(..., description="Weight for phase loss.")
-    stft_reconstruction: float = Field(
-        ..., description="Weight for STFT reconstruction loss"
-    )
-    sbert_style_loss: float = Field(..., description="Weight for sbert style encoder")
-    sbert_prosody_loss: float = Field(
-        ..., description="Weight for sbert prosody encoder"
-    )
     confidence: float = Field(..., description="Weight for alignment confidence")
     align_loss: float = Field(..., description="Weight for alignment loss")
-
-
-class OptimizerConfig(BaseModel):
-    """
-    Optimizer configuration parameters.
-    """
-
-    bert_lr: float = Field(..., description="Learning rate for the PLBERT model.")
-    ft_lr: float = Field(..., description="Learning rate for acoustic modules.")
+    discriminator: float = Field(..., description="Weight for discriminator loss")
 
 
 ######## Model Configuration ########
@@ -445,9 +410,6 @@ class Config(BaseModel):
     dataset: DatasetConfig = Field(..., description="Dataset configuration parameters.")
     loss_weight: LossWeightConfig = Field(
         ..., description="Loss weight configuration for various loss components."
-    )
-    optimizer: OptimizerConfig = Field(
-        ..., description="Optimizer configuration parameters."
     )
 
     def state_dict(self) -> dict:

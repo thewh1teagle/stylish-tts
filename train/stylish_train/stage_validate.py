@@ -46,15 +46,6 @@ def validate_acoustic(batch, train):
     pred = state.acoustic_prediction_single(batch)
     log = build_loss_log(train)
     train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log)
-    # log.add_loss(
-    #     "pitch",
-    #     torch.nn.functional.smooth_l1_loss(state.calculate_pitch(batch), state.pitch_prediction),
-    # )
-    # log.add_loss(
-    #     "energy",
-    #     torch.nn.functional.smooth_l1_loss(state.acoustic_energy(batch.mel), state.energy_prediction),
-    # )
-    # log.add_loss("duration", duration_loss(pred=state.duration_prediction, gt_attn=state.duration_results[1], lengths=batch.text_length, mask=state.text_mask))
     return log, state.get_attention(), pred.audio, batch.audio_gt
 
 
@@ -72,15 +63,6 @@ def validate_textual(batch, train):
     log.add_loss(
         "energy", torch.nn.functional.smooth_l1_loss(energy, state.energy_prediction)
     )
-    # log.add_loss(
-    #     "duration",
-    #     duration_loss(
-    #         pred=state.duration_prediction,
-    #         gt_attn=state.duration_results[1],
-    #         lengths=batch.text_length,
-    #         mask=state.text_mask,
-    #     ),
-    # )
     loss_ce, loss_dur = compute_duration_ce_loss(
         state.duration_prediction,
         state.duration_results[1].sum(dim=-1),
@@ -88,33 +70,4 @@ def validate_textual(batch, train):
     )
     log.add_loss("duration_ce", loss_ce)
     log.add_loss("duration", loss_dur)
-    return log, state.get_attention(), pred.audio, batch.audio_gt
-
-
-@torch.no_grad()
-def validate_sbert(batch, train):
-    """Validation function for the sbert stage."""
-    state = BatchContext(train=train, model=train.model, text_length=batch.text_length)
-    pred = state.sbert_prediction_single(batch)
-    # 1. Get textual and acoustic embeddings
-    textual_style_embedding = state.textual_style_embedding(batch.sentence_embedding)
-    textual_prosody_embedding = state.textual_prosody_embedding(
-        batch.sentence_embedding
-    )
-    acoustic_style_embedding = state.acoustic_style_embedding(batch.mel)
-    acoustic_prosody_embedding = state.acoustic_prosody_embedding(batch.mel)
-
-    log = build_loss_log(train)
-
-    # 2. Calculate Loss
-    style_loss = torch.nn.functional.l1_loss(
-        textual_style_embedding, acoustic_style_embedding
-    )
-    prosody_loss = torch.nn.functional.l1_loss(
-        textual_prosody_embedding, acoustic_prosody_embedding
-    )
-
-    log.add_loss("mel", train.stft_loss(pred.audio.squeeze(1), batch.audio_gt, log))
-    log.add_loss("sbert_style_loss", style_loss)
-    log.add_loss("sbert_prosody_loss", prosody_loss)
     return log, state.get_attention(), pred.audio, batch.audio_gt
