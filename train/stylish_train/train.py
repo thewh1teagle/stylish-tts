@@ -13,7 +13,7 @@ from safetensors.torch import save_file
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
-from stage_context import StageContext, is_valid_stage, valid_stage_list
+from stage import Stage, is_valid_stage, valid_stage_list
 
 from models.models import build_model
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss
@@ -197,9 +197,7 @@ def main(
 
     if not is_valid_stage(stage):
         exit(f"{stage} is not a valid stage. Must be one of {valid_stage_list()}")
-    train.stage = StageContext(
-        stage, train, train.batch_manager.time_bins, val_time_bins
-    )
+    train.stage = Stage(stage, train, train.batch_manager.time_bins, val_time_bins)
 
     train.manifest.current_epoch = 1
     train.manifest.current_total_step = 0

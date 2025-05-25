@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
-from losses import compute_duration_ce_loss, freev_loss, duration_loss
+from losses import compute_duration_ce_loss, freev_loss
 from utils import length_to_mask, print_gpu_vram
 
 
@@ -32,7 +32,7 @@ def train_alignment(
 def train_acoustic(
     batch, model, train, probing
 ) -> Tuple[LossLog, Optional[torch.Tensor]]:
-    state = BatchContext(train=train, model=model, text_length=batch.text_length)
+    state = BatchContext(train=train, model=model)
     with train.accelerator.autocast():
         print_gpu_vram("init")
         pred = state.acoustic_prediction_single(batch)
@@ -73,7 +73,7 @@ def train_acoustic(
 def train_textual(
     batch, model, train, probing
 ) -> Tuple[LossLog, Optional[torch.Tensor]]:
-    state = BatchContext(train=train, model=model, text_length=batch.text_length)
+    state = BatchContext(train=train, model=model)
     with train.accelerator.autocast():
         pred = state.textual_prediction_single(batch)
         energy = state.acoustic_energy(batch.mel)
@@ -106,7 +106,7 @@ def train_textual(
         )
         loss_ce, loss_dur = compute_duration_ce_loss(
             state.duration_prediction,
-            state.duration_results[1].sum(dim=-1),
+            batch.alignment.sum(dim=-1),
             batch.text_length,
         )
         log.add_loss("duration_ce", loss_ce)

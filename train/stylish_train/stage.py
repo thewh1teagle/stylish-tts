@@ -125,7 +125,7 @@ def valid_stage_list():
     return list(stages.keys())
 
 
-class StageContext:
+class Stage:
     def __init__(
         self, name: str, train, train_time_bins: dict, val_time_bins: dict
     ) -> None:

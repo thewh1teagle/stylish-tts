@@ -49,7 +49,7 @@ class TrainContext:
         model_config: ModelConfig,
         logger: logging.Logger,
     ) -> None:
-        import stage_context
+        import stage
 
         self.base_output_dir: str = base_out_dir
         self.out_dir: str = ""
@@ -57,7 +57,7 @@ class TrainContext:
         self.config: Config = config
         self.model_config: ModelConfig = model_config
         self.batch_manager: Optional[BatchManager] = None
-        self.stage: Optional[stage_context.StageContext] = None
+        self.stage: Optional[stage.Stage] = None
         self.manifest: Manifest = Manifest()
         self.writer: Optional[SummaryWriter] = None
 
