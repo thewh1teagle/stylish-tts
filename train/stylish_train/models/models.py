@@ -23,9 +23,8 @@ from .pitch_energy_predictor import PitchEnergyPredictor
 
 from .text_encoder import TextEncoder
 from .fine_style_encoder import FineStyleEncoder
-from .decoder.mel_decoder import MelDecoder
-from .decoder.freev import FreevGenerator
-from .decoder.ringformer import RingformerGenerator
+from .decoder import Decoder
+from .ringformer import RingformerGenerator
 
 from munch import Munch
 import safetensors
@@ -45,7 +44,7 @@ def build_model(model_config: ModelConfig):
     ], "Decoder type unknown"
 
     if model_config.generator.type == "ringformer":
-        decoder = MelDecoder(
+        decoder = Decoder(
             dim_in=model_config.inter_dim,
             style_dim=model_config.style_dim,
             dim_out=model_config.generator.upsample_initial_channel,

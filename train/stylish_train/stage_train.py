@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from einops import rearrange
 from batch_context import BatchContext
 from loss_log import LossLog, build_loss_log
-from losses import compute_duration_ce_loss, freev_loss
+from losses import compute_duration_ce_loss
 from utils import length_to_mask, print_gpu_vram
 
 
@@ -61,7 +61,6 @@ def train_acoustic(
             )
         print_gpu_vram("magphase_loss")
 
-        freev_loss(log, pred, batch.audio_gt, train)
         train.accelerator.backward(
             log.backwards_loss() * math.sqrt(batch.text.shape[0])
         )

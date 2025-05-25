@@ -25,12 +25,12 @@ from utils import length_to_mask
 def convert_to_onnx(model_config, out_dir, model_in, device):
     text_cleaner = TextCleaner(model_config.symbol)
     model = ExportModel(**model_in, device=device).eval()
-    stft = STFT(
-        filter_length=model.generator.gen_istft_n_fft,
-        hop_length=model.generator.gen_istft_hop_size,
-        win_length=model.generator.gen_istft_n_fft,
-    )
-    model.generator.stft = stft.to(device).eval()
+    # stft = STFT(
+    #     filter_length=model.generator.gen_istft_n_fft,
+    #     hop_length=model.generator.gen_istft_hop_size,
+    #     win_length=model.generator.gen_istft_n_fft,
+    # )
+    # model.generator.stft = stft.to(device).eval()
 
     tokens = (
         torch.tensor(

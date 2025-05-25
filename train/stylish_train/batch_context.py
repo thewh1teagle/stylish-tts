@@ -60,7 +60,7 @@ class BatchContext:
         mel, f0_curve = self.model.decoder(
             text_encoding @ duration, pitch, energy, style @ duration, probing=probing
         )
-        print_gpu_vram("mel_decoder")
+        print_gpu_vram("decoder")
         result = self.model.generator(
             mel=mel, style=style @ duration, pitch=f0_curve, energy=energy
         )

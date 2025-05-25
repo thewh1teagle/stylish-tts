@@ -5,16 +5,16 @@ from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
 from .conformer import Conformer
-from ..common import init_weights, get_padding
+from .common import init_weights, get_padding
 
-from .stft import TorchSTFT
+from .stft import STFT
 from einops import rearrange
 
 import math
 import random
 from scipy.signal import get_window
 from utils import DecoderPrediction, clamped_exp, leaky_clamp
-from ..common import InstanceNorm1d
+from .common import InstanceNorm1d
 
 
 def padDiff(x):
@@ -122,8 +122,7 @@ class RingformerGenerator(torch.nn.Module):
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
-        self.stft = TorchSTFT(
-            "cuda",
+        self.stft = STFT(
             filter_length=self.gen_istft_n_fft,
             hop_length=self.gen_istft_hop_size,
             win_length=self.gen_istft_n_fft,

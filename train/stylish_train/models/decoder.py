@@ -5,8 +5,8 @@ from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 from einops import rearrange
 
-from ..conv_next import ConvNeXtBlock, BasicConvNeXtBlock
-from ..common import InstanceNorm1d
+from .conv_next import ConvNeXtBlock, BasicConvNeXtBlock
+from .common import InstanceNorm1d
 
 
 class AdaIN1d(nn.Module):
@@ -102,7 +102,7 @@ class UpSample1d(nn.Module):
             return torch.nn.functional.interpolate(x, scale_factor=2, mode="nearest")
 
 
-class MelDecoder(nn.Module):
+class Decoder(nn.Module):
     def __init__(
         self,
         *,
