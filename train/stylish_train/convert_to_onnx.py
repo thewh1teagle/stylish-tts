@@ -9,12 +9,12 @@ from torch.nn import functional as F
 import torchaudio
 from einops import rearrange, reduce
 
-from stylish_lib.config_loader import Config
 from utils import length_to_mask, log_norm, maximum_path
 from models.models import build_model
-from stylish_lib.config_loader import load_model_config_yaml
+from stylish_lib.config_loader import Config, load_model_config_yaml
 from stylish_lib.text_utils import TextCleaner
-from models.onnx_models import Stylish, CustomSTFT
+from models.export_model import ExportModel
+from models.stft import STFT
 
 from attr import attr
 import numpy as np
@@ -24,8 +24,8 @@ from utils import length_to_mask
 
 def convert_to_onnx(model_config, out_dir, model_in, device):
     text_cleaner = TextCleaner(model_config.symbol)
-    model = Stylish(**model_in, device=device).eval()
-    stft = CustomSTFT(
+    model = ExportModel(**model_in, device=device).eval()
+    stft = STFT(
         filter_length=model.generator.gen_istft_n_fft,
         hop_length=model.generator.gen_istft_hop_size,
         win_length=model.generator.gen_istft_n_fft,

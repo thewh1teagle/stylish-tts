@@ -7,7 +7,6 @@ from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 from .conformer import Conformer
 from ..common import init_weights, get_padding
 
-from .stft import stft
 from .stft import TorchSTFT
 from einops import rearrange
 
