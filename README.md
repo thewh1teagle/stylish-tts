@@ -128,10 +128,6 @@ Note that Stylish TTS checkpoints are not compatible with StyleTTS 2 checkpoints
 
 ## Phonemization
 
-## model.yml Changes
-
-The pre-trained plbert model is based on a phonemization of the English language part of Wikipedia. If you are using a different phonemization or are training some other language, it is not suitable. There are two options. First, you can train your own plbert by cloning the plbert repository and tracking down a dataset and phonemizing it. Second, you can bypass plbert entirely which loses its benefit but does not require additional setup. Both of these changes mean creating your own modified model.yml. See the comments in that file for specifics.
-
 # Citations
 
 Most code taken from other sources is MIT-licensed and all original code in this repository is MIT-licensed. A BSD license is included as a comment before the few pieces of code which were BSD-licensed.

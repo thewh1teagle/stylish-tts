@@ -54,7 +54,7 @@ loss_weight:
   # mel reconstruction loss
   mel: 5
   # generator loss
-  generator: 1
+  generator: 2
   # speech-language model feature matching loss
   slm: 0.2
   # pitch F0 reconstruction loss
