@@ -7,7 +7,6 @@ import safetensors.torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from reformer_pytorch import ReformerLM, Autopadder
 
 from stylish_lib.config_loader import ModelConfig
 

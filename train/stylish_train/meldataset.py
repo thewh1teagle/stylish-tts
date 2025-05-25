@@ -12,7 +12,6 @@ import torch.utils.data
 from safetensors import safe_open
 
 import logging
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -49,7 +48,6 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.sentences = sentences
         self.text_cleaner = text_cleaner
 
-        self.df = pd.DataFrame(self.data_list)
         self.model_config = model_config
 
         self.to_align_mel = torchaudio.transforms.MelSpectrogram(
@@ -148,10 +146,12 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         # get reference sample
         if self.multispeaker:
-            ref_data = (
-                (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
-            )
-            ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
+            # TODO: Multispeaker
+            exit("Multispeaker not implemented")
+            # ref_data = (
+            #     (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
+            # )
+            # ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
         else:
             ref_data = []
             ref_mel_tensor, ref_label = None, ""
