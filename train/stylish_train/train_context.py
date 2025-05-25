@@ -17,7 +17,6 @@ from losses import (
 from torch.utils.tensorboard.writer import SummaryWriter
 from stylish_lib.text_utils import TextCleaner
 import torchaudio
-from sentence_transformers import SentenceTransformer
 
 
 class Manifest:

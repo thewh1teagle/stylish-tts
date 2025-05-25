@@ -24,7 +24,6 @@ import tqdm
 
 import os.path as osp
 import os
-from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(
     level=logging.INFO,

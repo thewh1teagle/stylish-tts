@@ -17,6 +17,53 @@ from utils import DecoderPrediction, clamped_exp, leaky_clamp
 from .common import InstanceNorm1d
 
 
+import numpy as np
+
+
+class TorchSTFT(torch.nn.Module):
+    def __init__(
+        self, device, filter_length=800, hop_length=200, win_length=800, window="hann"
+    ):
+        super().__init__()
+        self.filter_length = filter_length
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.device = device
+        self.window = torch.from_numpy(
+            get_window(window, win_length, fftbins=True).astype(np.float32)
+        ).to(device)
+
+    def transform(self, input_data):
+        forward_transform = torch.stft(
+            input_data,
+            self.filter_length,
+            self.hop_length,
+            self.win_length,
+            window=self.window,
+            return_complex=True,
+        )
+
+        return torch.abs(forward_transform), torch.angle(forward_transform)
+
+    def inverse(self, magnitude, phase):
+        inverse_transform = torch.istft(
+            magnitude * torch.exp(phase * 1j),
+            self.filter_length,
+            self.hop_length,
+            self.win_length,
+            window=self.window,
+        )
+
+        return inverse_transform.unsqueeze(
+            -2
+        )  # unsqueeze to stay consistent with conv_transpose1d implementation
+
+    def forward(self, input_data):
+        self.magnitude, self.phase = self.transform(input_data)
+        reconstruction = self.inverse(self.magnitude, self.phase)
+        return reconstruction
+
+
 def padDiff(x):
     return F.pad(
         F.pad(x, (0, 0, -1, 1), "constant", 0) - x, (0, 0, 0, -1), "constant", 0
@@ -122,7 +169,8 @@ class RingformerGenerator(torch.nn.Module):
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
-        self.stft = STFT(
+        self.stft = TorchSTFT(
+            device="cuda",
             filter_length=self.gen_istft_n_fft,
             hop_length=self.gen_istft_hop_size,
             win_length=self.gen_istft_n_fft,
