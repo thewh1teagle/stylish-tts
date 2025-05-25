@@ -13,18 +13,15 @@ from loss_log import combine_logs
 from stage_train import (
     train_alignment,
     train_acoustic,
-    train_pre_textual,
     train_textual,
-    train_joint,
-    train_sbert,
 )
 
 from stage_validate import (
     validate_alignment,
     validate_acoustic,
     validate_textual,
-    validate_sbert,
 )
+
 from optimizers import build_optimizer
 from utils import (
     get_image,
@@ -41,7 +38,7 @@ class StageConfig:
         validate_fn: Callable,
         train_models: List[str],
         eval_models: List[str],
-        adversarial: bool,
+        discriminators: List[str],
         inputs: List[str],
     ):
         self.next_stage: Optional[str] = next_stage
@@ -49,7 +46,7 @@ class StageConfig:
         self.validate_fn: Callable = validate_fn
         self.train_models: List[str] = train_models
         self.eval_models: List[str] = eval_models
-        self.adversarial = adversarial
+        self.discriminators = discriminators
         self.inputs: List[str] = inputs
 
 
@@ -60,7 +57,7 @@ stages = {
         validate_fn=validate_alignment,
         train_models=["text_aligner"],
         eval_models=[],
-        adversarial=False,
+        discriminators=[],
         inputs=[
             "text",
             "text_length",
@@ -69,17 +66,17 @@ stages = {
         ],
     ),
     "acoustic": StageConfig(
-        next_stage="pre_textual",
+        next_stage="textual",
         train_fn=train_acoustic,
         validate_fn=validate_acoustic,
         train_models=[
             "text_encoder",
-            "acoustic_style_encoder",
+            "textual_style_encoder",
             "decoder",
             "generator",
         ],
         eval_models=[],
-        adversarial=True,
+        discriminators=["mpd", "mrd"],
         inputs=[
             "text",
             "text_length",
@@ -87,41 +84,6 @@ stages = {
             "mel_length",
             "audio_gt",
             "pitch",
-            "sentence_embedding",
-            "voiced",
-            "align_mel",
-            "alignment",
-        ],
-    ),
-    "pre_textual": StageConfig(
-        next_stage="textual",
-        train_fn=train_pre_textual,
-        validate_fn=validate_textual,
-        train_models=[
-            "acoustic_prosody_encoder",
-            "duration_predictor",
-            "pitch_energy_predictor",
-            "bert",
-            "bert_encoder",
-        ],
-        eval_models=[
-            "text_encoder",
-            "acoustic_style_encoder",
-            "decoder",
-            "generator",
-            # "text_aligner",
-        ],
-        adversarial=False,
-        inputs=[
-            "text",
-            "text_length",
-            "mel",
-            "mel_length",
-            "audio_gt",
-            "pitch",
-            "sentence_embedding",
-            "voiced",
-            "align_mel",
             "alignment",
         ],
     ),
@@ -130,88 +92,18 @@ stages = {
         train_fn=train_textual,
         validate_fn=validate_textual,
         train_models=[
-            "acoustic_prosody_encoder",
-            "duration_predictor",
-            "pitch_energy_predictor",
-            "bert",
-            "bert_encoder",
-        ],
-        eval_models=[
-            "text_encoder",
-            "acoustic_style_encoder",
-            "decoder",
-            "generator",
-            # "text_aligner",
-        ],
-        adversarial=False,
-        inputs=[
-            "text",
-            "text_length",
-            "mel",
-            "mel_length",
-            "audio_gt",
-            "pitch",
-            "sentence_embedding",
-            "voiced",
-            "align_mel",
-            "alignment",
-        ],
-    ),
-    "joint": StageConfig(
-        next_stage=None,
-        train_fn=train_joint,
-        validate_fn=validate_textual,
-        train_models=[
-            "acoustic_prosody_encoder",
-            "duration_predictor",
-            "pitch_energy_predictor",
-            "bert",
-            "bert_encoder",
-        ],
-        eval_models=[
-            "text_encoder",
-            "decoder",
-            "generator",
-            "acoustic_style_encoder",
-            # "text_aligner",
-        ],
-        adversarial=True,
-        inputs=[
-            "text",
-            "text_length",
-            "mel",
-            "mel_length",
-            "audio_gt",
-            "pitch",
-            "sentence_embedding",
-            "voiced",
-            "align_mel",
-            "alignment",
-        ],
-    ),
-    "sbert": StageConfig(
-        next_stage=None,
-        train_fn=train_sbert,
-        validate_fn=validate_sbert,
-        train_models=[
-            "textual_style_encoder",
+            "text_duration_encoder",
             "textual_prosody_encoder",
-        ],
-        eval_models=[
-            "textual_style_encoder",
-            "textual_prosody_encoder",
-            "acoustic_style_encoder",
-            "acoustic_prosody_encoder",
             "duration_predictor",
             "pitch_energy_predictor",
-            "bert",
-            "bert_encoder",
-            "text_encoder",
+        ],
+        eval_models=[
             "decoder",
             "generator",
-            # "text_aligner",
+            "text_encoder",
+            "textual_style_encoder",
         ],
-        adversarial=False,
+        discriminators=["msbd"],
         inputs=[
             "text",
             "text_length",
@@ -219,8 +111,6 @@ stages = {
             "mel_length",
             "audio_gt",
             "pitch",
-            "sentence_embedding",
-            "align_mel",
             "alignment",
         ],
     ),
@@ -235,7 +125,7 @@ def valid_stage_list():
     return list(stages.keys())
 
 
-class StageContext:
+class Stage:
     def __init__(
         self, name: str, train, train_time_bins: dict, val_time_bins: dict
     ) -> None:
@@ -321,18 +211,18 @@ class StageContext:
             train.config.training.device,
             config.train_models,
             config.eval_models,
-            config.adversarial,
+            config.discriminators,
             train,
         )
         result, audio = self.train_fn(batch, model, train, probing)
         optimizer_step(self.optimizer, config.train_models)
-        if config.adversarial:
+        if len(config.discriminators) > 0:
             audio_gt = batch.audio_gt.unsqueeze(1)
             audio = audio.detach()
             train.stage.optimizer.zero_grad()
-            d_loss = train.discriminator_loss(audio_gt, audio)
+            d_loss = train.discriminator_loss(audio_gt, audio, config.discriminators)
             train.accelerator.backward(d_loss * math.sqrt(batch.text.shape[0]))
-            optimizer_step(self.optimizer, train.model_config.discriminators)
+            optimizer_step(self.optimizer, config.discriminators)
             train.stage.optimizer.zero_grad()
             result.add_loss("discriminator", d_loss)
         return result.detach()
@@ -517,8 +407,6 @@ batch_names = [
     "ref_mel",
     "path",
     "pitch",
-    "sentence_embedding",
-    "voiced",
     "align_mel",
     "alignment",
 ]
@@ -540,16 +428,15 @@ def prepare_batch(
     return Munch(**prepared)
 
 
-def prepare_model(model, device, training_set, eval_set, adversarial, train) -> Munch:
+def prepare_model(
+    model, device, training_set, eval_set, discriminators, train
+) -> Munch:
     """
     Prepares models for training or evaluation, attaches them to the cpu memory if unused, returns an object which contains only the models that will be used.
     """
-    disc_set = []
-    if adversarial:
-        disc_set = train.model_config.discriminators
     result = {}
     for key in model:
-        if key in training_set or key in eval_set or key in disc_set:
+        if key in training_set or key in eval_set or key in discriminators:
             result[key] = model[key]
             result[key].to(device)
         else:

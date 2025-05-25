@@ -23,9 +23,6 @@ class TrainingConfig(BaseModel):
     val_interval: int = Field(..., description="Interval (in steps) for validation.")
     device: str = Field(..., description="Computational device (e.g., 'cuda').")
     mixed_precision: str = Field(..., description="accelerator use bf16 or fp16 or no")
-    probe_batch_max: int = Field(
-        ..., description="Maximum batch size to attempt during bin probing."
-    )
 
 
 class TrainingStageConfig(BaseModel):
@@ -59,29 +56,13 @@ class TrainingPlanConfig(BaseModel):
         default_factory=TrainingStageConfig,
         description="Configuration for pretraining the text alignment model.",
     )
-    pre_acoustic: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for the pretraining of acoustic models stage (first stage).",
-    )
     acoustic: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
         description="Configuration for joint training of acoustic models stage (second stage).",
     )
-    pre_textual: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for the pretraining of textual models stage (third stage).",
-    )
     textual: TrainingStageConfig = Field(
         default_factory=TrainingStageConfig,
         description="Configuration for training of textual models stage (fourth stage).",
-    )
-    joint: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for joint training of textual models stage (fifth stage).",
-    )
-    sbert: TrainingStageConfig = Field(
-        default_factory=TrainingStageConfig,
-        description="Configuration for training of sbert models stage (sixth stage).",
     )
 
     def get_stage(self, name: str) -> TrainingStageConfig:
@@ -119,8 +100,6 @@ class LossWeightConfig(BaseModel):
     slm: float = Field(
         ..., description="Weight for speech-language model feature matching loss."
     )
-    mono: float = Field(..., description="Weight for monotonic alignment loss.")
-    s2s: float = Field(..., description="Weight for sequence-to-sequence loss.")
     pitch: float = Field(..., description="Weight for F0 pitch reconstruction loss.")
     energy: float = Field(..., description="Weight for energy reconstruction loss.")
     duration: float = Field(..., description="Weight for duration loss.")
@@ -129,35 +108,9 @@ class LossWeightConfig(BaseModel):
     )
     style: float = Field(..., description="Weight for style reconstruction loss.")
     magphase: float = Field(..., description="Weight for magnitude/phase loss.")
-    amplitude: float = Field(..., description="Weight for log amplitude loss.")
-    phase: float = Field(..., description="Weight for phase loss.")
-    stft_reconstruction: float = Field(
-        ..., description="Weight for STFT reconstruction loss"
-    )
-    sbert_style_loss: float = Field(..., description="Weight for sbert style encoder")
-    sbert_prosody_loss: float = Field(
-        ..., description="Weight for sbert prosody encoder"
-    )
     confidence: float = Field(..., description="Weight for alignment confidence")
     align_loss: float = Field(..., description="Weight for alignment loss")
-
-
-class DiscriminatorLossWeightConfig(BaseModel):
-    mpd: float = Field(..., description="Weight for Multi-Period discriminator.")
-    mrd: float = Field(..., description="Weight for Multi-Resolution discriminator.")
-    msbd: float = Field(
-        ..., description="Weight for Multi-Scale Sub-Band CQT discriminator."
-    )
-    mstftd: float = Field(..., description="Weight for Multi-Scale STFT discriminator.")
-
-
-class OptimizerConfig(BaseModel):
-    """
-    Optimizer configuration parameters.
-    """
-
-    bert_lr: float = Field(..., description="Learning rate for the PLBERT model.")
-    ft_lr: float = Field(..., description="Learning rate for acoustic modules.")
+    discriminator: float = Field(..., description="Weight for discriminator loss")
 
 
 ######## Model Configuration ########
@@ -174,8 +127,6 @@ class SymbolConfig(BaseModel):
     letters_ipa: str = Field(
         ..., description="IPA phonetic characters including diacritics"
     )
-    voiced: str = Field(..., description="Set of characters which are voiced")
-    unvoiced: str = Field(..., description="Set of characters which are unvoiced")
 
 
 class TextAlignerConfig(BaseModel):
@@ -191,93 +142,18 @@ class TextAlignerConfig(BaseModel):
     )
 
 
-# class PitchExtractorConfig(BaseModel):
-#     """
-#     Configuration for the pitch extractor component.
-#     """
-
-#     num_class: int = Field(..., description="Number of classes for pitch extraction.")
-#     seq_len: int = Field(..., description="Sequence length for pitch extraction.")
-#     leaky_relu_slope: float = Field(
-#         ..., description="Slope for the leaky ReLU activation function."
-#     )
-
-
-class PLBERTConfig(BaseModel):
+class DecoderConfig(BaseModel):
     """
-    Configuration for the PLBERT model.
+    Configuration for decoder.
     """
 
-    enabled: bool = Field(..., description="Enable PL-BERT.")
-    path: str = Field(None, description="Path to the safetensors checkpoint.")
-    hidden_size: int = Field(..., description="Hidden size of the PLBERT model.")
-    num_attention_heads: int = Field(
-        ..., description="Number of attention heads in the PLBERT model."
-    )
-    intermediate_size: int = Field(
-        ..., description="Intermediate size of the feed-forward layers in PLBERT."
-    )
-    max_position_embeddings: int = Field(
-        ..., description="Maximum number of position embeddings in PLBERT."
-    )
-    num_hidden_layers: int = Field(
-        ..., description="Number of hidden layers in the PLBERT model."
-    )
-    dropout: float = Field(..., description="Dropout rate used in the PLBERT model.")
+    hidden_dim: int = Field(..., description="Hidden dimension")
+    residual_dim: int = Field(..., description="Residual shortcut dimension")
 
 
-# class HiFiGANDecoderConfig(BaseModel):
-#     """
-#     Configuration for HiFiGAN decoder.
-#     """
-
-#     type: Literal["hifigan"] = "hifigan"
-#     hidden_dim: int = Field(..., description="Hidden dimension for HiFiGAN.")
-#     resblock_kernel_sizes: List[int] = Field(
-#         ..., description="Kernel sizes for residual blocks."
-#     )
-#     upsample_rates: List[int] = Field(
-#         ..., description="Upsample rates for each upsampling layer."
-#     )
-#     upsample_initial_channel: int = Field(
-#         ..., description="Initial channel count for upsampling."
-#     )
-#     resblock_dilation_sizes: List[List[int]] = Field(
-#         ..., description="Dilation sizes for residual blocks."
-#     )
-#     upsample_kernel_sizes: List[int] = Field(
-#         ..., description="Kernel sizes for the upsampling layers."
-#     )
-
-
-class ISTFTNetDecoderConfig(BaseModel):
+class RingformerGeneratorConfig(BaseModel):
     """
-    Configuration for iSTFTNet decoder.
-    """
-
-    type: Literal["istftnet"] = "istftnet"
-    resblock_kernel_sizes: List[int] = Field(
-        ..., description="Kernel sizes for residual blocks."
-    )
-    upsample_rates: List[int] = Field(
-        ..., description="Upsample rates for each upsampling layer."
-    )
-    upsample_initial_channel: int = Field(
-        ..., description="Initial channel count for upsampling."
-    )
-    resblock_dilation_sizes: List[List[int]] = Field(
-        ..., description="Dilation sizes for residual blocks."
-    )
-    upsample_kernel_sizes: List[int] = Field(
-        ..., description="Kernel sizes for the upsampling layers."
-    )
-    gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
-    gen_istft_hop_size: int = Field(..., description="Hop size for iSTFT generator.")
-
-
-class RingformerDecoderConfig(BaseModel):
-    """
-    Configuration for Ringformer decoder.
+    Configuration for Ringformer generator.
     """
 
     type: Literal["ringformer"] = "ringformer"
@@ -301,25 +177,6 @@ class RingformerDecoderConfig(BaseModel):
     depth: int = Field(..., description="Number of conformer blocks in model")
 
 
-class VocosDecoderConfig(BaseModel):
-    """
-    Configuration for Vocos decoder.
-    """
-
-    type: Literal["vocos"] = "vocos"
-    intermediate_dim: int = Field(
-        ..., description="Intermediate dimension size for Vocos."
-    )
-    num_layers: int = Field(..., description="Number of layers in Vocos model.")
-    gen_istft_n_fft: int = Field(..., description="FFT size for iSTFT generator.")
-    gen_istft_win_length: int = Field(
-        ..., description="Window length for iSTFT generator."
-    )
-    gen_istft_hop_length: int = Field(
-        ..., description="Hop length for iSTFT generator."
-    )
-
-
 class ValidationConfig(BaseModel):
     """
     Setup samples to use during validation
@@ -333,70 +190,26 @@ class ValidationConfig(BaseModel):
     )
 
 
-class FreevDecoderConfig(BaseModel):
-    """
-    Configuration for FreeV decoder.
-    """
-
-    type: Literal["freev"] = "freev"
-
-
-#     # ASP_channel: int = Field(..., description="Amplitude channel dimension")
-#     # ASP_resblock_kernel_sizes: List[int] = Field(
-#     #     ..., description="Amplitude residual block kernels"
-#     # )
-#     # ASP_resblock_dilation_sizes: List[List[int]] = Field(
-#     #     ..., description="Amplitude residual block dilation sizes"
-#     # )
-#     # ASP_input_conv_kernel_size: int = Field(
-#     #     ..., description="Amplitude input convolution kerenel size"
-#     # )
-#     # ASP_output_conv_kernel_size: int = Field(
-#     #     ..., description="Amplitude output convolution kernel size"
-#     # )
-#     # PSP_channel: int = Field(..., description="Phase channel dimension")
-#     # PSP_resblock_kernel_sizes: List[int] = Field(
-#     #     ..., description="Phase residual block kernels"
-#     # )
-#     # PSP_resblock_dilation_sizes: List[List[int]] = Field(
-#     #     ..., description="Phase residual block dilation sizes"
-#     # )
-#     # PSP_input_conv_kernel_size: int = Field(
-#     #     ..., description="Phase input convolution kerenel size"
-#     # )
-#     # PSP_output_R_conv_kernel_size: int = Field(
-#     #     ..., description="Phase real output convolution kernel size"
-#     # )
-#     # PSP_output_I_conv_kernel_size: int = Field(
-#     #     ..., description="Phase imaginary output convolution kernel size"
-#     # )
-
-
 class TextEncoderConfig(BaseModel):
     """
     Text encoder configuration parameters.
     """
 
-    kernel_size: int = Field(
-        ..., description="Kernel size for convolution in the text encoder."
-    )
-    n_layer: int = Field(..., description="Number of layers in the text encoder.")
-    n_token: int = Field(..., description="Number of phoneme tokens.")
+    tokens: int = Field(..., description="Number of phoneme tokens.")
+    hidden_dim: int = Field(..., description="Hidden dimension")
+    filter_channels: int = Field(..., description="Filter Channel for encoder")
+    heads: int = Field(..., description="Number of attention heads")
+    layers: int = Field(..., description="Number of layers in the text encoder.")
+    kernel_size: int = Field(..., description="Kernel size for convolution.")
+    dropout: float = Field(..., description="Dropout for internal layers")
 
 
 class StyleEncoderConfig(BaseModel):
     """
     Style encoder configuration parameters.
-    This encoder (which may also act as a prosody encoder) generates a style embedding from audio.
     """
 
-    dim_in: int = Field(..., description="Input dimension for the style encoder.")
-    hidden_dim: int = Field(
-        ..., description="Hidden dimension for the embedding encoder."
-    )
-    skip_downsamples: bool = Field(
-        ..., description="Flag indicating whether to skip downsampling."
-    )
+    layers: int = Field(..., description="Number of convnext blocks to use")
 
 
 class DurationPredictorConfig(BaseModel):
@@ -424,17 +237,6 @@ class SlmConfig(BaseModel):
 
     model: str = Field(..., description="Identifier or path for the SLM model.")
     sr: int = Field(..., description="Sampling rate used by the SLM.")
-    hidden: int = Field(..., description="Hidden dimension of the SLM.")
-    nlayers: int = Field(..., description="Number of layers in the SLM.")
-    initial_channel: int = Field(
-        ..., description="Initial channel count for the SLM discriminator head."
-    )
-
-
-class SbertConfig(BaseModel):
-    model: str = Field(
-        ..., description="Model name on HuggingFace or filepath to a SBERT checkpoint."
-    )
 
 
 class Config(BaseModel):
@@ -454,12 +256,6 @@ class Config(BaseModel):
     dataset: DatasetConfig = Field(..., description="Dataset configuration parameters.")
     loss_weight: LossWeightConfig = Field(
         ..., description="Loss weight configuration for various loss components."
-    )
-    discriminator_loss_weight: DiscriminatorLossWeightConfig = Field(
-        ..., description="Loss weight configuration for discriminators."
-    )
-    optimizer: OptimizerConfig = Field(
-        ..., description="Optimizer configuration parameters."
     )
 
     def state_dict(self) -> dict:
@@ -484,24 +280,14 @@ class ModelConfig(BaseModel):
     inter_dim: int = Field(
         ..., description="Dimension of the embedding used between models."
     )
-    discriminators: List[str] = Field(
-        ..., description="List of discriminators to use (can be mpd, mrd, msbd, mstftd)"
-    )
 
     text_aligner: TextAlignerConfig = Field(
         ..., description="Configuration for the text aligner component."
     )
-    # pitch_extractor: PitchExtractorConfig = Field(
-    #     ..., description="Configuration for the pitch extractor component."
-    # )
-    plbert: PLBERTConfig = Field(..., description="Configuration for the PLBERT model.")
-    decoder: Union[
-        # HiFiGANDecoderConfig,
-        ISTFTNetDecoderConfig,
-        RingformerDecoderConfig,
-        VocosDecoderConfig,
-        FreevDecoderConfig,
-    ] = Field(..., description="Decoder (vocoder) configuration parameters.")
+    decoder: DecoderConfig = Field(..., description="Decoder configuration parameters.")
+    generator: Union[RingformerGeneratorConfig,] = Field(
+        ..., description="Generator (vocoder) configuration parameters."
+    )
     text_encoder: TextEncoderConfig = Field(
         ..., description="Text encoder configuration parameters."
     )
@@ -518,7 +304,6 @@ class ModelConfig(BaseModel):
         ..., description="Speech Language Model (SLM) configuration parameters."
     )
     symbol: SymbolConfig = Field(..., description="Text processing symbols.")
-    sbert: SbertConfig = Field(..., description="SentenceTransformer configuration.")
 
     def state_dict(self) -> dict:
         return self.model_dump()

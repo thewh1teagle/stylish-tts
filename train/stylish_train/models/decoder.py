@@ -3,9 +3,10 @@ import random
 import torch
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
+from einops import rearrange
 
-from ..conv_next import ConvNeXtBlock, BasicConvNeXtBlock
-from ..common import InstanceNorm1d
+from .conv_next import ConvNeXtBlock, BasicConvNeXtBlock
+from .common import InstanceNorm1d
 
 
 class AdaIN1d(nn.Module):
@@ -13,11 +14,14 @@ class AdaIN1d(nn.Module):
         super().__init__()
         self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
+        self.num_features = num_features
 
     def forward(self, x, s):
+        s = rearrange(s, "b s t -> b t s")
         h = self.fc(s)
-        h = h.view(h.size(0), h.size(1), 1)
-        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        h = rearrange(h, "b t s -> b s t")
+        gamma = h[:, : self.num_features, :]
+        beta = h[:, self.num_features :, :]
         return (1 + gamma) * self.norm(x) + beta
 
 
@@ -72,6 +76,8 @@ class AdainResBlk1d(nn.Module):
         x = self.norm1(x, s)
         x = self.actv(x)
         x = self.pool(x)
+        if self.upsample_type == True:
+            s = torch.nn.functional.interpolate(s, scale_factor=2, mode="nearest")
         x = self.conv1(self.dropout(x))
         x = self.norm2(x, s)
         x = self.actv(x)
@@ -96,25 +102,36 @@ class UpSample1d(nn.Module):
             return torch.nn.functional.interpolate(x, scale_factor=2, mode="nearest")
 
 
-class MelDecoder(nn.Module):
+class Decoder(nn.Module):
     def __init__(
         self,
-        dim_in=512,
-        style_dim=128,
-        dim_out=512,
-        intermediate_dim=1536,
+        *,
+        dim_in,
+        style_dim,
+        dim_out,
+        hidden_dim,
+        residual_dim,
     ):
         super().__init__()
 
-        # TODO Use arguments instead of hardcoding
         self.decode = nn.ModuleList()
 
-        self.encode = AdainResBlk1d(dim_in + 2, 1024, style_dim)
+        self.encode = AdainResBlk1d(dim_in + 2, hidden_dim, style_dim)
 
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True))
+        self.decode.append(
+            AdainResBlk1d(hidden_dim + 2 + residual_dim, hidden_dim, style_dim)
+        )
+        self.decode.append(
+            AdainResBlk1d(hidden_dim + 2 + residual_dim, hidden_dim, style_dim)
+        )
+        self.decode.append(
+            AdainResBlk1d(hidden_dim + 2 + residual_dim, hidden_dim, style_dim)
+        )
+        self.decode.append(
+            AdainResBlk1d(
+                hidden_dim + 2 + residual_dim, dim_out, style_dim, upsample=True
+            )
+        )
 
         self.F0_conv = weight_norm(
             nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
@@ -125,33 +142,30 @@ class MelDecoder(nn.Module):
         )
 
         self.asr_res = nn.Sequential(
-            weight_norm(nn.Conv1d(512, 64, kernel_size=1)),
+            weight_norm(nn.Conv1d(dim_in, residual_dim, kernel_size=1)),
         )
 
     def forward(self, asr, F0_curve, N, s, probing=False):
-        if self.training:
-            downlist = [0, 3, 7]
-            F0_down = downlist[random.randint(0, 2)]
-            downlist = [0, 3, 7, 15]
-            N_down = downlist[random.randint(0, 3)]
-            if F0_down:
-                F0_curve = (
-                    nn.functional.conv1d(
-                        F0_curve.unsqueeze(1),
-                        torch.ones(1, 1, F0_down).to("cuda"),
-                        padding=F0_down // 2,
-                    ).squeeze(1)
-                    / F0_down
-                )
-            if N_down:
-                N = (
-                    nn.functional.conv1d(
-                        N.unsqueeze(1),
-                        torch.ones(1, 1, N_down).to("cuda"),
-                        padding=N_down // 2,
-                    ).squeeze(1)
-                    / N_down
-                )
+        F0_down = 3
+        N_down = 3
+        if F0_down:
+            F0_curve = (
+                nn.functional.conv1d(
+                    F0_curve.unsqueeze(1),
+                    torch.ones(1, 1, F0_down).to("cuda"),
+                    padding=F0_down // 2,
+                ).squeeze(1)
+                / F0_down
+            )
+        if N_down:
+            N = (
+                nn.functional.conv1d(
+                    N.unsqueeze(1),
+                    torch.ones(1, 1, N_down).to("cuda"),
+                    padding=N_down // 2,
+                ).squeeze(1)
+                / N_down
+            )
 
         F0 = self.F0_conv(F0_curve.unsqueeze(1))
         N = self.N_conv(N.unsqueeze(1))

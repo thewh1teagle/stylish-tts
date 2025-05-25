@@ -13,9 +13,9 @@ from safetensors.torch import save_file
 
 from meldataset import build_dataloader, FilePathDataset
 from batch_manager import BatchManager
-from stage_context import StageContext, is_valid_stage, valid_stage_list
+from stage import Stage, is_valid_stage, valid_stage_list
 
-from models.models import build_model, load_defaults
+from models.models import build_model
 from losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss
 from utils import get_data_path_list, save_git_diff
 from loss_log import combine_logs
@@ -24,7 +24,6 @@ import tqdm
 
 import os.path as osp
 import os
-from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,7 +138,6 @@ def main(
             selected_files.append(item)
 
     train.config.validation.force_samples = selected_files
-    train.sbert = SentenceTransformer(train.model_config.sbert.model).to("cpu")
 
     val_dataset = FilePathDataset(
         data_list=val_list,
@@ -148,7 +146,6 @@ def main(
         model_config=train.model_config,
         pitch_path=train.config.dataset.pitch_path,
         alignment_path=train.config.dataset.alignment_path,
-        sbert=train.sbert,
     )
     val_time_bins, _ = val_dataset.time_bins()
     train.val_dataloader = build_dataloader(
@@ -176,9 +173,7 @@ def main(
     )
 
     # build model
-    train.model = build_model(
-        train.model_config, train.sbert.get_sentence_embedding_dimension()
-    )
+    train.model = build_model(train.model_config)
     for key in train.model:
         train.model[key] = train.accelerator.prepare(train.model[key])
         train.model[key].to(train.config.training.device)
@@ -187,17 +182,11 @@ def main(
         mpd=train.model.mpd,
         mrd=train.model.mrd,
         msbd=train.model.msbd,
-        mstftd=train.model.mstftd,
-        discriminators=train.model_config.discriminators,
-        loss_weights=train.config.discriminator_loss_weight,
     ).to(train.config.training.device)
     train.discriminator_loss = DiscriminatorLoss(
         mpd=train.model.mpd,
         mrd=train.model.mrd,
         msbd=train.model.msbd,
-        mstftd=train.model.mstftd,
-        discriminators=train.model_config.discriminators,
-        loss_weights=train.config.discriminator_loss_weight,
     ).to(train.config.training.device)
     train.wavlm_loss = WavLMLoss(
         train.model_config.slm.model,
@@ -207,9 +196,7 @@ def main(
 
     if not is_valid_stage(stage):
         exit(f"{stage} is not a valid stage. Must be one of {valid_stage_list()}")
-    train.stage = StageContext(
-        stage, train, train.batch_manager.time_bins, val_time_bins
-    )
+    train.stage = Stage(stage, train, train.batch_manager.time_bins, val_time_bins)
 
     train.manifest.current_epoch = 1
     train.manifest.current_total_step = 0
@@ -233,8 +220,6 @@ def main(
             train.manifest.current_step = 0
             train.stage.begin_stage(stage, train)
         logger.info(f"Loaded last checkpoint at {checkpoint} ...")
-    else:
-        load_defaults(train, train.model)
 
     train.manifest.stage = stage
 

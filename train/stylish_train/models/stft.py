@@ -1,26 +1,9 @@
-import random
-from typing import Optional
-
 import torch
-from torch.nn import functional as F
-import torchaudio
-from einops import rearrange, reduce
-
-# import train_context
-from utils import length_to_mask, log_norm
-from models.models import build_model
-import torch
-import torch.nn as nn
-
-
-from attr import attr
-import numpy as np
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 
-class CustomSTFT(nn.Module):
+class STFT(torch.nn.Module):
     """
     STFT/iSTFT without unfold/complex ops, using conv1d and conv_transpose1d.
 
@@ -206,105 +189,3 @@ class CustomSTFT(nn.Module):
         """
         mag, phase = self.transform(x)
         return self.inverse(mag, phase, length=x.shape[-1])
-
-
-class Stylish(nn.Module):
-    def __init__(
-        self,
-        text_encoder,
-        textual_style_encoder,
-        textual_prosody_encoder,
-        bert,
-        bert_encoder,
-        duration_predictor,
-        pitch_energy_predictor,
-        decoder,
-        generator,
-        device="cuda",
-        **kwargs
-    ):
-        super(Stylish, self).__init__()
-
-        for model in [
-            text_encoder,
-            textual_style_encoder,
-            textual_prosody_encoder,
-            bert,
-            bert_encoder,
-            duration_predictor,
-            pitch_energy_predictor,
-            decoder,
-            generator,
-        ]:
-            model.to(device).eval()
-            for p in model.parameters():
-                p.requires_grad = False
-
-        self.device = device
-        self.text_encoder = text_encoder
-        self.textual_style_encoder = textual_style_encoder
-        self.textual_prosody_encoder = textual_prosody_encoder
-        self.bert = bert
-        self.bert_encoder = bert_encoder
-        self.duration_predictor = duration_predictor
-        self.pitch_energy_predictor = pitch_energy_predictor
-        self.decoder = decoder
-        self.generator = generator
-
-    def decoding_single(
-        self,
-        text_encoding,
-        duration,
-        pitch,
-        energy,
-        style,
-    ):
-        mel, _ = self.decoder(
-            text_encoding @ duration, pitch, energy, style, probing=False
-        )
-        prediction = self.generator(mel=mel, style=style, pitch=pitch, energy=energy)
-        return prediction
-
-    def duration_predict(self, duration_encoding, prosody_embedding):
-        d = self.duration_predictor.text_encoder.infer(
-            duration_encoding, prosody_embedding
-        )
-        x, _ = self.duration_predictor.lstm(d)
-        duration = self.duration_predictor.duration_proj(x)
-        duration = torch.sigmoid(duration).sum(axis=-1)
-
-        pred_dur = torch.round(duration).clamp(min=1).long().squeeze()
-        indices = torch.repeat_interleave(
-            torch.arange(duration_encoding.shape[2], device=self.device), pred_dur
-        )
-        pred_aln_trg = torch.zeros(
-            (duration_encoding.shape[2], indices.shape[0]), device=self.device
-        )
-        pred_aln_trg[indices, torch.arange(indices.shape[0])] = 1
-        pred_aln_trg = pred_aln_trg.unsqueeze(0).to(self.device)
-
-        prosody = d.permute(0, 2, 1) @ pred_aln_trg
-        return pred_aln_trg, prosody
-
-    def forward(self, texts, text_mask, sentence_embedding):
-        text_encoding = self.text_encoder.infer(texts)
-        style_embedding = self.textual_style_encoder(sentence_embedding)
-        prosody_embedding = self.textual_prosody_encoder(sentence_embedding)
-        plbert_embedding = self.bert(texts, attention_mask=(~text_mask).int())
-        duration_encoding = self.bert_encoder(plbert_embedding).permute(0, 2, 1)
-        duration_prediction, prosody = self.duration_predict(
-            duration_encoding,
-            prosody_embedding,
-        )
-        pitch_prediction, energy_prediction = self.pitch_energy_predictor(
-            prosody, prosody_embedding
-        )
-
-        prediction = self.decoding_single(
-            text_encoding,
-            duration_prediction,
-            pitch_prediction,
-            energy_prediction,
-            style_embedding,
-        )
-        return prediction.audio.squeeze()

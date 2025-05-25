@@ -5,17 +5,63 @@ from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
 from .conformer import Conformer
-from ..common import init_weights, get_padding
+from .common import init_weights, get_padding
 
-from .stft import stft
-from .stft import TorchSTFT
+from .stft import STFT
 from einops import rearrange
 
 import math
 import random
 from scipy.signal import get_window
 from utils import DecoderPrediction, clamped_exp, leaky_clamp
-from ..common import InstanceNorm1d
+from .common import InstanceNorm1d
+
+
+import numpy as np
+
+
+class TorchSTFT(torch.nn.Module):
+    def __init__(
+        self, device, filter_length=800, hop_length=200, win_length=800, window="hann"
+    ):
+        super().__init__()
+        self.filter_length = filter_length
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.device = device
+        self.window = torch.from_numpy(
+            get_window(window, win_length, fftbins=True).astype(np.float32)
+        ).to(device)
+
+    def transform(self, input_data):
+        forward_transform = torch.stft(
+            input_data,
+            self.filter_length,
+            self.hop_length,
+            self.win_length,
+            window=self.window,
+            return_complex=True,
+        )
+
+        return torch.abs(forward_transform), torch.angle(forward_transform)
+
+    def inverse(self, magnitude, phase):
+        inverse_transform = torch.istft(
+            magnitude * torch.exp(phase * 1j),
+            self.filter_length,
+            self.hop_length,
+            self.win_length,
+            window=self.window,
+        )
+
+        return inverse_transform.unsqueeze(
+            -2
+        )  # unsqueeze to stay consistent with conv_transpose1d implementation
+
+    def forward(self, input_data):
+        self.magnitude, self.phase = self.transform(input_data)
+        reconstruction = self.inverse(self.magnitude, self.phase)
+        return reconstruction
 
 
 def padDiff(x):
@@ -124,7 +170,7 @@ class RingformerGenerator(torch.nn.Module):
         self.conv_post.apply(init_weights)
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
         self.stft = TorchSTFT(
-            "cuda",
+            device="cuda",
             filter_length=self.gen_istft_n_fft,
             hop_length=self.gen_istft_hop_size,
             win_length=self.gen_istft_n_fft,
@@ -149,13 +195,15 @@ class RingformerGenerator(torch.nn.Module):
             x = self.conformers[i](x)
             x = rearrange(x, "b t f -> b f t")
 
+            x = self.ups[i](x)
             x_source = self.noise_convs[i](har)
+            # if i == self.num_upsamples - 1:
+            #     x = self.reflection_pad(x)
+            #     x_source = self.reflection_pad(x_source)
+
+            s = torch.nn.functional.interpolate(s, size=x.shape[2], mode="nearest")
             x_source = self.noise_res[i](x_source, s)
 
-            x = self.ups[i](x)
-
-            if i == self.num_upsamples - 1:
-                x = self.reflection_pad(x)
             x = x + x_source
 
             xs = None
@@ -188,11 +236,16 @@ class AdaIN1d(nn.Module):
         super().__init__()
         self.norm = InstanceNorm1d(num_features, affine=False)
         self.fc = nn.Linear(style_dim, num_features * 2)
+        self.num_features = num_features
 
     def forward(self, x, s):
+        s = rearrange(s, "b s t -> b t s")
         h = self.fc(s)
-        h = h.view(h.size(0), h.size(1), 1)
-        gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        h = rearrange(h, "b t s -> b s t")
+        # h = h.view(h.size(0), h.size(1), 1)
+        # gamma, beta = torch.chunk(h, chunks=2, dim=1)
+        gamma = h[:, : self.num_features, :]
+        beta = h[:, self.num_features :, :]
         return (1 + gamma) * self.norm(x) + beta
 
 

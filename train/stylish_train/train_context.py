@@ -12,11 +12,11 @@ from losses import (
     WavLMLoss,
     MultiResolutionSTFTLoss,
     CTCLossWithLabelPriors,
+    MagPhaseLoss,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
 from stylish_lib.text_utils import TextCleaner
 import torchaudio
-from sentence_transformers import SentenceTransformer
 
 
 class Manifest:
@@ -48,7 +48,7 @@ class TrainContext:
         model_config: ModelConfig,
         logger: logging.Logger,
     ) -> None:
-        import stage_context
+        import stage
 
         self.base_output_dir: str = base_out_dir
         self.out_dir: str = ""
@@ -56,7 +56,7 @@ class TrainContext:
         self.config: Config = config
         self.model_config: ModelConfig = model_config
         self.batch_manager: Optional[BatchManager] = None
-        self.stage: Optional[stage_context.StageContext] = None
+        self.stage: Optional[stage.Stage] = None
         self.manifest: Manifest = Manifest()
         self.writer: Optional[SummaryWriter] = None
 
@@ -95,9 +95,13 @@ class TrainContext:
         self.stft_loss: MultiResolutionSTFTLoss = MultiResolutionSTFTLoss(
             sample_rate=self.model_config.sample_rate
         ).to(self.config.training.device)
-        self.align_loss: ForwardSumLoss = CTCLossWithLabelPriors(
-            prior_scaling_factor=0.3, blank=model_config.text_encoder.n_token
+        self.align_loss: CTCLossWithLabelPriors = CTCLossWithLabelPriors(
+            prior_scaling_factor=0.3, blank=model_config.text_encoder.tokens
         )
+        self.magphase_loss: MagPhaseLoss = MagPhaseLoss(
+            n_fft=self.model_config.generator.gen_istft_n_fft,
+            hop_length=self.model_config.generator.gen_istft_hop_size,
+        ).to(self.config.training.device)
 
         self.text_cleaner = TextCleaner(self.model_config.symbol)
 
@@ -108,8 +112,6 @@ class TrainContext:
             hop_length=self.model_config.hop_length,
             sample_rate=self.model_config.sample_rate,
         ).to(self.config.training.device)
-
-        self.sbert: SentenceTransformer = None
 
     def reset_out_dir(self, stage_name):
         self.out_dir = osp.join(self.base_output_dir, stage_name)

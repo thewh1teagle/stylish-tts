@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 logical_step_limit = 10000
 logical_step_warmup = 0
 
-discriminators = {"mpd", "mrd", "msbd", "mstftd"}
+discriminators = {"mpd", "mrd", "msbd"}
 
 
 class MultiOptimizer:
@@ -132,15 +132,7 @@ def build_optimizer(stage_name: str, *, train):
 
 
 def calculate_lr(key, stage_name, *, train):
-    is_second = stage_name == "textual" or stage_name == "joint"
     lr = train.config.training_plan.get_stage(stage_name).lr
     weight_decay = 1e-4
     betas = (0.85, 0.99)
-    if is_second:
-        if key == "bert":
-            lr = train.config.optimizer.bert_lr
-            weight_decay = 1e-2
-            betas = (0.9, 0.99)
-        elif key in {"decoder", "style_encoder"}:
-            lr = train.config.optimizer.ft_lr
     return lr, weight_decay, betas

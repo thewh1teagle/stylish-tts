@@ -54,7 +54,6 @@ class BatchManager:
             model_config=train.model_config,
             pitch_path=dataset_config.pitch_path,
             alignment_path=dataset_config.alignment_path,
-            sbert=train.sbert,
         )
         time_bins, time_per_bin = self.dataset.time_bins()
         self.time_bins: Dict[int, List[int]] = time_bins

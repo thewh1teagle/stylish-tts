@@ -8,66 +8,37 @@ win_length: 1200
 hop_length: 300
 style_dim: 128
 inter_dim: 512
-discriminators: [ "mpd", "mrd" ]
 
 text_aligner:
   hidden_dim: 256
   token_embedding_dim: 512
 
-plbert:
-  enabled: true
-  # Optional (defaults to pretrained plbert model trained for English)
-  # path: 'path/to/your/plbert.safetensors'
-  hidden_size: 768
-  num_attention_heads: 12
-  intermediate_size: 2048
-  max_position_embeddings: 512
-  num_hidden_layers: 12
-  dropout: 0.1
-
-# decoder:
-# type: 'istftnet'
-# resblock_kernel_sizes: [3,7,11]
-# upsample_rates:  [10, 6]
-# upsample_initial_channel: 512
-# resblock_dilation_sizes: [[1,3,5], [1,3,5], [1,3,5]]
-# upsample_kernel_sizes: [20, 12]
-# gen_istft_n_fft: 20
-# gen_istft_hop_size: 5
-
 decoder:
+  hidden_dim: 1024
+  residual_dim: 64
+
+generator:
   type: 'ringformer'
   resblock_kernel_sizes: [ 3, 7, 11 ]
-  upsample_rates: [ 10, 6 ]
+  upsample_rates: [ 4, 5 ]
   upsample_initial_channel: 512
   resblock_dilation_sizes: [ [ 1, 3, 5 ], [ 1, 3, 5 ], [ 1, 3, 5 ] ]
-  upsample_kernel_sizes: [ 20, 12 ]
-  gen_istft_n_fft: 20
-  gen_istft_hop_size: 5
+  upsample_kernel_sizes: [ 8, 10 ]
+  gen_istft_n_fft: 60
+  gen_istft_hop_size: 15
   depth: 2
 
-# decoder:
-#   type: 'vocos'
-#   intermediate_dim: 1536
-#   num_layers: 8
-#   gen_istft_n_fft: 2048
-#   gen_istft_win_length: 1200
-#   gen_istft_hop_length: 300
-
-# decoder:
-#   type: 'freev'
-
 text_encoder:
-  kernel_size: 5
-  n_layer: 3
-  n_token: 178 # number of phoneme tokens
+  tokens: 178 # number of phoneme tokens
+  hidden_dim: 192
+  filter_channels: 768
+  heads: 2
+  layers: 6
+  kernel_size: 3
+  dropout: 0.1
 
-# The style encoder (and prosody encoder) generates
-# a style embedding from audio
 style_encoder:
-  dim_in: 64
-  hidden_dim: 512
-  skip_downsamples: true
+  layers: 4
 
 duration_predictor:
   n_layer: 3
@@ -81,17 +52,9 @@ pitch_energy_predictor:
 slm:
   model: 'microsoft/wavlm-base-plus'
   sr: 16000 # sampling rate of SLM
-  hidden: 768 # hidden size of SLM
-  nlayers: 13 # number of layers of SLM
-  initial_channel: 64 # initial channels of SLM discriminator head
-
-sbert:
-  model: 'sentence-transformers/all-MiniLM-L6-v2'
 
 symbol:
   pad: "$"
   punctuation: ";:,.!?¡¿—…\"()“” "
   letters: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
   letters_ipa: "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁᵊǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
-  voiced: "ɑɐɒæɓʙβɔɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɥɨɪʝɭɫɮʟɱɯɰŋɳɲɴøɵœɶɹɺɾʀʁɽʉʊʋⱱʌɣɤʎʏʑʐʒʔʕʢᵊᵻˈˌ"
-  unvoiced: "ɕçɧħʜɬɸθʘɻʂʃʈʧʍχʡǀǁǃːˑʼʴʰʱʲʷˠˤ˞pftsckxqh↓↑→↗↘'̩';:,.!?¡¿—…\"()“” $"

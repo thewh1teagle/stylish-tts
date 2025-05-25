@@ -4,6 +4,20 @@ import matplotlib.pyplot as plt
 from munch import Munch
 import os
 import subprocess
+from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
+
+nv_init = False
+
+
+def print_gpu_vram(tag):
+    if False:
+        global nv_init
+        if not nv_init:
+            nvmlInit()
+            nv_init = True
+        handle = nvmlDeviceGetHandleByIndex(0)
+        info = nvmlDeviceGetMemoryInfo(handle)
+        print(f"{tag} - GPU memory occupied: {info.used//1024**2} MB.")
 
 
 def maximum_path(neg_cent, mask):
@@ -32,6 +46,13 @@ def get_data_path_list(path):
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             result = f.readlines()
     return result
+
+
+def sequence_mask(length, max_length=None):
+    if max_length is None:
+        max_length = length.max()
+    x = torch.arange(max_length, dtype=length.dtype, device=length.device)
+    return x.unsqueeze(0) < length.unsqueeze(1)
 
 
 def length_to_mask(lengths) -> torch.Tensor:
