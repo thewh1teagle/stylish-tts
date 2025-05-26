@@ -78,7 +78,7 @@ def main(config_path, model_config_path, out, model):
         model_config,
         text_cleaner,
     )
-    with open("scores_val.txt", "w") as f:
+    with open(pathlib.Path(out).parent / "scores_val.txt", "w") as f:
         for name in scores.keys():
             f.write(str(scores[name]) + " " + name + "\n")
     trains, scores = calculate_alignments(
@@ -88,7 +88,7 @@ def main(config_path, model_config_path, out, model):
         model_config,
         text_cleaner,
     )
-    with open("scores_train.txt", "w") as f:
+    with open(pathlib.Path(out).parent / "scores_train.txt", "w") as f:
         for name in scores.keys():
             f.write(str(scores[name]) + " " + name + "\n")
     result = vals | trains
