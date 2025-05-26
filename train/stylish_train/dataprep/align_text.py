@@ -62,7 +62,7 @@ def main(config_path, model_config_path, out, model):
 
     aligner_dict = load_file(model, device=device)
     aligner = tdnn_blstm_ctc_model_base(
-        model_config.n_mels, model_config.text_encoder.n_token
+        model_config.n_mels, model_config.text_encoder.tokens
     )
     aligner = aligner.to(device)
     aligner.load_state_dict(aligner_dict)
@@ -139,7 +139,7 @@ def calculate_alignments(path, wavdir, aligner, model_config, text_cleaner):
 
 
 def torch_align(mels, text, mel_length, text_length, prediction, model_config):
-    blank = model_config.text_encoder.n_token
+    blank = model_config.text_encoder.tokens
     alignment, scores = torchaudio.functional.forced_align(
         log_probs=prediction,
         targets=text,
