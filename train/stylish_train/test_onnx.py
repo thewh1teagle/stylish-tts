@@ -19,19 +19,19 @@ def read_meta_data_onnx(filename, key):
 
 
 @click.command()
-@click.option("--dir", type=str)
+@click.option("--onnx_path", type=str)
 @click.option("--text", type=str, multiple=True, help="A list of phonemes")
 @click.option("--combine", type=bool, default=True, help="Combine to one file")
-def main(dir, text, combine):
+def main(onnx_path, text, combine):
     texts = text
-    model_config = read_meta_data_onnx(f"{dir}/stylish.onnx", "model_config")
+    model_config = read_meta_data_onnx(onnx_path, "model_config")
     assert (
         model_config
     ), "model_config metadata not found. Please rerun ONNX conversion."
     model_config = ModelConfig.model_validate_json(model_config)
     text_cleaner = TextCleaner(model_config.symbol)
     session = ort.InferenceSession(
-        f"{dir}/stylish.onnx",
+        onnx_path,
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     samples = []
@@ -55,13 +55,13 @@ def main(dir, text, combine):
         samples.append(np.multiply(outputs[0], 32768).astype(np.int16))
 
     if combine:
-        outfile = f"{dir}/sample_combined.wav"
+        outfile = "sample_combined.wav"
         combined = np.concatenate(samples, axis=-1)
         print("Saving to:", outfile)
         write(outfile, 24000, combined)
     else:
         for i, sample in enumerate(samples):
-            outfile = f"{dir}/sample_{i}.wav"
+            outfile = f"sample_{i}.wav"
             print("Saving to:", outfile)
             write(outfile, 24000, sample)
 
