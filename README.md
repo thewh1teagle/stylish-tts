@@ -124,6 +124,29 @@ You can load a checkpoint from any stage via the --checkpoint argument. You stil
 
 Note that Stylish TTS checkpoints are not compatible with StyleTTS 2 checkpoints.
 
+# Export to ONNX
+This command will export ONNX file to `/path/to/your/output/stylish.onnx`
+```sh
+cd stylish-tts/train
+uv run stylish_train/train.py \
+    --convert true \
+    --model_config_path config/model.yml \
+    --config_path /path/to/your/config.yml \
+    --stage textual
+    --out_dir /path/to/your/output \
+    --checkpoint /path/to/your/checkpoint
+```
+Using the ONNX model:
+```sh
+cd stylish-tts/train
+uv run stylish_train/test_onnx.py
+    --onnx_path /path/to/your/output/stylish.onnx \
+    --text "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn ," \
+    --text "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn , bˈʌt ˈɔlsoʊ bɪkˈɔz , ˈæz ɪn sˈoʊ mˈɛniː ˈʌðɚ ˈɛɹiːəz , ðə dɪsˈɪʒənz tˈeɪkən bˈaɪ kˈɑːnstəntˌiːn ( ˈɔːɹ ɪn hˈɪz nˈeɪm ) wˈɜː tˈuː hˈæv ɡɹˈeɪt səɡnˈɪfɪkəns fˈɔːɹ sˈɛntʃɚiːz tˈuː kˈʌm ." \
+    --combine true
+```
+Content: These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come.
+
 # Training New Languages
 
 ## Grapheme to Phoneme (G2P)
