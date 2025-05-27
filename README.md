@@ -124,9 +124,62 @@ You can load a checkpoint from any stage via the --checkpoint argument. You stil
 
 Note that Stylish TTS checkpoints are not compatible with StyleTTS 2 checkpoints.
 
+# Export to ONNX
+This command will export ONNX file to `/path/to/your/output/stylish.onnx`
+```sh
+cd stylish-tts/train
+uv run stylish_train/train.py \
+    --convert true \
+    --model_config_path config/model.yml \
+    --config_path /path/to/your/config.yml \
+    --stage textual
+    --out_dir /path/to/your/output \
+    --checkpoint /path/to/your/checkpoint
+```
+Using the ONNX model:
+```sh
+cd stylish-tts/train
+uv run stylish_train/test_onnx.py
+    --onnx_path /path/to/your/output/stylish.onnx \
+    --text "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn ," \
+    --text "ðˈiːz wˈɜː tˈuː hˈæv ˈæn ɪnˈɔːɹməs ˈɪmpækt , nˈɑːt ˈoʊnliː bɪkˈɔz ðˈeɪ wˈɜː əsˈoʊsiːˌeɪtᵻd wˈɪð kˈɑːnstəntˌiːn , bˈʌt ˈɔlsoʊ bɪkˈɔz , ˈæz ɪn sˈoʊ mˈɛniː ˈʌðɚ ˈɛɹiːəz , ðə dɪsˈɪʒənz tˈeɪkən bˈaɪ kˈɑːnstəntˌiːn ( ˈɔːɹ ɪn hˈɪz nˈeɪm ) wˈɜː tˈuː hˈæv ɡɹˈeɪt səɡnˈɪfɪkəns fˈɔːɹ sˈɛntʃɚiːz tˈuː kˈʌm ." \
+    --combine true
+```
+Content: These were to have an enormous impact, not only because they were associated with Constantine, but also because, as in so many other areas, the decisions taken by Constantine (or in his name) were to have great significance for centuries to come.
+
 # Training New Languages
 
-## Phonemization
+## Grapheme to Phoneme (G2P)
+
+Grapheme-to-phoneme conversion (G2P) is the task of transducing graphemes (i.e. letter(s) that spells a sound) to phonemes (i.e. the sound).  Each language has its own phonetic rules, therefore requires a distinct G2P system. Accurate G2P is critical for the performance of text-to-speech (TTS).
+
+The most effective G2P systems are typically tailored to specific languages. These can often be found in research papers focused on phonetics or TTS—try searching for terms like "[language] G2P/TTS site:arxiv.org" or "[language] G2P site:github.com". Libraries such as [misaki](https://github.com/hexgrad/misaki/) may also provide such G2P systems.
+
+A commonly used multilingual G2P system is `espeak-ng`, though its accuracy can vary depending on the language. In some cases, a simple approach—using word-to-phoneme mappings from sources like Wiktionary—can be sufficient.
+
+## Adjust model.yml
+
+If the G2P don't share the same phonetic symbol set in `model.yml`, change symbol section and text_encoder.tokens. text_encoder.tokens should be equal to length of pad + punctuation + letters + letters_ipa
+```
+...
+text_encoder:
+  tokens: 178 # number of phoneme tokens
+  hidden_dim: 192
+  filter_channels: 768
+  heads: 2
+  layers: 6
+  kernel_size: 3
+  dropout: 0.1
+
+...
+
+symbol:
+  pad: "$"
+  punctuation: ";:,.!?¡¿—…\"()“” "
+  letters: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+  letters_ipa: "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁᵊǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+
+```
 
 # Citations
 

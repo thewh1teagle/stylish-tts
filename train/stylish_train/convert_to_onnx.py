@@ -1,28 +1,23 @@
-import os
-import os.path as osp
-import random
-from typing import Optional
-
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
-import torchaudio
-from einops import rearrange, reduce
-
-from utils import length_to_mask, log_norm, maximum_path
-from models.models import build_model
-from stylish_lib.config_loader import Config, load_model_config_yaml
+from utils import length_to_mask
+from stylish_lib.config_loader import ModelConfig
 from stylish_lib.text_utils import TextCleaner
 from models.export_model import ExportModel
 from models.stft import STFT
-
-from attr import attr
-import numpy as np
-from scipy.io.wavfile import write
 from utils import length_to_mask
+import onnx
 
 
-def convert_to_onnx(model_config, out_dir, model_in, device):
+def add_meta_data_onnx(filename, key, value):
+    model = onnx.load(filename)
+    meta = model.metadata_props.add()
+    meta.key = key
+    meta.value = value
+    onnx.save(model, filename)
+
+
+def convert_to_onnx(model_config: ModelConfig, out_dir, model_in, device):
     text_cleaner = TextCleaner(model_config.symbol)
     model = ExportModel(**model_in, device=device).eval()
     stft = STFT(
@@ -62,5 +57,5 @@ def convert_to_onnx(model_config, out_dir, model_in, device):
                 "waveform": {0: "num_samples"},
             },
         )
-
+    add_meta_data_onnx(filename, "model_config", model_config.model_dump_json())
     return filename
