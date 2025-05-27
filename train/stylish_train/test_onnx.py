@@ -20,7 +20,7 @@ def read_meta_data_onnx(filename, key):
 
 @click.command()
 @click.option("--dir", type=str)
-@click.option("--text", type=str, nargs=-1, help="A list of phonemes")
+@click.option("--text", type=str, multiple=True, help="A list of phonemes")
 def main(dir, text):
     texts = text
     model_config = read_meta_data_onnx(f"{dir}/stylish.onnx", "model_config")
@@ -34,7 +34,7 @@ def main(dir, text):
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    for i, text in texts:
+    for i, text in enumerate(texts):
         tokens = torch.tensor(text_cleaner(text)).unsqueeze(0)
         texts = torch.zeros([1, tokens.shape[1] + 2], dtype=int)
         texts[0][1 : tokens.shape[1] + 1] = tokens
