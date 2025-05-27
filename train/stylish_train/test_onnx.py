@@ -21,7 +21,8 @@ def read_meta_data_onnx(filename, key):
 @click.command()
 @click.option("--dir", type=str)
 @click.option("--text", type=str, multiple=True, help="A list of phonemes")
-def main(dir, text):
+@click.option("--combine", type=bool, default=True, help="Combine to one file")
+def main(dir, text, combine):
     texts = text
     model_config = read_meta_data_onnx(f"{dir}/stylish.onnx", "model_config")
     assert (
@@ -33,6 +34,7 @@ def main(dir, text):
         f"{dir}/stylish.onnx",
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
+    samples = []
 
     for i, text in enumerate(texts):
         tokens = torch.tensor(text_cleaner(text)).unsqueeze(0)
@@ -50,10 +52,18 @@ def main(dir, text):
                 "text_lengths": text_lengths.cpu().numpy(),
             },
         )
-        outfile = f"{dir}/sample_{i}.wav"
+        samples.append(np.multiply(outputs[0], 32768).astype(np.int16))
+
+    if combine:
+        outfile = f"{dir}/sample_combined.wav"
+        combined = np.concatenate(samples, axis=-1)
         print("Saving to:", outfile)
-        combined = np.multiply(outputs[0], 32768)
-        write(outfile, 24000, combined.astype(np.int16))
+        write(outfile, 24000, combined)
+    else:
+        for i, sample in enumerate(samples):
+            outfile = f"{dir}/sample_{i}.wav"
+            print("Saving to:", outfile)
+            write(outfile, 24000, sample)
 
 
 if __name__ == "__main__":
