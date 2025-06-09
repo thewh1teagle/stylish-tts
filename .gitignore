@@ -2,3 +2,4 @@ __pycache__
 *.pth
 *.wav
 .vscode
+24khz_dataset/
