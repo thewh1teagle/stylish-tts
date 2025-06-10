@@ -74,3 +74,19 @@ Note: removed the line from train.txt in 3971.wav:
 
 
 In case you have tensors issue, print the file names and line in align_text.py then remove bad lines
+
+
+
+Backup dataset, pitch data, and alignment data
+
+sudo apt install p7zip-full -y
+uv pip install huggingface_hub
+git config --global credential.helper store # Allow clone private repo from HF
+# Get token from https://huggingface.co/settings/tokens
+uv run huggingface-cli login --token "token" --add-to-git-credential #
+
+7z a 24khz_dataset.7z 24khz_dataset
+uv run huggingface-cli upload --repo-type model stylish-tts ./24khz_dataset.7z
+uv run huggingface-cli upload --repo-type model stylish-tts ./stylish-dataset/pitch.safetensors
+uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment_model.safetensors
+uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment.safetensors

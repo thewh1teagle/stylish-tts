@@ -5,3 +5,4 @@ __pycache__
 24khz_dataset/
 lib/stylish_lib.egg*
 checkpoints/
+*.7z
