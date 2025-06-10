@@ -73,6 +73,18 @@ Note: removed the line from train.txt in 3971.wav:
 3971.wav|"""jɐ ɡɑːt klˈæs,ɹˈiːəl klˈæs,"" pɚfˈɔːɹməns tˈɛkst kˈoʊɹˈɪʔn̩ wɪð vˈɪki stˈɑːlsən,pɹədˈuːst æt lˌɑːs ˈændʒəlɪs kəntˈɛmpɚɹˌɛɹi ɛksɪbˈɪʃənz,nˈaɪntiːnhˈʌndɹɪd ˈeɪɾi."|0|"""Ya Got Class,Real Class,"" performance text co-written with Vicki Stolsen,produced at Los Angeles Contemporary Exhibitions,1980."
 
 
+11. Export onnx
+
+
+cd train
+uv run stylish_train/train.py \
+    --convert true \
+    --model_config_path ../config/model.yml \
+    --config_path ../config/config.yml \
+    --stage textual \
+    --out_dir ./onnx_output \
+    --checkpoint ./checkpoints/checkpoint_00002_step_000004919
+
 In case you have tensors issue, print the file names and line in align_text.py then remove bad lines
 
 
@@ -91,4 +103,9 @@ uv run huggingface-cli upload --repo-type model stylish-tts ./stylish-dataset/pi
 uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment_model.safetensors
 uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment.safetensors
 uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/acoustic/acoustic_batch_sizes.json 
- uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment/alignment_batch_sizes.json 
+uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment/alignment_batch_sizes.json 
+
+
+
+For fine tune:
+Do the same steps above (pitch,alignment model, alignment, align text) and then train normally but provide the checkpoint.
