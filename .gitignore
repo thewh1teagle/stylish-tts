@@ -7,3 +7,5 @@ lib/stylish_lib.egg*
 checkpoints/
 *.7z
 onnx_output/
+*.safetensors
+temp-*
