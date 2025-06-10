@@ -78,7 +78,7 @@ Note: removed the line from train.txt in 3971.wav:
         --config_path ../config/config.yml \
         --stage textual \
         --out_dir ../checkpoints \
-        --checkpoint ../checkpoints/acustic/latest_checkpoint_dir
+        --checkpoint ../checkpoints/acoustic/latest_checkpoint_dir
     cd train
 
 11. Export onnx
@@ -117,3 +117,6 @@ uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignm
 
 For fine tune:
 Do the same steps above (pitch,alignment model, alignment, align text) and then train normally but provide the checkpoint.
+
+
+And when finetuning, you need to pass --reset_stage true 
