@@ -78,7 +78,7 @@ Note: removed the line from train.txt in 3971.wav:
         --config_path ../config/config.yml \
         --stage textual \
         --out_dir ../checkpoints \
-        --checkpoint ../checkpoints/latest_checkpoint_dir
+        --checkpoint ../checkpoints/acustic/latest_checkpoint_dir
     cd train
 
 11. Export onnx
