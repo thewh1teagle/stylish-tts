@@ -120,3 +120,8 @@ Do the same steps above (pitch,alignment model, alignment, align text) and then 
 
 
 And when finetuning, you need to pass --reset_stage true 
+
+
+
+# Fetch folders from huggingface
+huggingface-cli download --repo-type model thewh1teagle/stylish-tts --include textual_checkpoint_00007_step_000039381/ --local-dir .
