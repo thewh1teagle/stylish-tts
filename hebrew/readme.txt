@@ -4,6 +4,7 @@
     uv pip install datasets soundfile librosa numpy tqdm
 
 Note: you need at least 16GB GPU VRAM
+Note: I trained on RTX4060 with Cuda version 12.1 and Python 3.11 on Ubuntu 22.04
 
 2. Fetch dataset and phonemize
     uv run hebrew/fetch_dataset.py
@@ -51,5 +52,10 @@ PYTHONPATH=. uv run stylish_train/dataprep/align_text.py \
     --model ../checkpoints/alignment_model.safetensors \
     --out ../checkpoints/alignment.safetensors
 
+Note: create issue to remove the chars [] from the dataset otherwise it failed with tensors issue. remove in dataset creation from the text itself/phonemes
+
+9. Cut bad segments from the 
 
  Upload pitch data to HuggingFace
+
+
