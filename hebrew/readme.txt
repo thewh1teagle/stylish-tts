@@ -55,8 +55,22 @@ PYTHONPATH=. uv run stylish_train/dataprep/align_text.py \
 Note: create issue to remove the chars [] from the dataset otherwise it failed with tensors issue. remove in dataset creation from the text itself/phonemes
 Note: create issue that some line gave me tensor errors targets length is too long for CTC. found log_probs length: 100, targets length: 166 and num of repeats 3
 
-9. Cut bad segments from the 
+9. Cut bad segments from the (Optional)
+    uv run hebrew/remove_bad_segments.py
 
- Upload pitch data to HuggingFace
+Then rename the files in the dataset folder...
 
 
+10. Train
+    cd train
+    uv run stylish_train/train.py \
+        --model_config_path ../config/model.yml \
+        --config_path ../config/config.yml \
+        --stage acoustic \
+        --out_dir ../checkpoints
+
+Note: removed the line from train.txt in 3971.wav:
+3971.wav|"""jɐ ɡɑːt klˈæs,ɹˈiːəl klˈæs,"" pɚfˈɔːɹməns tˈɛkst kˈoʊɹˈɪʔn̩ wɪð vˈɪki stˈɑːlsən,pɹədˈuːst æt lˌɑːs ˈændʒəlɪs kəntˈɛmpɚɹˌɛɹi ɛksɪbˈɪʃənz,nˈaɪntiːnhˈʌndɹɪd ˈeɪɾi."|0|"""Ya Got Class,Real Class,"" performance text co-written with Vicki Stolsen,produced at Los Angeles Contemporary Exhibitions,1980."
+
+
+In case you have tensors issue, print the file names and line in align_text.py then remove bad lines
