@@ -90,3 +90,5 @@ uv run huggingface-cli upload --repo-type model stylish-tts ./24khz_dataset.7z
 uv run huggingface-cli upload --repo-type model stylish-tts ./stylish-dataset/pitch.safetensors
 uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment_model.safetensors
 uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment.safetensors
+uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/acoustic/acoustic_batch_sizes.json 
+ uv run huggingface-cli upload --repo-type model stylish-tts ./checkpoints/alignment/alignment_batch_sizes.json 
