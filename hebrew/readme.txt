@@ -125,3 +125,6 @@ And when finetuning, you need to pass --reset_stage true
 
 # Fetch folders from huggingface
 huggingface-cli download --repo-type model thewh1teagle/stylish-tts --include textual_checkpoint_00007_step_000039381/ --local-dir .
+
+# upload model
+uv run huggingface-cli upload --repo-type model thewh1teagle/stylish-tts ./ckpt/path # upload contents of the folder
