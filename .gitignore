@@ -3,3 +3,5 @@ __pycache__
 *.wav
 .vscode
 24khz_dataset/
+lib/stylish_lib.egg*
+checkpoints/

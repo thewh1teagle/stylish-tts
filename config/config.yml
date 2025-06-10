@@ -22,21 +22,21 @@ training_plan:
     lr: 1e-5
   acoustic:
     # training of acoustic models and vocoder
-    epochs: 5
-    probe_batch_max: 16
+    epochs: 20
+    probe_batch_max: 8
     lr: 1e-4
   textual:
     # training for duration/pitch/energy from text
-    epochs: 5
-    probe_batch_max: 32
+    epochs: 30
+    probe_batch_max: 16
     lr: 1e-4
 
 dataset:
-  train_data: "path/to/your/train-list.txt"
-  val_data: "path/to/your/val-list.txt"
-  wav_path: "path/to/your/wav-files"
-  pitch_path: "path/to/your/pitch.safetensors"
-  alignment_path: "path/to/your/alignment.safetensors"
+  train_data: "/workspace/stylish-tts/24khz_dataset/train.txt"
+  val_data: "/workspace/stylish-tts/24khz_dataset/val.txt"
+  wav_path: "/workspace/stylish-tts/24khz_dataset/wav"
+  pitch_path: "/workspace/stylish-tts/stylish-dataset/pitch.safetensors"
+  alignment_path: "/workspace/stylish-tts/checkpoints/alignment.safetensors"
 
 validation:
   # Number of samples to generate per validation step
