@@ -53,6 +53,7 @@ PYTHONPATH=. uv run stylish_train/dataprep/align_text.py \
     --out ../checkpoints/alignment.safetensors
 
 Note: create issue to remove the chars [] from the dataset otherwise it failed with tensors issue. remove in dataset creation from the text itself/phonemes
+Note: create issue that some line gave me tensor errors targets length is too long for CTC. found log_probs length: 100, targets length: 166 and num of repeats 3
 
 9. Cut bad segments from the 
 
