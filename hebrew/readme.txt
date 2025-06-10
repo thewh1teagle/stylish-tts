@@ -61,7 +61,7 @@ Note: create issue that some line gave me tensor errors targets length is too lo
 Then rename the files in the dataset folder...
 
 
-10. Train
+10. Train the first stage (acustic)
     cd train
     uv run stylish_train/train.py \
         --model_config_path ../config/model.yml \
@@ -72,6 +72,14 @@ Then rename the files in the dataset folder...
 Note: removed the line from train.txt in 3971.wav:
 3971.wav|"""jɐ ɡɑːt klˈæs,ɹˈiːəl klˈæs,"" pɚfˈɔːɹməns tˈɛkst kˈoʊɹˈɪʔn̩ wɪð vˈɪki stˈɑːlsən,pɹədˈuːst æt lˌɑːs ˈændʒəlɪs kəntˈɛmpɚɹˌɛɹi ɛksɪbˈɪʃənz,nˈaɪntiːnhˈʌndɹɪd ˈeɪɾi."|0|"""Ya Got Class,Real Class,"" performance text co-written with Vicki Stolsen,produced at Los Angeles Contemporary Exhibitions,1980."
 
+11. Train the second stage (textual)
+    uv run stylish_train/train.py \
+        --model_config_path ../config/model.yml \
+        --config_path ../config/config.yml \
+        --stage textual \
+        --out_dir ../checkpoints \
+        --checkpoint ../checkpoints/latest_checkpoint_dir
+    cd train
 
 11. Export onnx
 
