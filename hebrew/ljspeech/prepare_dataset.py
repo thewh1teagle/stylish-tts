@@ -31,8 +31,17 @@ def normalize_and_resample_wav(src_path, dst_path, target_sr=24000):
 def get_duration(path):
     return librosa.get_duration(filename=path)
 
-def remove_space_around_punctuation(text):
-    return re.sub(r'\s*([.,?!;:])\s*', r'\1', text)
+def normalize_text(text):
+    # Remove spaces only **before** punctuation, keep space after punctuation if any
+    text = re.sub(r'\s+([.,?!;:-])', r'\1', text)
+    
+    # Remove quotes
+    text = re.sub(r'[\"\'“”‘’]', '', text)
+
+    # Replace duplicate punctuation marks (including dashes) with a single one
+    text = re.sub(r'([.,?!;:-])\1+', r'\1', text)
+
+    return text
 
 def main(input_folder, output_folder, max_dur=10, required_duration=36000):
     tqdm.pandas()
@@ -54,13 +63,16 @@ def main(input_folder, output_folder, max_dur=10, required_duration=36000):
         quotechar='"'
     )
 
-    # Drop rows where normalized_text is NaN
+    # Drop rows where normalized_text is NaN and clean
     nan_rows = src_df[src_df['normalized_text'].isna()]
     print(f"Found {len(nan_rows)} rows with NaN in 'normalized_text' before filtering:")
     print(nan_rows)
 
     src_df = src_df.dropna(subset=['normalized_text'])
     print(f"After dropping NaN normalized_text, {len(src_df)} segments remain.")
+    
+    # Normalize text
+    src_df['normalized_text'] = src_df['normalized_text'].progress_apply(normalize_text)
 
     # Compute durations and filter by max duration
     src_df['duration'] = src_df.index.map(lambda fid: get_duration(src_wav_path / f"{fid}.wav"))
@@ -75,7 +87,7 @@ def main(input_folder, output_folder, max_dur=10, required_duration=36000):
 
     # Phonemize and clean phonemes
     src_df['phonemes'] = src_df['normalized_text'].progress_apply(phonemize_text)
-    src_df['phonemes'] = src_df['phonemes'].progress_apply(remove_space_around_punctuation)
+    src_df['phonemes'] = src_df['phonemes'].progress_apply(normalize_text)
     print("Phonemization complete.")
     
     # Normalize and resample wav files here for the filtered segments
@@ -89,7 +101,7 @@ def main(input_folder, output_folder, max_dur=10, required_duration=36000):
     # Prepare output
     src_df.reset_index(inplace=True)
     src_df['speaker_id'] = 0
-    output_df = src_df[['file_id', 'phonemes', 'speaker_id', 'text']].sort_values(by='file_id')
+    output_df = src_df[['file_id', 'phonemes', 'speaker_id', 'normalized_text']].sort_values(by='file_id')
 
     output_df.to_csv(dst_metadata_path, sep='|', index=False, header=False)
 
