@@ -9,3 +9,9 @@ checkpoints/
 onnx_output/
 *.safetensors
 temp-*
+dataset_before_enhance/
+dataset_after_enhance/
+dataset/
+LJSpeech-1.1/
+*.tar.gz
+*.tar.bz2

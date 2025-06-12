@@ -128,3 +128,14 @@ huggingface-cli download --repo-type model thewh1teagle/stylish-tts --include te
 
 # upload model
 uv run huggingface-cli upload --repo-type model thewh1teagle/stylish-tts ./ckpt/path # upload contents of the folder
+
+
+
+
+
+
+
+
+
+
+
