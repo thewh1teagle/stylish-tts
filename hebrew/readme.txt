@@ -16,14 +16,19 @@ Note: dataset should be 24khz, mono, 16 bit.
 
 
 3. Split to train.txt and val.txt with 10% for val
-    uv run hebrew/split_dataset.py
+    uv run hebrew/spilt_dataset.py /workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced
 
-4. Create pitch data, expect X minutes on RTX4090
+4. Create pitch data, expect 50 minutes on RTX4090
 
-git clone https://github.com/Stylish-TTS/stylish-dataset.git
+git clone https://github.com/thewh1teagle/stylish-dataset
 cd stylish-dataset
 uv sync
-uv run stylish-dataset/all-pitch.py --wavdir ../24khz_dataset/wav --trainpath ../24khz_dataset/train.txt --valpath ../24khz_dataset/val.txt --split $(nproc) # use all cores
+
+# use all cores
+uv run stylish-dataset/all-pitch.py --wavdir /workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/wav \
+    --trainpath /workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/train.txt \
+    --valpath /workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/val.txt \
+    --split $(nproc) 
 
 5. Setup the configs in config.yml under datasets. just change to your new absolute paths
 
