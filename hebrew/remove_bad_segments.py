@@ -37,12 +37,12 @@ def filter_low_confidence(
 
 filter_low_confidence(
     score_path="/workspace/stylish-tts/checkpoints/scores_train.txt",
-    transcript_path="/workspace/stylish-tts/24khz_dataset/train.txt",
-    output_path="/workspace/stylish-tts/24khz_dataset/train_filtered.txt"
+    transcript_path="/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/train.txt",
+    output_path="/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/train_filtered.txt"
 )
 
 filter_low_confidence(
     score_path="/workspace/stylish-tts/checkpoints/scores_val.txt",
-    transcript_path="/workspace/stylish-tts/24khz_dataset/val.txt",
-    output_path="/workspace/stylish-tts/24khz_dataset/val_filtered.txt"
+    transcript_path="/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/val.txt",
+    output_path="/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/val_filtered.txt"
 )

@@ -15,7 +15,7 @@ training:
 training_plan:
   alignment:
     # alignment pretraining
-    epochs: 10
+    epochs: 40
     # Maximum number of segments per batch.
     probe_batch_max: 128
     # Learing Rate for this stage
@@ -32,9 +32,9 @@ training_plan:
     lr: 1e-4
 
 dataset:
-  train_data: "/workspace/stylish-tts/24khz_dataset/train.txt"
-  val_data: "/workspace/stylish-tts/24khz_dataset/val.txt"
-  wav_path: "/workspace/stylish-tts/24khz_dataset/wav"
+  train_data: "/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/train.txt"
+  val_data: "/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/val.txt"
+  wav_path: "/workspace/stylish-tts/ljspeech-enhanced/dataset_enhanced/wav"
   pitch_path: "/workspace/stylish-tts/stylish-dataset/pitch.safetensors"
   alignment_path: "/workspace/stylish-tts/checkpoints/alignment.safetensors"
 
