@@ -144,3 +144,51 @@ uv run huggingface-cli upload --repo-type model thewh1teagle/stylish-tts ./ckpt/
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+It failed with these lines in train.txt
+
+
+LJ008-0050.wav|ɐ bɹˈɔːdʃiːt dˈeɪɾᵻd ˈeɪpɹəl twˈɛntifˈɔːɹθ, sˈɛvəntˌiːn ˈeɪɾisˈɛvən, dᵻskɹˈaɪbɪŋ ɐn ˌɛksɪkjˈuːʃən ɔnðə nˈuːliɪnvˈɛntᵻd skˈæfoʊld bᵻfˌɔːɹ ðə dˈɛɾɚz dˈɔːɹ,|0|A broadsheet dated April twenty-fourth, seventeen eighty-seven, describing an execution on the newly-invented scaffold before the debtors door,
+LJ008-0074.wav|ðæt ʌv fˈiːbiː hˈæɹɪs, hˌuː ɪn sˈɛvəntˌiːn ˈeɪɾiˈeɪt wʌz bɑːɹbˈɛɹiəsli ˈɛksᵻkjˌuːɾᵻd ænd bˈɜːnt bᵻfˌɔːɹ nˈuːɡeɪt fɔːɹ kˈɔɪnɪŋ.|0|that of Phoebe Harris, who in seventeen eighty-eight was barbariously executed and burnt before Newgate for coining.
+LJ027-0050.wav|həmˈɑːlədʒi ðˈʌs mˈiːnz aɪdˈɛntᵻɾi ʌv stɹˈʌktʃɚ wˌɪtʃ ɪz ðə ɹɪzˈʌlt ʌv aɪdˈɛntᵻɾi ʌv pˈɛɹəntɪdʒ. ɪɾ ɪz ðə stˈæmp ʌv hɚɹˈɛdᵻɾi.|0|Homology thus means identity of structure which is the result of identity of parentage. It is the stamp of heredity.
+LJ027-0053.wav|ðə mˈoʊst stɹˈaɪkɪŋ fˈækt ʌv sˈɪmɪlɚ stɹˈʌktʃɚɹ ɐmˌʌŋ plˈænts ænd ɐmˌʌŋ ˈænɪməlz ɪz ðɪ ɛɡzˈɪstəns əvə kˈɑːmən dʒˈɛnɚɹəl plˈæn ɪn ˌɛni ɡɹˈuːp.|0|The most striking fact of similar structure among plants and among animals is the existence of a common general plan in any group.
+LJ027-0153.wav|ɪn ˈɔːɹdɚ təbi sˌoʊ ˈædᵻd tə səksˈɛsɪv spˈiːsiːz, ˈɛvɹi ˌɪndᵻvˈɪdʒuːəl dˈɪɹ bᵻlˈɔŋɪŋ tə lˈeɪɾɚ spˈiːsiːz wʌz ɹᵻkwˈaɪɚd tə ɹᵻpˈiːt ɪn hɪz ˈoʊn lˈaɪftaɪm|0|in order to be so added to successive species, every individual deer belonging to later species was required to repeat in his own lifetime
+LJ036-0069.wav|ɪnstˈɛd ʌv wˈeɪɾɪŋ ðˈɛɹ, ˈɑːswəld ɐpˈæɹəntli wɛnt æz fˈɑːɹ ɐwˈeɪ æz hiː kʊd ænd bˈɔːɹdᵻd ðə fˈɜːst ˈoʊk klˈɪf bˈʌs wˌɪtʃ kˈeɪm ɐlˈɔŋ|0|Instead of waiting there, Oswald apparently went as far away as he could and boarded the first Oak Cliff bus which came along
+LJ028-0296.wav|ðˈaʊ kˈʌvɚɹɪst ðə fˈaʊlɪst dˈiːdz wɪððə fˈɛɹəst pˈɑːsᵻbəl nˈeɪm, wˌɛn ðˈaʊ sˈeɪɪst ðˌaɪ mˈeɪmɪŋ ɪz tə hˈɛlp ˌaʊɚ sˈiːdʒ fˈɔːɹwɚd.|0|thou coverest the foulest deeds with the fairest possible name, when thou sayest thy maiming is to help our siege forward.
+
+
+LJ028-0296.wav
+LJ036-0069
+
+  File "/workspace/stylish-tts/train/stylish_train/dataprep/align_text.py", line 84, in main
+    trains, scores = calculate_alignments(
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/stylish-tts/train/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/stylish-tts/train/stylish_train/dataprep/align_text.py", line 132, in calculate_alignments
+    alignment, scores = torch_align(
+                        ^^^^^^^^^^^^
+  File "/workspace/stylish-tts/train/stylish_train/dataprep/align_text.py", line 165, in torch_align
+    assert alignment[i] == blank or alignment[i] == text[0, text_index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+
+
+
+
+Note: maybe for longer datasets alignment needed more than 20 epochs, more like 100 to converge.
