@@ -15,7 +15,7 @@ training:
 training_plan:
   alignment:
     # alignment pretraining
-    epochs: 40
+    epochs: 100
     # Maximum number of segments per batch.
     probe_batch_max: 128
     # Learing Rate for this stage
